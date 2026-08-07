@@ -38,6 +38,26 @@ RSpec.describe "design invariants" do
     end
   end
 
+  # Sidekiq, not Solid Queue (§14.1). The test environment overrides the adapter
+  # to :test, so the assertion has to read what the application sets rather than
+  # what is currently in effect — the same reason the cable checks above go
+  # through config_for.
+  describe "background jobs (§14.1)" do
+    it "configures Sidekiq as the ActiveJob adapter" do
+      application = Rails.root.join("config/application.rb").read
+
+      expect(application).to match(/config\.active_job\.queue_adapter\s*=\s*:sidekiq/)
+    end
+
+    # Naming an adapter is not the same as being able to load it — the lesson
+    # from the redis pin above, which passed every spec and failed on the first
+    # real broadcast.
+    it "can actually load the sidekiq adapter" do
+      expect { require "active_job/queue_adapters/sidekiq_adapter" }.not_to raise_error
+      expect(defined?(ActiveJob::QueueAdapters::SidekiqAdapter)).to be_truthy
+    end
+  end
+
   describe "customer_phone hygiene (§13.5)" do
     it "is filtered from logs" do
       expect(Rails.application.config.filter_parameters).to include(:customer_phone)

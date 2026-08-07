@@ -51,7 +51,11 @@ class CreateOrder
     end
 
     # Deliberately outside the transaction: broadcasts and jobs never run inside
-    # one (§8). Nothing to enqueue yet — ActionCable arrives at step 2.
+    # one (§8). A placed order has to reach the kitchen and the board without
+    # anyone refreshing anything — it is the only transition a customer watches
+    # for directly.
+    BroadcastStoreViews.call(@store)
+
     Result.new(success?: true, order: order.reload, errors: [])
   rescue InvalidRequest => e
     failure([ e.message ])

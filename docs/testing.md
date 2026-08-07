@@ -84,6 +84,19 @@ applies `LIMIT` during the scan rather than to the set it successfully locked. A
 row is skipped after the limit is already spent, so the query returns nothing while
 unclaimed drinks sit right behind it. Fetch the batch, then choose in Ruby.
 
+## Redis
+
+The suite talks to a real Redis, not a fake. The board's broadcast throttle is a
+`SET NX PX` lock whose entire purpose is to behave correctly across two `web` pods
+(§14.4) — a stub would assert that the code calls Redis, which is not the property worth
+testing. `spec/support/redis.rb` aborts with instructions if it can't connect.
+
+Keys are namespaced per environment by `BobaGals.redis_key`, the same way ActionCable
+namespaces its channels, so a test run cannot disturb the development keyspace.
+
+Do not `sleep` through a Redis TTL. Assert the TTL exists, or delete the key to simulate
+expiry — see `spec/services/board_broadcast_spec.rb`.
+
 ## Golden tests
 
 Fixed seeds producing byte-identical dispatch sequences. They live in
@@ -132,6 +145,12 @@ A flaky test is a bug in the test; quarantine it, don't retry it.
 
 - Vitest + React Testing Library, tests colocated with components.
 - Query by role and accessible name. `data-testid` is a last resort.
-- Mock at the network boundary (MSW), never by stubbing component internals.
+- Mock at the network boundary (MSW), never by stubbing component internals. The server is
+  set up in `src/test/server.ts` and started by `src/test/setup.ts` with
+  `onUnhandledRequest: 'error'` — a component calling an endpoint no test declared is
+  either a bug or an untested path, and both deserve a failure rather than a warning.
+- ActionCable is the exception: jsdom has no server to talk to, so `src/api/cable.ts` is
+  mocked with `vi.mock` and the test pushes broadcasts through the captured handler. The
+  subscription plumbing is covered by the Rails channel specs instead.
 - The kiosk offline state (§9.3) and the board's 90-second pickup persistence (§9.5) are
   behaviors with real failure modes — test them.

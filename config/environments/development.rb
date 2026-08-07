@@ -68,6 +68,16 @@ Rails.application.configure do
     "http://localhost:3000", "http://127.0.0.1:3000"
   ]
 
+  # The Vite dev server proxies /api and /cable to this container and rewrites
+  # Host to the compose service name, which host authorization rejects by
+  # default. Allowing it here rather than turning off changeOrigin in the proxy:
+  # the browser reaches Vite on whatever address it likes — localhost, a LAN IP
+  # for a tablet on the counter — and none of those have to be enumerated.
+  #
+  # Development only. Production serves the bundle and the API behind one host
+  # through the ingress (§14.2), so nothing is proxied and nothing is rewritten.
+  config.hosts << "api"
+
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
 
