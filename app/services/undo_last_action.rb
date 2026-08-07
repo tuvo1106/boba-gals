@@ -41,7 +41,7 @@ class UndoLastAction
     # No prep-time sample is discarded here yet because none is recorded until
     # build step 7. When the EWMA lands, this is where the phantom duration must
     # be dropped, or the model learns from a mistap (§5.2, §7.3).
-    KitchenBroadcast.call(order.store)
+    BroadcastStoreViews.call(order.store)
 
     Result.new(success?: true, item: item)
   end

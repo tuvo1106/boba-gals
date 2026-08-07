@@ -93,6 +93,6 @@ class ClaimNextDrink
     )
 
     RollUpOrderStatus.new.call(item.order)
-    KitchenBroadcast.call(station.store)
+    BroadcastStoreViews.call(station.store)
   end
 end

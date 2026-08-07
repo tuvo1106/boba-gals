@@ -36,6 +36,11 @@ module BobaGals
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
 
+    # Sidekiq, not Solid Queue (§14.1). The `worker` service in compose and the
+    # `worker` Deployment in the cluster run this same image with a Sidekiq
+    # command, so anything enqueued here has somewhere to land.
+    config.active_job.queue_adapter = :sidekiq
+
     # Only loads a smaller set of middleware suitable for API only apps.
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.

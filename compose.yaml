@@ -64,7 +64,11 @@ services:
     working_dir: /frontend
     command: sh -c "npm install && npm run dev"
     environment:
-      VITE_API_URL: http://localhost:3000
+      # Where the dev server proxies /api and /cable to. Resolved inside the
+      # compose network, not from the browser — the browser only ever talks to
+      # Vite on 5173, same-origin, the way nginx serves the bundle in
+      # production (§14.1).
+      VITE_API_TARGET: http://api:3000
     ports: ["5173:5173"]
     volumes:
       - ./frontend:/frontend
