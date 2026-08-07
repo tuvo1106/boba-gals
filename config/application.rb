@@ -45,5 +45,20 @@ module BobaGals
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Cookies and sessions, added back for /admin only (§13.4). Everything else
+    # is stateless: the menu, board and health endpoints are public, the KDS
+    # carries a bearer token (§13.3), and orders are addressed by pickup code.
+    #
+    # SameSite=Strict is the CSRF defence rather than a synchroniser token —
+    # ADR-0006 records why. httponly keeps the session out of reach of any
+    # script on the page; secure rides with production, which is also the only
+    # environment with `force_ssl` and therefore any TLS to require.
+    config.middleware.use ActionDispatch::Cookies
+    config.middleware.use ActionDispatch::Session::CookieStore,
+                          key: "_boba_gals_admin",
+                          same_site: :strict,
+                          httponly: true,
+                          secure: Rails.env.production?
   end
 end
