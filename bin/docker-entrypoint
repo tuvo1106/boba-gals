@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+# Deliberately does NOT prepare the database.
+#
+# DESIGN.md §14.2: migrations run as a dedicated `migrate` Job applied before
+# each web rollout — never on container boot. With 2 `web` replicas (§14.2) a
+# boot-time migration means two pods racing the same schema change, and a
+# crash-looping pod would retry it indefinitely.
+#
+# The same image runs `web` (puma) and `worker` (sidekiq); the command is what
+# differs (§14.1).
+
+exec "${@}"

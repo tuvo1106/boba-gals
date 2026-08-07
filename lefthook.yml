@@ -1,7 +1,9 @@
 # Git hooks. Install once with: lefthook install
 #
-# Hooks are guarded on the files they need so they stay quiet before the app is
-# generated (DESIGN.md §12 step 1).
+# Hooks run in a non-interactive shell where a version manager's shell
+# activation has not happened, so `ruby` would resolve to whatever system Ruby
+# exists (2.6 on stock macOS) rather than the pinned .ruby-version. Prepending
+# mise's shims fixes that, and is a no-op for anyone using rbenv/asdf/chruby.
 
 commit-msg:
   commands:
@@ -32,13 +34,23 @@ pre-commit:
   commands:
     rubocop:
       glob: "*.rb"
-      run: test -f Gemfile && bundle exec rubocop --force-exclusion --autocorrect {staged_files} || true
+      # No `|| true`: a lint failure must fail the commit. A guard that always
+      # passes is worse than no guard, because it looks armed.
+      run: |
+        set -e
+        [ -d "$HOME/.local/share/mise/shims" ] && PATH="$HOME/.local/share/mise/shims:$PATH"
+        export PATH
+        bundle exec rubocop --force-exclusion --autocorrect {staged_files}
       stage_fixed: true
 
-    eslint:
+    oxlint:
       root: "frontend/"
-      glob: "*.{ts,tsx}"
-      run: test -f frontend/package.json && npm run lint -- --fix {staged_files} || true
+      glob: "frontend/*.{ts,tsx}"
+      run: |
+        set -e
+        [ -d "$HOME/.local/share/mise/shims" ] && PATH="$HOME/.local/share/mise/shims:$PATH"
+        export PATH
+        npx oxlint --fix {staged_files}
       stage_fixed: true
 
     # The design is explicit: secrets come from the environment only (§14.6),

@@ -1,0 +1,76 @@
+# Development environment (DESIGN.md §12 step 0).
+#
+# `api` and `worker` run the SAME image with different commands — that is the
+# production topology (§14.1), rehearsed locally so it isn't discovered at
+# deploy time. The image compose builds is the image Kubernetes will run.
+
+name: boba-gals
+
+x-api-base: &api-base
+  build:
+    context: .
+    target: development
+  environment:
+    RAILS_ENV: development
+    POSTGRES_HOST: postgres
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    REDIS_URL: redis://redis:6379/1
+  volumes:
+    - .:/rails
+    - bundle:/usr/local/bundle
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+    # No persistence, deliberately: every key is reconstructible or ephemeral by
+    # design — deficits, ring pointer, locks, pub/sub (§6.5, §14.2).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *api-base
+    command: ./bin/rails server -b 0.0.0.0 -p 3000
+    ports: ["3000:3000"]
+
+  worker:
+    <<: *api-base
+    command: bundle exec sidekiq
+
+  vite:
+    image: node:24-slim
+    working_dir: /frontend
+    command: sh -c "npm install && npm run dev"
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports: ["5173:5173"]
+    volumes:
+      - ./frontend:/frontend
+      - frontend_modules:/frontend/node_modules
+
+volumes:
+  pgdata:
+  bundle:
+  frontend_modules:

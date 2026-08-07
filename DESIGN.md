@@ -1,7 +1,7 @@
 # Boba Shop Ordering & Kitchen Scheduling — Design Specification
 
 **Status:** Ready for implementation
-**Stack:** Rails 8.x (API + ActionCable), PostgreSQL, React 18 (TypeScript), Redis
+**Stack:** Rails 8.x (API + ActionCable), PostgreSQL, React 19 (TypeScript), Redis
 **Deploy target:** Docker from day one → Kubernetes (§14)
 
 > **Rails 8 note (locked):** do **not** adopt the Rails 8 "Solid" defaults (Solid Queue/Cable/Cache) or Kamal. Redis is load-bearing in this design — scheduler deficits and ring pointer (§6.5), ETA debounce lock (§7.2), ActionCable pub/sub across pods (§14.4) — so adopting Solid would mean running two coordination stores instead of one. Generate the app with `--skip-solid --skip-kamal`; use the Redis adapter for ActionCable and Sidekiq for jobs (§14.1). Deployment is Kubernetes (§14).
