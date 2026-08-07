@@ -72,8 +72,12 @@ jobs:
       - name: Lint
         run: bundle exec rubocop --parallel
 
+      # db:test:prepare, not db:prepare — the latter runs db:seed on a fresh
+      # database, and seed data in the test database shadows the records specs
+      # create. A single-store v1 resolves the current store as Store.first, so
+      # a seeded store silently wins over the one a spec just built.
       - name: Prepare database
-        run: bin/rails db:prepare
+        run: bin/rails db:test:prepare
 
       # Coverage gates are enforced in-process by SimpleCov (spec/spec_helper.rb):
       # 90% overall, 100% line and branch on app/scheduler/**. A shortfall exits
