@@ -50,10 +50,16 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 10s
           --health-timeout 5s --health-retries 5
 
+    # Same variables compose sets, so config/database.yml resolves identically
+    # here and locally. DATABASE_URL is deliberately not used — it would silently
+    # override the database name and make CI test a different database than a
+    # developer does.
     env:
       RAILS_ENV: test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/boba_test
-      REDIS_URL: redis://localhost:6379/0
+      POSTGRES_HOST: localhost
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379/1
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +73,7 @@ jobs:
         run: bundle exec rubocop --parallel
 
       - name: Prepare database
-        run: bundle exec rails db:prepare
+        run: bin/rails db:prepare
 
       # Coverage gates are enforced in-process by SimpleCov (spec/spec_helper.rb):
       # 90% overall, 100% line and branch on app/scheduler/**. A shortfall exits
@@ -95,16 +101,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same pin as local dev and the Docker build — .node-version is the single
+      # source of truth, read by mise, setup-node, and the frontend image.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - run: npm ci
       - run: npm run lint
-      - run: npx tsc --noEmit
-      - run: npm test -- --run
+      - run: npm run build   # tsc -b runs as part of the build
+      - run: npm run test:run
 
   # Always runs, so branch protection has one stable required check to point at
   # even while the gated jobs above are still skipping.

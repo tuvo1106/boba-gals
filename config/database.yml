@@ -1,0 +1,23 @@
+# Connection details come from the environment (DESIGN.md §14.6) so the same
+# image runs unchanged under compose and under Kubernetes. In production,
+# DATABASE_URL from the k8s Secret is merged over these values by Rails.
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("POSTGRES_HOST", "localhost") %>
+  port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
+  username: <%= ENV.fetch("POSTGRES_USER", "postgres") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "postgres") %>
+
+development:
+  <<: *default
+  database: boba_gals_development
+
+test:
+  <<: *default
+  database: boba_gals_test
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("POSTGRES_DB", "boba_gals_production") %>

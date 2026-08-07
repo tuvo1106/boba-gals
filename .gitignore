@@ -34,3 +34,7 @@ node_modules/
 
 # Claude Code — local overrides stay local, shared settings are committed
 .claude/settings.local.json
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+
