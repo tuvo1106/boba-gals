@@ -10,6 +10,11 @@ import type { BoardUpdate } from '../api/types'
 // subscription is replaced with a handle the test can push through.
 let broadcast: (update: BoardUpdate) => void = () => {}
 let connect: () => void = () => {}
+// The subscription only happens once the first REST read has landed, because
+// that is where the store id comes from. Tests must wait for this rather than
+// for anything on screen: "Connecting…" is present from the very first render,
+// so finding it proves nothing about whether `connect` has been captured yet.
+let subscribed = false
 
 vi.mock('../api/cable', () => ({
   subscribe: ({
@@ -21,6 +26,7 @@ vi.mock('../api/cable', () => ({
   }) => {
     broadcast = onReceived
     connect = () => onConnected?.()
+    subscribed = true
     return () => {}
   },
 }))
@@ -43,6 +49,8 @@ const sarah = {
 describe('BoardScreen', () => {
   beforeEach(() => {
     broadcast = () => {}
+    connect = () => {}
+    subscribed = false
   })
 
   it('renders drinks being made with a wait in minutes', async () => {
@@ -50,7 +58,12 @@ describe('BoardScreen', () => {
 
     render(<BoardScreen />)
 
-    const making = await screen.findByRole('region', { name: 'Making' })
+    // Await the content, not the column: both columns render immediately and
+    // empty, so awaiting the region resolves before the fetch has landed and
+    // every synchronous query after it races.
+    await screen.findByText('Sarah')
+
+    const making = screen.getByRole('region', { name: 'Making' })
     expect(within(making).getByText('Sarah')).toBeInTheDocument()
     expect(within(making).getByText('K7QF')).toBeInTheDocument()
     expect(within(making).getByText('4 min')).toBeInTheDocument()
@@ -79,8 +92,9 @@ describe('BoardScreen', () => {
     )
 
     render(<BoardScreen />)
+    await screen.findByText('Ali')
 
-    const ready = await screen.findByRole('region', { name: 'Ready' })
+    const ready = screen.getByRole('region', { name: 'Ready' })
     expect(within(ready).getByText('Ali')).toBeInTheDocument()
     expect(within(ready).getByText('Just now')).toBeInTheDocument()
   })
@@ -137,7 +151,7 @@ describe('BoardScreen', () => {
       serveBoard(boardPayload())
 
       render(<BoardScreen />)
-      await screen.findByRole('status')
+      await waitFor(() => expect(subscribed).toBe(true))
       act(connect)
 
       await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
@@ -148,7 +162,12 @@ describe('BoardScreen', () => {
 
       render(<BoardScreen />)
 
-      expect(await screen.findByRole('status')).toHaveTextContent('Reconnecting…')
+      // waitFor, not findByRole: the indicator is on screen from the first
+      // render reading "Connecting…", so asserting on whatever is found first
+      // races the fetch rejecting.
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…'),
+      )
     })
   })
 })
