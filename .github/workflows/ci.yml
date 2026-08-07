@@ -326,6 +326,29 @@ jobs:
           path: prod-manifests.yaml
           retention-days: 30
 
+      # Nothing in GHCR expires on its own, and every merge adds a version.
+      # Private-repo storage is 500 MB on a Free plan; boba-api alone is ~130 MB
+      # compressed, so without this the registry fills and pushes start failing
+      # at whatever moment is least convenient.
+      #
+      # Five is current plus four rollback targets. §14.5 has no progressive
+      # delivery, so a rollback is "redeploy an earlier SHA" — below about three
+      # that stops being possible. Most of the 500 MB is shared base layers that
+      # do not multiply per version; what actually accumulates is orphans.
+      - name: Prune old image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: boba-api
+          package-type: container
+          min-versions-to-keep: 5
+
+      - name: Prune old frontend image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: boba-frontend
+          package-type: container
+          min-versions-to-keep: 5
+
   # Always runs, so branch protection has one stable required check to point at
   # even while the gated jobs above are still skipping.
   ci:
