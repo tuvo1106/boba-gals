@@ -22,6 +22,19 @@ Categories, in this order:
 
 ### Added
 
+- Admin sign-in and scheduler configuration (§13.4, §12 step 4). The owner can read and
+  change how the scheduler behaves — quantum, aging, cohesion, the remake priority floor —
+  without a console. This is locked behind a password from the first deploy, because those
+  settings change how the shop runs while it is running.
+- Configuration changes are checked before they apply. A value that would invert the remake
+  priority floor (§6.4) or quote customers a shorter wait than the estimate (§7.3) is
+  refused with the reason, and a setting the scheduler doesn't have is refused rather than
+  quietly stored — nothing that isn't scheduler tuning can end up in there (§14.6).
+- Learned prep times are visible (§7.3): what the shop seeded, what it has observed, how
+  many samples, and whether that is yet enough to trust. Empty until the EWMA lands at
+  build step 7 — it ships now because "is the ETA wrong because the prep times are wrong"
+  is the first question anyone asks, and it shouldn't need a console to answer.
+
 - Customer board (§9.5, §12 step 3): two columns readable across the shop, showing who is
   waiting and who can collect. Names appear as first name and pickup code only — if two
   Sarahs are waiting, the code tells them apart (§3).
