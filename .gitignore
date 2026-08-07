@@ -1,0 +1,36 @@
+# Rails
+/.bundle
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+/public/assets
+/config/master.key
+/config/credentials/*.key
+
+# Test artifacts
+/coverage
+/spec/examples.txt
+/tmp/screenshots
+
+# Frontend
+node_modules/
+/frontend/dist
+/frontend/node_modules
+*.tsbuildinfo
+.vite/
+
+# Environment — secrets come from the environment only (DESIGN.md §14.6)
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+
+# Claude Code — local overrides stay local, shared settings are committed
+.claude/settings.local.json
