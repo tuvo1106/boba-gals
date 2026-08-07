@@ -48,6 +48,3 @@
 - [ ] Public classes/methods have YARD comments citing `§` where relevant
 - [ ] New decisions recorded as an ADR
 - [ ] `bundle exec rubocop` / `npm run lint` clean, coverage gates hold
-- [ ] No broadcasts, jobs, or HTTP calls inside a DB transaction (§8)
-- [ ] No in-process state that breaks with 2 `web` pods (§14.4)
-- [ ] `customer_phone` absent from every response, log, and broadcast (§13.5)
