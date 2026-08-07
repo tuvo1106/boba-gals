@@ -45,3 +45,12 @@
 /lefthook.yml
 /.claude/
 /.github/
+
+# Deployment config describes the container; it does not belong inside it.
+#
+# Beyond tidiness, this is about the build cache: k8s/ sat in the same COPY
+# layer as the application, so editing a manifest invalidated it and produced a
+# fresh ~42MB image version (the bootsnap cache dominates that layer) for a
+# change that touched no Ruby at all. With it excluded, a manifest-only commit
+# rebuilds to a byte-identical layer that the registry deduplicates to nothing.
+/k8s/
