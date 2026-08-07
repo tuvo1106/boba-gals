@@ -86,14 +86,26 @@ RSpec.describe ClaimNextDrink do
       errors = Concurrent::Array.new
       claimed = Concurrent::Array.new
 
+      # Each station drains until the queue reports empty, rather than making a
+      # fixed number of calls. The earlier version gave 4 threads 3 attempts
+      # each — 12 calls for 10 drinks, so it tolerated exactly two nils and
+      # failed on any third. That made an arithmetic coincidence look like an
+      # invariant: it passed locally and failed on CI, where a lost race is more
+      # likely. The property worth asserting is that every drink is claimed
+      # exactly once, whatever order the threads get there in.
       threads = 4.times.map do |i|
         Thread.new do
           barrier.wait
-          3.times do
+          # Generous cap purely so a bug cannot hang the suite; reaching it is
+          # itself a failure, asserted below.
+          20.times do
             result = described_class.new.call(station: stations[i], barista: baristas[i])
-            claimed << result.id if result
+            break if result.nil?
+
+            claimed << result.id
           rescue StandardError => e
             errors << e
+            break
           ensure
             ActiveRecord::Base.connection_pool.release_connection
           end
@@ -105,6 +117,42 @@ RSpec.describe ClaimNextDrink do
       expect(claimed.size).to eq(10), "every drink should have been claimed"
       expect(claimed.uniq.size).to eq(claimed.size), "a drink was handed to two stations"
       expect(OrderItem.where(status: "in_progress").count).to eq(10)
+    end
+
+    # The regression behind the flake above. `claim_once` uses SKIP LOCKED, so a
+    # row another transaction holds is invisible rather than blocking — and with
+    # no wait between attempts the whole retry budget is spent inside that
+    # transaction. The barista is then told the queue is empty while a drink is
+    # sitting in it, which is precisely what §8 promises will not happen.
+    #
+    # This example sleeps in the *competing* thread on purpose: the duration of
+    # a peer's transaction is the thing under test, not incidental timing
+    # (docs/testing.md).
+    it "waits out a peer's in-flight transaction instead of reporting nothing queued" do
+      item = create(:menu_item, store: persistent_store)
+      order = create(:order, store: persistent_store)
+      create(:order_item, order: order, menu_item: item)
+
+      holding = Concurrent::CyclicBarrier.new(2)
+
+      # Holds the only queued drink locked for longer than a naive five
+      # immediate retries would survive, then releases it without claiming.
+      peer = Thread.new do
+        OrderItem.transaction do
+          OrderItem.where(status: "queued").lock("FOR UPDATE").to_a
+          holding.wait
+          sleep 0.05
+        end
+      ensure
+        ActiveRecord::Base.connection_pool.release_connection
+      end
+
+      holding.wait
+      claimed = described_class.new.call(station: stations[0], barista: baristas[0])
+      peer.join
+
+      expect(claimed).not_to be_nil, "gave up while a drink was still queued (§8)"
+      expect(claimed.status).to eq("in_progress")
     end
   end
 end
