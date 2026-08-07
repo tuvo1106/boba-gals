@@ -721,6 +721,18 @@ Local cluster: **kind**. Write the manifests by hand first — that is the learn
 | `redis` | StatefulSet | 1 | No persistence needed: every key (deficits, pointer, locks, pub/sub) is reconstructible or ephemeral by design (§6.5). `emptyDir` is acceptable. |
 | ingress | ingress-nginx | — | `/api` and `/cable` → `web`; everything else → `frontend`. `/cable` needs websocket-friendly annotations: `proxy-read-timeout: 3600`, `proxy-send-timeout: 3600`. |
 
+**Rollback is bounded by the schema, not by the registry.** The `migrate` Job runs *before* each rollout, and migrations do not revert with the image. Setting `web` back to an earlier SHA leaves the database wherever the failed release left it — so "how far back can I go" is a question about schema compatibility, and CI retaining N image versions has nothing to do with the answer.
+
+That makes the window one release by default, and longer only when a schema change is deliberately split across releases:
+
+1. **Expand.** Add the new column or table, nullable or defaulted. Nothing reads it yet, so the previous image still runs against this schema.
+2. **Migrate.** Deploy code that writes both shapes and tolerates reading either. Backfill here if needed.
+3. **Contract.** Remove the old column in a *later* release, once nothing running depends on it.
+
+A migration that drops or renames a column in the same release as the code depending on it is a one-way door: the previous image cannot run against the new schema, and the only way out is forward. That is an acceptable trade for some changes — it just has to be a decision rather than a discovery, and the PR's **Risk** section is where it gets recorded.
+
+This starts mattering at build step 5, when the scheduler begins changing schema.
+
 ### 14.3 Probes
 
 - `web` **liveness**: Rails' built-in `/up`. Deliberately *not* gated on the database — gating liveness on a dependency means a Postgres blip restarts every pod at once, turning a recoverable degradation into an outage. Restart is the right answer to a wedged process and the wrong one to a sick dependency.
