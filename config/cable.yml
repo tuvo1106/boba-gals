@@ -1,0 +1,19 @@
+# Redis in development as well as production, deliberately.
+#
+# DESIGN.md §14.4: ActionCable *must* use the Redis adapter, or broadcasts from
+# one `web` pod never reach subscribers on another — and `web` runs 2 replicas
+# from the first deploy (§14.2). The async adapter is single-process, so it
+# would work locally and fail in the cluster. Developing against the adapter we
+# deploy is the whole point of running Redis in compose (§12 step 0).
+development:
+  adapter: redis
+  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+  channel_prefix: boba_gals_development
+
+test:
+  adapter: test
+
+production:
+  adapter: redis
+  url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+  channel_prefix: boba_gals_production

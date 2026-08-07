@@ -22,6 +22,31 @@ Categories, in this order:
 
 ### Added
 
+- Containerized development environment (§12 step 0): `docker compose` runs Postgres,
+  Redis, the Rails API, a Sidekiq worker, and the Vite dev server. The `api` and `worker`
+  services run the same image with different commands, matching the production topology
+  (§14.1).
+- Production images for both `boba-api` (multi-stage, non-root) and `boba-frontend`
+  (Vite build served by nginx), per §14.1.
+- Rails 8.1 API application on PostgreSQL and Redis, with Sidekiq for background work —
+  no Solid Queue/Cache/Cable and no Kamal, per the design's locked Rails 8 note.
+- React 19 + TypeScript + Tailwind v4 frontend, with kiosk (64px) and web (44px) hit-target
+  minimums defined as theme tokens (§9.3, ADR-0003).
+- Test infrastructure: RSpec, FactoryBot, shoulda-matchers, and the ADR-0002 coverage
+  gates enforced in-process; Vitest and Testing Library for the frontend.
+- Ruby and Node versions pinned in `.ruby-version` and `.node-version`, read by mise
+  locally, by CI, and by both Dockerfiles.
+
+### Changed
+
+- ActionCable now uses the Redis adapter in development as well as production. The async
+  adapter is single-process, so it would work locally and silently fail across the two
+  `web` pods the design runs from the first deploy (§14.4).
+- `bin/docker-entrypoint` no longer runs `db:prepare` on boot. Migrations belong to the
+  `migrate` Job applied before each rollout (§14.2).
+- DESIGN.md's stack line now reads React 19 rather than React 18. Nothing in the design
+  depends on the version, and shadcn/Radix — which ADR-0003 commits to — target 19.
+
 - Project workflow scaffolding: `CLAUDE.md`, PR template, ADR log, testing conventions,
   and this changelog.
 - CI pipeline running rubocop, RSpec with coverage gates, and the frontend lint/type/test

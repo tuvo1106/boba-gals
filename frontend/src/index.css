@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Tailwind v4 is configured in CSS, not a JS config file (ADR-0003).
+ *
+ * Hit targets are a theme concern, not a per-component override: the kiosk
+ * floor is 64px and the web floor is 44px (DESIGN.md §9.3). Defining them once
+ * here is what keeps that requirement from rotting into scattered patches on
+ * individual components. */
+@theme {
+  --spacing-touch-kiosk: 4rem;  /* 64px — kiosk minimum hit target */
+  --spacing-touch-web: 2.75rem; /* 44px — web minimum hit target */
+}
