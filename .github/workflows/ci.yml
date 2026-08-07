@@ -331,23 +331,30 @@ jobs:
       # compressed, so without this the registry fills and pushes start failing
       # at whatever moment is least convenient.
       #
-      # Five is current plus four rollback targets. §14.5 has no progressive
-      # delivery, so a rollback is "redeploy an earlier SHA" — below about three
-      # that stops being possible. Most of the 500 MB is shared base layers that
-      # do not multiply per version; what actually accumulates is orphans.
+      # Three is current plus two rollback targets. §14.5 has no progressive
+      # delivery, so a rollback is "redeploy an earlier SHA", and below three
+      # that stops being possible.
+      #
+      # Three rather than five because it is safe under either way GitHub might
+      # account for storage. Measured: only the ~44MB app layer differs per
+      # commit — the Debian base, Ruby build, apt packages and gems are shared
+      # blobs. So three versions is ~180MB if billing counts deduplicated
+      # blobs, and ~450MB if it sums whole versions. Five would be ~210MB or
+      # ~755MB, and the second of those blows the 500MB private-repo quota.
+      # Not worth discovering which by hitting the error mid-deploy.
       - name: Prune old image versions
         uses: actions/delete-package-versions@v5
         with:
           package-name: boba-api
           package-type: container
-          min-versions-to-keep: 5
+          min-versions-to-keep: 3
 
       - name: Prune old frontend image versions
         uses: actions/delete-package-versions@v5
         with:
           package-name: boba-frontend
           package-type: container
-          min-versions-to-keep: 5
+          min-versions-to-keep: 3
 
   # Always runs, so branch protection has one stable required check to point at
   # even while the gated jobs above are still skipping.
