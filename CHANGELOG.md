@@ -30,5 +30,9 @@ Categories, in this order:
   and a guard against committing secret files (§14.6).
 - Quality-gate decisions recorded in [ADR-0002](docs/adr/0002-quality-gates.md): SimpleCov
   thresholds, mutation testing scoped to the scheduler, rswag-generated API docs.
+- Frontend styling decision recorded in
+  [ADR-0003](docs/adr/0003-tailwind-with-shadcn-as-needed.md): Tailwind project-wide from
+  build step 1, with shadcn/ui components pulled in individually where they earn their
+  place (§9.3, §10.6).
 
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
