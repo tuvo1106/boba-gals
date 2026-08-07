@@ -189,7 +189,21 @@ jobs:
       # pull pods from the Service *without* restarting them.
       - name: Readiness ejects pods when Redis goes, liveness does not restart them
         run: |
-          before=$(kubectl -n boba-gals get pods -l app=web -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}')
+          # bin/k8s-up ends with a rollout restart, which can leave a pod
+          # Terminating. Settle first, or the measurement below straddles a
+          # changing pod set.
+          kubectl -n boba-gals rollout status deployment/web --timeout=180s
+          kubectl -n boba-gals wait --for=delete pod -l app=web \
+            --field-selector=status.phase==Succeeded --timeout=60s 2>/dev/null || true
+
+          restarts() {
+            kubectl -n boba-gals get pods -l app=web \
+              -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}' \
+              | tr ' ' '\n' | awk '{ s += $1 } END { print s + 0 }'
+          }
+
+          echo "pods=$(kubectl -n boba-gals get pods -l app=web --no-headers | wc -l) restarts=$(restarts)"
+
           kubectl -n boba-gals scale statefulset/redis --replicas=0
           for _ in $(seq 1 30); do
             addrs=$(kubectl -n boba-gals get endpoints web -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null | wc -w | tr -d ' ')
@@ -198,9 +212,13 @@ jobs:
           done
           [ "$addrs" = "0" ] || { echo "::error::web stayed in the Service without Redis"; exit 1; }
 
-          after=$(kubectl -n boba-gals get pods -l app=web -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}')
-          echo "restarts before=[$before] after=[$after]"
-          [ "$before" = "$after" ] || { echo "::error::liveness restarted pods over a dependency outage"; exit 1; }
+          # A total, not a per-pod list. The first version compared
+          # '{restartCount}' strings and read [0 0 0] vs [0 0] — a pod finishing
+          # termination — as a restart. The property is simply that liveness
+          # never fired, so nothing should ever have restarted.
+          after=$(restarts)
+          echo "restarts after redis outage: $after"
+          [ "$after" = "0" ] || { echo "::error::liveness restarted pods over a dependency outage"; exit 1; }
 
           kubectl -n boba-gals scale statefulset/redis --replicas=1
           kubectl -n boba-gals rollout status statefulset/redis --timeout=120s
