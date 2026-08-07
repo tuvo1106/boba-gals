@@ -22,6 +22,18 @@ Categories, in this order:
 
 ### Added
 
+- Kitchen display: a barista signs in with a PIN at a station, taps once to start the next
+  drink and once to finish it, and can undo a mistap for 60 seconds. No confirmation
+  dialogs anywhere (§9.4, §12 step 2).
+- The kitchen screen updates live over ActionCable and always shows the next three drinks,
+  so a barista can pre-stage cups and toppings — which is where real throughput comes from
+  (§9.2, §9.4).
+- Two baristas tapping "start" at the same moment now each get a different drink rather
+  than one of them getting an error. Verified with a threaded test: every drink claimed
+  exactly once, no duplicates, no errors (§8, §11).
+- Order status is derived from its drinks, so an order becomes partly ready, then ready, on
+  its own — and an undone finish correctly moves it back (§5.1, §5.2).
+
 - Customers can place orders from the kiosk or the web (§12 step 1). Each drink is
   recorded as its own unit of work with its prep time frozen at ordering — base time plus
   the effect of every chosen option, so extra pearls really does mean fifteen more seconds
@@ -56,6 +68,13 @@ Categories, in this order:
   gates enforced in-process; Vitest and Testing Library for the frontend.
 - Ruby and Node versions pinned in `.ruby-version` and `.node-version`, read by mise
   locally, by CI, and by both Dockerfiles.
+
+### Fixed
+
+- Live kitchen updates would have failed in development and production with a gem loading
+  error. The Redis client was pinned a major version ahead of what ActionCable accepts, so
+  the pub/sub adapter §14.4 requires could not load — and the test suite could not see it,
+  because tests use a different adapter. Caught by exercising the running container.
 
 ### Changed
 

@@ -7,7 +7,13 @@ gem "puma", ">= 5.0"
 # Redis is load-bearing, not a cache (DESIGN.md Rails 8 note): scheduler deficits
 # and ring pointer (§6.5), the ETA debounce lock (§7.2), and ActionCable pub/sub
 # across pods (§14.4). This is why the Solid defaults are skipped.
-gem "redis", "~> 6.0"
+# Pinned to 5.x, not 6.x: ActionCable's Redis pub/sub adapter declares
+# `redis >= 4, < 6`, and with a 6.x gem the adapter fails to load at runtime
+# with a Gem::LoadError. Since §14.4 makes that adapter mandatory — without it
+# broadcasts from one web pod never reach subscribers on another — this
+# constraint is load-bearing, not cosmetic. spec/config/invariants_spec.rb
+# fails if the two ever drift apart again.
+gem "redis", "~> 5.0"
 
 # Background jobs: Sidekiq, not Solid Queue (§14.1). Recurring work — the ETA
 # idle tick (§7.2), abandoned-order sweep (§5.1), quality-timer checks (§9.6) —
