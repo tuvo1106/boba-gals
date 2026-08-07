@@ -70,9 +70,19 @@ threads = 8.times.map { Thread.new { ClaimNextDrink.new.call(station:, barista:)
 claimed = threads.map(&:value).compact
 ```
 
-Assert: every drink claimed exactly once, no duplicates, no exceptions surfaced. Use
-`ActiveRecord::Base.connection_pool` sized for the thread count, and disable transactional
-fixtures for these examples (`use_transactional_fixtures` hides `SKIP LOCKED` behavior).
+Assert: every drink claimed exactly once, no duplicates, no exceptions surfaced.
+
+Tag these `:no_transaction` (see `spec/support/concurrency.rb`). Transactional fixtures
+wrap each example in one connection's transaction, so other threads cannot see the
+uncommitted rows and the contention `SKIP LOCKED` exists to resolve never happens — the
+test passes while proving nothing. The tag swaps in truncation cleanup instead, and the
+test pool is sized at 16 so threads don't silently serialize.
+
+One trap worth knowing, because it produces a *passing-looking* wrong answer: calling
+`.first` on a locked relation replaces your batch limit with `LIMIT 1`, and PostgreSQL
+applies `LIMIT` during the scan rather than to the set it successfully locked. A contended
+row is skipped after the limit is already spent, so the query returns nothing while
+unclaimed drinks sit right behind it. Fetch the batch, then choose in Ruby.
 
 ## Golden tests
 
