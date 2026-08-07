@@ -646,8 +646,8 @@ Ship an **"Apply to store"** action that writes the current config to `stores.sc
 6. **Simulator core + lane ribbon.** Validate DRR actually delivers the flat line before trusting it live.
 7. **Forward-projection ETA + EWMA learning.** Replace the naive estimate.
 8. **Remakes, quality timer, offline handling, SMS (§9.7).**
-9. **Full dashboard: sweeps, ablation, staffing curve, apply-to-store.**
-10. **Hardening:** rate limiting (§13), Prometheus + Grafana (§15), TLS via cert-manager, HPA on `web` (§14.5).
+9. **Full dashboard: sweeps, ablation, staffing curve, apply-to-store.** **TLS via cert-manager must land before this ships** — see §14.5. The dashboard is the first browser surface behind the admin cookie session, and that cookie cannot work over plain http.
+10. **Hardening:** rate limiting (§13), Prometheus + Grafana (§15), HPA on `web` (§14.5).
 
 Steps 1–3 give a shop that functions; step 4 puts it somewhere real. Steps 5–6 are where the actual design claim gets tested. Do not skip step 6 and tune in production.
 
@@ -716,16 +716,19 @@ Local cluster: **kind**. Write the manifests by hand first — that is the learn
 |---|---|---|---|
 | `web` | Deployment | **2** | Two from the start, even though one would do — multi-pod flushes out hidden single-process assumptions (§14.4). Serves `/api` and mounts ActionCable in-process at `/cable` with the Redis pub/sub adapter. |
 | `worker` | Deployment | 1 | Sidekiq: ETA recomputes, sweeps, SMS, EWMA updates. |
-| `migrate` | Job | — | `bin/rails db:migrate`, applied before each web rollout (CI applies the Job and waits for completion, then updates image tags). Never run migrations on container boot. |
+| `migrate` | Job | — | `bin/rails db:prepare`, applied before each web rollout (CI applies the Job and waits for completion, then updates image tags). Never run migrations on container boot. `db:prepare` rather than `db:migrate` because the first deploy has no database to migrate, and the app 404s without a seeded store (`Store.first!`) or an admin user (§13.4) — the seed *is* the bootstrap. On every later run it migrates and nothing else. Needs an init container that waits for Postgres: the `postgres` Service is headless, so its DNS does not resolve until a pod is ready, and the Job otherwise spends its retry budget on `could not translate host name`. |
 | `postgres` | StatefulSet + PVC | 1 | In-cluster is fine — and instructive — for a learning project. A real production store would use a managed database; say so in the README and move on. |
 | `redis` | StatefulSet | 1 | No persistence needed: every key (deficits, pointer, locks, pub/sub) is reconstructible or ephemeral by design (§6.5). `emptyDir` is acceptable. |
 | ingress | ingress-nginx | — | `/api` and `/cable` → `web`; everything else → `frontend`. `/cable` needs websocket-friendly annotations: `proxy-read-timeout: 3600`, `proxy-send-timeout: 3600`. |
 
 ### 14.3 Probes
 
-- `web` liveness **and** readiness: Rails' built-in `/up`. Readiness gate on DB connectivity is automatic (`/up` raises if the app can't boot its connections).
+- `web` **liveness**: Rails' built-in `/up`. Deliberately *not* gated on the database — gating liveness on a dependency means a Postgres blip restarts every pod at once, turning a recoverable degradation into an outage. Restart is the right answer to a wedged process and the wrong one to a sick dependency.
+- `web` **readiness**: a separate `/readyz` that runs `SELECT 1` against Postgres and `PING` against Redis, returning 503 with a per-dependency breakdown. This has to be its own endpoint: `/up` returns 200 whenever the app booted and does not touch either dependency, so using it for readiness admits pods with no database into the Service. Redis counts because it is load-bearing, not a cache (§14.4) — a pod that cannot reach it cannot broadcast, cannot take the board's throttle lock, and cannot read the scheduler's deficits.
 - `worker` liveness: `sidekiq_alive` gem or a simple `pgrep`-style exec probe; no readiness (it serves no traffic).
-- `/api/v1/health` (§9.1) stays **business-level** — it answers "is the store taking orders," which includes `stores.accepting_orders`, not just "is the pod alive." The kiosk polls that one; the kubelet polls `/up`. Do not conflate them: an owner flipping `accepting_orders` off must not cause k8s to restart pods.
+- `/api/v1/health` (§9.1) stays **business-level** — it answers "is the store taking orders," which includes `stores.accepting_orders`, not just "is the pod alive." The kiosk polls that one; the kubelet polls `/up` and `/readyz`. Do not conflate them: an owner flipping `accepting_orders` off must not cause k8s to restart pods.
+
+Three endpoints, three questions, and every pair of them is dangerous to merge: *is the process alive* (`/up`), *can this pod serve* (`/readyz`), *is the shop open* (`/api/v1/health`).
 
 ### 14.4 Multi-pod correctness
 
@@ -740,12 +743,16 @@ Plus one k8s-ism: ActionCable **must** use the Redis adapter (`config/cable.yml:
 ### 14.5 Pipeline & later curriculum
 
 - CI (GitHub Actions, one workflow): test → build both images → push to GHCR → `kubectl apply -k k8s/overlays/prod` with the new SHA tag (via `kustomize edit set image`). No progressive delivery, no ArgoCD — this project doesn't need them; add them later *as* curriculum if desired.
-- Later, in order of learning value: kube-prometheus-stack (§15) → cert-manager + real TLS on the ingress → HPA on `web` (CPU-based is fine; the app is stateless per-request) → PodDisruptionBudget on `web`.
+- **cert-manager + real TLS on the ingress is not optional curriculum, and it cannot wait for step 10.** Two things break on plain http, and both are silent:
+  - **ActionCable refuses the connection.** Its production origin check allows same-origin over *https* only, so every websocket upgrade is rejected with `Request origin not allowed`. The board and KDS render their first paint from REST and then never update — §14.4's failure mode reached by a different route, with no error anywhere the user can see. Until TLS exists, `ACTIONCABLE_ALLOWED_ORIGINS` (ConfigMap, comma-separated) must name the http origin explicitly. It defaults to Rails' strict behaviour so that forgetting it fails closed.
+  - **The admin session cookie is dropped.** `force_ssl` marks it `Secure`, and browsers refuse to store `Secure` cookies from an http origin. Admin sign-in works with `curl` and silently does not work in a browser. **Do not weaken the cookie to work around this** — §13.4's whole point is that the surface changing live scheduler behaviour is not casually reachable. Ship TLS instead, before the step 9 dashboard.
+- Later, in order of learning value: kube-prometheus-stack (§15) → HPA on `web` (CPU-based is fine; the app is stateless per-request) → PodDisruptionBudget on `web`.
 
 ### 14.6 Configuration
 
-- **Secret** (k8s Secret): `DATABASE_URL`, `REDIS_URL`, `RAILS_MASTER_KEY`, later `TWILIO_*`.
-- **ConfigMap**: `RAILS_ENV`, `KIOSK_IPS`, log level.
+- **Secret** (k8s Secret): `DATABASE_URL`, `REDIS_URL`, `RAILS_MASTER_KEY`, `SEED_ADMIN_PASSWORD`, later `TWILIO_*`. Postgres' own `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` belong here too, beside `DATABASE_URL` rather than split into the ConfigMap — a connection string and the `initdb` values that have to agree with it drift the moment they live in two objects.
+- **ConfigMap**: `RAILS_ENV`, `KIOSK_IPS`, log level, `ACTIONCABLE_ALLOWED_ORIGINS` (§14.5).
+- `SEED_ADMIN_PASSWORD` is deploy-critical, not a convenience: `db/seeds.rb` falls back to a placeholder, and with `db:prepare` in the rollout path (§14.2) that fallback becomes the live admin password on the first deploy.
 - `stores.scheduler_config` stays in Postgres — it is runtime tuning owned by the dashboard's "apply to store" flow (§10.6), not deploy config. Never move it to env.
 
 ---
@@ -768,3 +775,4 @@ The simulator already defined what matters (§10.4). Production watches **the sa
 - **Order modification after placement.** Currently unsupported. If added, only items still in `queued` can change.
 - **Multi-store.** Schema is store-scoped throughout, and §14.4 removes the one-process-per-store assumption for a single store's pods. True multi-store mostly reduces to what's already namespaced (`sched:{store_id}:*` Redis keys, store-scoped channels); the real gaps are request routing to a store and admin scoping. Revisit before store #2.
 - **Peak-hour large-order policy.** Should catering orders above N drinks require a `promised_at` during peak windows? This is a business rule, but the scheduler already supports it via backward scheduling.
+- **Service mesh.** Considered and deferred. There is almost nothing to mesh: the only in-cluster hops are `web`/`worker` → Postgres and Redis, both TCP, so a mesh contributes L4 mTLS and none of the L7 retries, routing, or golden signals that justify one. Its metrics also do not answer §15's questions, which are business gauges under the simulator's definitions (§10.4). Two sharp edges if adopted anyway: a sidecar keeps the `migrate` Job (§14.2) from ever completing unless native sidecars are used, and ActionCable's shift-long websockets are a known source of idle-timeout trouble. The one real gap it would close is outlier ejection — readiness removes a pod that has lost a dependency, but not one that is Ready and serving 500s. That is not enough to carry the cost. Belongs after everything in §14.5, and after hitting a problem that calls for it.
