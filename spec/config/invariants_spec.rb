@@ -26,6 +26,16 @@ RSpec.describe "design invariants" do
 
       expect(config[:adapter]).to eq("test")
     end
+
+    # Declaring the adapter in cable.yml is not the same as being able to load
+    # it. ActionCable constrains the redis gem (`>= 4, < 6` as of 8.1), and a
+    # gem outside that range raises Gem::LoadError the first time anything
+    # broadcasts — in development and production only, since test uses the test
+    # adapter. That is a runtime failure the rest of the suite cannot see.
+    it "can actually load the redis adapter, not just name it" do
+      expect { require "action_cable/subscription_adapter/redis" }.not_to raise_error
+      expect(defined?(ActionCable::SubscriptionAdapter::Redis)).to be_truthy
+    end
   end
 
   describe "customer_phone hygiene (§13.5)" do

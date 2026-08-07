@@ -1,0 +1,48 @@
+# Marks a drink finished (§9.4) and re-derives its order's status.
+#
+# `finished` is terminal (§5.2). A drink that was genuinely made and is wrong is
+# a remake — a new row — never a reversal of this one. The only exception is the
+# 60-second undo, which corrects a mistap rather than a drink (UndoLastAction).
+class FinishDrink
+  Result = Struct.new(:success?, :item, :error, keyword_init: true)
+
+  # @param item [OrderItem]
+  # @return [FinishDrink::Result]
+  def call(item)
+    return failure("drink is not in progress") unless item.status == "in_progress"
+
+    item.update!(status: "finished", finished_at: Time.current)
+
+    SchedulerEvent.record!(
+      store: item.order.store,
+      event_type: "item_finished",
+      order_item: item,
+      payload: {
+        station_id: item.station_id,
+        barista_id: item.barista_id,
+        # Observed duration. Unused until the EWMA lands at build step 7 (§7.3),
+        # but recorded from the first finished drink so the history is already
+        # there when it does.
+        observed_seconds: (item.finished_at - item.started_at).round
+      }
+    )
+
+    order = RollUpOrderStatus.new.call(item.order)
+
+    if order.status == "ready"
+      SchedulerEvent.record!(store: order.store, event_type: "order_ready",
+                             payload: { order_id: order.id })
+      # The single ready SMS (§9.7) is enqueued from here at build step 8. It
+      # must never block or fail the transition.
+    end
+
+    KitchenBroadcast.call(order.store)
+    Result.new(success?: true, item: item)
+  end
+
+  private
+
+  def failure(message)
+    Result.new(success?: false, error: message)
+  end
+end

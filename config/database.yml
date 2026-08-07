@@ -17,6 +17,10 @@ development:
 test:
   <<: *default
   database: boba_gals_test
+  # The §11 concurrency specs run several threads that each check out their own
+  # connection. Too small a pool makes them serialize, and the test would pass
+  # while proving nothing about SKIP LOCKED.
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 16 } %>
 
 production:
   <<: *default
