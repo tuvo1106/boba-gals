@@ -71,6 +71,10 @@ schedule they get `OOMKilled` instead, because the limits then oversubscribe
 physical memory. Delete the cluster before resizing the VM
 (`bin/k8s-down`), or it comes back half-broken.
 
+CI stands the same cluster up on every push and drives it — order placed
+through the ingress, probes checked, Redis pulled out from under the pods — so a
+broken manifest fails there rather than on your machine.
+
 ## Tests
 
 ```bash

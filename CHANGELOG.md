@@ -22,6 +22,11 @@ Categories, in this order:
 
 ### Added
 
+- Every change is now deployed to a throwaway Kubernetes cluster and exercised before it
+  can be merged: an order is placed through the front door, the health checks are read, and
+  the cache is pulled out from under the running system to confirm it steps aside rather
+  than falling over. Container images are published on each merge, tagged with the exact
+  commit they were built from, so what is running is always traceable (§14.1, §14.5).
 - The shop runs on Kubernetes (§14.2, §12 step 4). `bin/k8s-up` builds both images, brings
   up a local cluster and deploys the whole system — two API pods, a background worker, the
   web frontend, Postgres and Redis — reachable at http://localhost:8080. `bin/k8s-down`
