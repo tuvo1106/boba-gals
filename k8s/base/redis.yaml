@@ -1,0 +1,65 @@
+# Redis in-cluster (§14.2). No persistence, deliberately.
+#
+# Every key is reconstructible or ephemeral by design: scheduler deficits and
+# the ring pointer rebuild from Postgres (§6.5), the board throttle and ETA
+# debounce are short-lived locks (§9.2, §7.2), and pub/sub has no state at all.
+# A cold Redis costs one round of unfairness, which §6.5 says is safe.
+#
+# `emptyDir` rather than a PVC, per §14.2. Redis is still a StatefulSet so it
+# keeps a stable name and a single writer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          # --save "" and --appendonly no turn off both persistence mechanisms.
+          # Without them Redis periodically forks to write an RDB into an
+          # emptyDir that is discarded anyway — pure cost.
+          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: data
+          emptyDir: {}

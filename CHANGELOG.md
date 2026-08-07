@@ -22,6 +22,26 @@ Categories, in this order:
 
 ### Added
 
+- The shop runs on Kubernetes (§14.2, §12 step 4). `bin/k8s-up` builds both images, brings
+  up a local cluster and deploys the whole system — two API pods, a background worker, the
+  web frontend, Postgres and Redis — reachable at http://localhost:8080. `bin/k8s-down`
+  takes it away again, either the app alone or the whole cluster.
+- The API now reports whether it can actually serve, not just whether it started. A pod
+  that has lost its database or Redis is taken out of rotation instead of receiving
+  requests it can only fail (§14.3, ADR-0008). A brief database problem no longer restarts
+  every pod — it just pauses traffic to them until it clears.
+- Schema changes run as their own step before new code goes live, and wait for the database
+  to be accepting connections first, so a slow-starting database no longer fails a deploy
+  (§14.2, ADR-0007).
+
+### Fixed
+
+- Live updates would have stopped working the moment the shop moved off a laptop. The
+  kitchen and board keep themselves current over a websocket, and the server refused every
+  one of those connections when running behind the cluster's ingress — so both screens
+  would have shown whatever was true when they were opened and never changed. The board
+  gives no sign of this; it just quietly goes stale (§14.4).
+
 - Admin sign-in and scheduler configuration (§13.4, §12 step 4). The owner can read and
   change how the scheduler behaves — quantum, aging, cohesion, the remake priority floor —
   without a console. This is locked behind a password from the first deploy, because those

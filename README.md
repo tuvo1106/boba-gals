@@ -42,6 +42,35 @@ docker compose up            # postgres, redis, api :3000, worker, vite :5173
 `api` and `worker` run the same image with different commands — the production
 topology (§14.1), rehearsed locally so it isn't discovered at deploy time.
 
+## Kubernetes
+
+```bash
+bin/k8s-up                   # kind cluster + ingress-nginx + build, load, deploy
+bin/k8s-down --app           # delete the app, keep the cluster (fast redeploy)
+bin/k8s-down                 # delete the cluster entirely
+bin/k8s-down --images        # ...and remove the locally built boba-*:dev images
+```
+
+The shop comes up at **http://localhost:8080** — board at `/board`.
+
+`bin/k8s-up` is idempotent: re-run it to redeploy after a code change. Both
+teardown modes destroy the dev database; the migrate Job re-seeds on the next
+bring-up (ADR-0007).
+
+Requires [kind](https://kind.sigs.k8s.io/) and `kubectl`, and a Docker VM with
+room for the whole stack — two `web` pods, two `frontend` pods, a worker,
+Postgres, Redis and ingress-nginx:
+
+```bash
+colima stop && colima start --cpu 6 --memory 8
+```
+
+Colima's 2 GiB default is not enough, and it fails twice over: pods first sit
+`Pending` with `Insufficient memory`, and once requests are small enough to
+schedule they get `OOMKilled` instead, because the limits then oversubscribe
+physical memory. Delete the cluster before resizing the VM
+(`bin/k8s-down`), or it comes back half-broken.
+
 ## Tests
 
 ```bash
@@ -65,6 +94,8 @@ separate CI step.
 | `app/scheduler/` | The DRR scheduler (§6). Pure Ruby — must not require Rails. |
 | `frontend/` | One React build serving kiosk, web, KDS, board, and dashboard (§9.3). |
 | `spec/scheduler/` | Pure-function specs. No DB, no Rails, milliseconds. |
+| `k8s/base/` | Hand-written manifests (§14.2), folded into Kustomize. |
+| `k8s/overlays/` | `dev` for kind, `prod` for the deploy CI targets. |
 | `docs/adr/` | Decisions made during implementation. |
 | `docs/testing.md` | Test conventions and the §11 scheduler checklist. |
 | `CLAUDE.md` | Working agreements — branches, commits, definition of done. |

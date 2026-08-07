@@ -1,0 +1,43 @@
+# One host, two backends (§14.2): /api and /cable to `web`, everything else to
+# `frontend`.
+#
+# Same-origin is not cosmetic. The admin session cookie is SameSite=Strict
+# (ADR-0006), so serving the dashboard from a different host than the API would
+# silently break sign-in.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boba
+  annotations:
+    # Websockets are long-lived; the default 60s read timeout would drop every
+    # ActionCable connection once a minute. §14.2 names both values.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # Longest-prefix wins in ingress-nginx, so /api and /cable are matched
+          # before the catch-all regardless of the order they appear in.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000
+          - path: /cable
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

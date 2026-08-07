@@ -1,0 +1,34 @@
+# §14.2: write the manifests by hand first — that is the learning — then fold
+# them into Kustomize. Helm is for third-party charts only (ingress-nginx,
+# kube-prometheus-stack, cert-manager), never for this app.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boba-gals
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - redis.yaml
+  - migrate-job.yaml
+  - web.yaml
+  - worker.yaml
+  - frontend.yaml
+  - ingress.yaml
+
+# Applied to every object, so `kubectl get all -l app.kubernetes.io/part-of=boba-gals`
+# is enough to see the whole application.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: boba-gals
+
+# Overlays set the tag. Left bare here so `kubectl apply -k k8s/base` cannot
+# accidentally deploy something untagged — §14.1 is explicit that images are
+# tagged with the git SHA and never `latest`.
+images:
+  - name: boba-api
+    newTag: dev
+  - name: boba-frontend
+    newTag: dev
