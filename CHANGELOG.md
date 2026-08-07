@@ -36,6 +36,12 @@ Categories, in this order:
 
 ### Fixed
 
+- A barista tapping "start next" could be told the queue was empty while drinks were still
+  waiting, if other baristas happened to be tapping at the same moment. The retries meant to
+  cover that case all fired within a few microseconds of each other — inside the split second
+  a colleague's tap holds the drink — so they were spent before the drink was ever released
+  (§8).
+
 - Live updates would have stopped working the moment the shop moved off a laptop. The
   kitchen and board keep themselves current over a websocket, and the server refused every
   one of those connections when running behind the cluster's ingress — so both screens

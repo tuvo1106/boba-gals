@@ -87,6 +87,22 @@ Full conventions: `docs/testing.md`. The short version:
   golden file must be explained in the PR body.
 - Write the test that would have caught the bug before fixing the bug.
 
+### Reproducing a flake
+
+**Narrow the code's timing, never widen the machine's load.** To reproduce a race that only
+fails on CI, shrink the constant that governs it — a retry budget, a timeout, a batch size —
+until the failure is deterministic, then restore it. That isolates the mechanism and runs in
+seconds.
+
+Do **not** generate synthetic load on the dev machine. It was tried here: twelve busy-wait
+loops reproduced a `ClaimNextDrink` flake zero times in fifteen minutes, while setting
+`MAX_ATTEMPTS = 1` reproduced it ten times out of twelve, immediately, and named the cause.
+The loops also outlived their cleanup — backgrounded processes reparent to PID 1, so
+`jobs -p` in a non-interactive shell does not find them — and sat at 100% CPU until noticed.
+
+Any background process must be cleaned up by explicit PID, and the cleanup verified rather
+than assumed.
+
 Run:
 
 ```bash
