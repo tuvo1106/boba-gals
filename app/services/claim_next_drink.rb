@@ -19,11 +19,26 @@ class ClaimNextDrink
   # the second tap gets the next drink, never an error and never nothing.
   MAX_ATTEMPTS = 5
 
+  # The retries have to span real time, not just repeat quickly.
+  #
+  # Without a wait, five attempts complete in well under a millisecond — far
+  # inside a peer's open transaction, so the budget is spent before the row it
+  # was waiting for is ever released, and the barista is told "nothing queued"
+  # while drinks are visibly waiting. That is exactly the failure §8 forbids,
+  # and it showed up as a flaky concurrency spec on CI while passing every time
+  # on a fast machine with a local database.
+  #
+  # Linear growth with jitter: four baristas who tapped at the same instant must
+  # not retry in lockstep, or they collide on every round. Worst case is roughly
+  # 150ms of waiting before giving up, which is imperceptible at a counter and
+  # orders of magnitude longer than the single UPDATE it is waiting on.
+  BACKOFF_SECONDS = 0.01
+
   # @param station [Station]
   # @param barista [Barista]
   # @return [OrderItem, nil] the claimed drink, or nil when nothing is queued
   def call(station:, barista:)
-    MAX_ATTEMPTS.times do
+    MAX_ATTEMPTS.times do |attempt|
       item = claim_once(station: station, barista: barista)
 
       if item
@@ -35,12 +50,21 @@ class ClaimNextDrink
 
       # Genuinely nothing to do, as opposed to losing every race this pass.
       return nil unless queued_remaining?(station)
+
+      backoff(attempt)
     end
 
     nil
   end
 
   private
+
+  # Only ever reached when this station lost every candidate to a peer, which
+  # means the alternative to waiting is telling a barista the queue is empty
+  # when it is not.
+  def backoff(attempt)
+    sleep(BACKOFF_SECONDS * (attempt + 1) * (0.5 + Kernel.rand))
+  end
 
   def claim_once(station:, barista:)
     OrderItem.transaction do
