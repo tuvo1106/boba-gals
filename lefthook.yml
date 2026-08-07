@@ -1,0 +1,51 @@
+# Git hooks. Install once with: lefthook install
+#
+# Hooks are guarded on the files they need so they stay quiet before the app is
+# generated (DESIGN.md §12 step 1).
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: |
+        set -e
+        msg=$(head -1 "{1}")
+        # Allow merges, reverts, and fixup/squash commits through untouched.
+        case "$msg" in
+          Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+        esac
+        pattern='^(feat|fix|docs|test|refactor|perf|chore|build|ci)(\([a-z0-9-]+\))?!?: .{1,}'
+        if ! printf '%s' "$msg" | grep -qE "$pattern"; then
+          echo "✗ Commit message must follow Conventional Commits."
+          echo "  got:      $msg"
+          echo "  expected: feat(scheduler): add deficit round robin dispatch"
+          echo "  types:    feat fix docs test refactor perf chore build ci"
+          echo "  scopes:   scheduler kds board ordering sim api web k8s ci docs"
+          exit 1
+        fi
+        if [ ${#msg} -gt 72 ]; then
+          echo "✗ Subject line is ${#msg} chars; keep it under 72."
+          exit 1
+        fi
+
+pre-commit:
+  parallel: true
+  commands:
+    rubocop:
+      glob: "*.rb"
+      run: test -f Gemfile && bundle exec rubocop --force-exclusion --autocorrect {staged_files} || true
+      stage_fixed: true
+
+    eslint:
+      root: "frontend/"
+      glob: "*.{ts,tsx}"
+      run: test -f frontend/package.json && npm run lint -- --fix {staged_files} || true
+      stage_fixed: true
+
+    # The design is explicit: secrets come from the environment only (§14.6),
+    # and customer_phone never lands in logs or fixtures (§13.5).
+    no-secrets:
+      run: |
+        if git diff --cached --name-only | grep -qE '(^|/)(\.env$|\.env\.|master\.key$|credentials/.*\.key$)'; then
+          echo "✗ Refusing to commit a secret file. See DESIGN.md §14.6."
+          exit 1
+        fi
