@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Tear down the local kind cluster (DESIGN.md §14.2).
+#
+#   bin/k8s-down          delete the whole cluster, including ingress-nginx
+#   bin/k8s-down --app    delete only the boba-gals namespace, keep the cluster
+#   bin/k8s-down --images also remove the locally built boba-*:dev images
+#
+# --app is the one to reach for while iterating: it leaves the cluster and
+# ingress-nginx in place, so the next `bin/k8s-up` skips several minutes of
+# setup. A full teardown is for reclaiming the VM's memory, which on a 2 GiB
+# Colima is most of the reason to do it.
+set -euo pipefail
+
+CLUSTER=boba-gals
+NAMESPACE=boba-gals
+TAG=dev
+
+APP_ONLY=false
+PRUNE_IMAGES=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --app) APP_ONLY=true ;;
+    --images) PRUNE_IMAGES=true ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
+
+step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
+
+if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+  echo "Cluster $CLUSTER does not exist — nothing to tear down."
+else
+  if [ "$APP_ONLY" = true ]; then
+    # Deleting the namespace takes the PVC with it, so the seeded database goes
+    # too. That is the intent: `bin/k8s-up` re-seeds via the migrate Job
+    # (ADR-0007), and a half-migrated database is not worth preserving on a
+    # cluster that exists to be thrown away.
+    step "Deleting namespace $NAMESPACE (this destroys the dev database)"
+    kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait
+  else
+    step "Deleting cluster $CLUSTER (this destroys the dev database)"
+    kind delete cluster --name "$CLUSTER"
+  fi
+fi
+
+if [ "$PRUNE_IMAGES" = true ]; then
+  # Only the tags this project builds. Never `docker image prune`, which would
+  # reach into images that have nothing to do with boba-gals.
+  step "Removing local dev images"
+  docker image rm "boba-api:$TAG" "boba-frontend:$TAG" 2>/dev/null || true
+fi
+
+step "Done"

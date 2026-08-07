@@ -1,0 +1,85 @@
+# Laptop-sized requests.
+#
+# The base manifests carry requests sized for a machine that is actually serving
+# a shop. A kind node is a container inside a 2 CPU / 2 GiB VM, and the base
+# figures reserve more than the whole node — postgres-0 sits Pending with
+# "Insufficient memory" and nothing else can schedule either.
+#
+# Scheduling this in the overlay rather than lowering the base is the point of
+# having overlays: dev differs from prod in what the hardware can give it, not
+# in what the application is.
+#
+# Limits are deliberately left alone. Requests are what the scheduler reserves;
+# limits are what a container may burst to, and a Rails boot briefly wants more
+# than its steady state.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  template:
+    spec:
+      containers:
+        - name: web
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          resources:
+            requests: { cpu: 50m, memory: 160Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  template:
+    spec:
+      containers:
+        - name: frontend
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  template:
+    spec:
+      containers:
+        - name: redis
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          resources:
+            requests: { cpu: 50m, memory: 160Mi }

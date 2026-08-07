@@ -1,0 +1,25 @@
+# Local cluster for build step 4 (§14.2).
+#
+# One control-plane node is enough: nothing in the design is scheduling-aware,
+# and the multi-pod correctness this project cares about (§14.4) is about
+# *processes* not sharing memory, which two pods on one node already prove.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      # ingress-nginx's kind deployment schedules onto a node carrying this
+      # label and tolerates the control-plane taint. Without it the controller
+      # stays Pending forever on a single-node cluster.
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Publishes the ingress on the host so http://localhost works the same way
+      # http://localhost:5173 did under compose — same-origin, which the admin
+      # session cookie requires (ADR-0006).
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP

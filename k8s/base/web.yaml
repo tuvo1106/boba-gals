@@ -1,0 +1,77 @@
+# The Rails API and ActionCable (§14.2).
+#
+# **Two replicas from the start**, even though one would do. §14.2 is explicit
+# that this is the point: a single pod hides in-process assumptions, and the
+# design has three places where such an assumption would be a bug — the ETA
+# debounce lock (§7.2), the board broadcast throttle (§9.2), and ActionCable's
+# adapter (§14.4). All three are Redis-backed for this reason, and running two
+# pods is what keeps them honest.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: boba-api
+          command: ["bundle", "exec", "puma", "-C", "config/puma.rb"]
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef: { name: boba-config }
+            - secretRef: { name: boba-secrets }
+          # Readiness checks Postgres and Redis; liveness only checks that the
+          # process is alive. §14.3 asked for /up on both, on the premise that
+          # it "raises if the app can't boot its connections" — Rails' own docs
+          # say otherwise, and a pod with no database answers /up 200 and gets
+          # sent traffic it can only fail. ADR-0008 records the split.
+          #
+          # Neither probe uses /api/v1/health: that is business-level and
+          # includes `stores.accepting_orders`, so an owner switching ordering
+          # off must never restart pods (§14.3).
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /up, port: http }
+            # Slower and more forgiving than readiness on purpose, and pointedly
+            # not gated on the database: a Postgres blip should pull pods from
+            # the Service, not restart all of them at once.
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 5
+          # Gives Puma time to finish in-flight requests and, more importantly,
+          # lets ActionCable clients see the socket close and reconnect to the
+          # surviving pod rather than hanging (§14.4). The board runs unattended
+          # all day; a silent dead socket is the worst failure it has.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 1Gi }
+      terminationGracePeriodSeconds: 30

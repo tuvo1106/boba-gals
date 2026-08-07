@@ -27,6 +27,19 @@ Rails.application.configure do
   # Skip http-to-https redirect for the default health check endpoint.
   # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
 
+  # ActionCable's origin check defaults to same-origin *over https*, derived
+  # from the request host. The cluster runs plain http until cert-manager
+  # arrives at build step 10 (§14.5), so every websocket upgrade is rejected
+  # with "Request origin not allowed" — and the board and KDS fall back to a
+  # static first paint that never updates. That is §14.4's failure mode reached
+  # by a different route, and it is silent from the client's side.
+  #
+  # Comma-separated, and left at Rails' strict default when unset, so
+  # forgetting it fails closed rather than open.
+  allowed_cable_origins = ENV.fetch("ACTIONCABLE_ALLOWED_ORIGINS", "")
+                             .split(",").map(&:strip).reject(&:empty?)
+  config.action_cable.allowed_request_origins = allowed_cable_origins if allowed_cable_origins.any?
+
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
   config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)

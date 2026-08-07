@@ -1,0 +1,57 @@
+# Schema migrations (§14.2). Applied *before* each web rollout, never on
+# container boot.
+#
+# Boot-time migrations mean two `web` pods racing the same schema change, and a
+# crash-looping pod retrying it forever. `spec/config/invariants_spec.rb` fails
+# if `bin/docker-entrypoint` ever grows a db: command again.
+#
+# Kustomize appends a content hash to the name, so each apply creates a *new*
+# Job rather than failing on an immutable existing one — Jobs cannot be updated
+# in place.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  backoffLimit: 3
+  # Kept briefly after success so `kubectl logs job/migrate-…` still works when
+  # a rollout is being investigated, then cleaned up on its own.
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      # Without this the Job races the database. `postgres` is a headless
+      # Service, so its DNS name does not resolve at all until a pod behind it
+      # is ready — the migration fails with "could not translate host name",
+      # burns a retry, and with backoffLimit 3 a slow Postgres start fails the
+      # whole deploy. Observed: three failures before the fourth attempt
+      # succeeded, one away from a failed rollout.
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: boba-secrets, key: POSTGRES_USER }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+      containers:
+        - name: migrate
+          image: boba-api
+          # §14.2 says `db:migrate`; this is `db:prepare`, which also creates
+          # the database and seeds it when it did not exist. ADR-0007 records
+          # why — `db:migrate` cannot bootstrap an empty cluster, and the app
+          # 404s without a seeded store (`Store.first!`). On every subsequent
+          # run `db:prepare` migrates and nothing else.
+          command: ["bin/rails", "db:prepare"]
+          envFrom:
+            - configMapRef: { name: boba-config }
+            - secretRef: { name: boba-secrets }
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits: { memory: 1Gi }

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Bring up the local kind cluster and deploy the dev overlay (DESIGN.md §14.2).
+#
+# Idempotent: safe to re-run to redeploy after a code change. Tear down with
+# `kind delete cluster --name boba-gals`.
+set -euo pipefail
+
+CLUSTER=boba-gals
+NAMESPACE=boba-gals
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TAG=dev
+
+cd "$ROOT"
+
+step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
+
+if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
+  step "Creating kind cluster"
+  kind create cluster --name "$CLUSTER" --config k8s/kind/cluster.yaml
+else
+  step "Cluster $CLUSTER already exists"
+fi
+
+kubectl config use-context "kind-$CLUSTER" >/dev/null
+
+# Helm is for third-party charts only (§14.2) — this app is always plain
+# manifests. ingress-nginx is exactly the case Helm is allowed for, but its
+# kind-specific manifest is simpler still and pinned to a known-good version.
+if ! kubectl get namespace ingress-nginx >/dev/null 2>&1; then
+  step "Installing ingress-nginx"
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/kind/deploy.yaml
+fi
+
+# `rollout status`, not `wait --for=condition=Ready pod`: the pod does not exist
+# for a moment after apply, and `wait` fails outright on an empty selector
+# rather than waiting for something to match it.
+step "Waiting for ingress-nginx"
+kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+
+step "Building images"
+docker build -t "boba-api:$TAG" --target production .
+docker build -t "boba-frontend:$TAG" frontend
+
+# There is no registry: kind nodes are containers with their own image store,
+# so images have to be side-loaded. This is why the dev overlay sets
+# imagePullPolicy to IfNotPresent.
+step "Loading images into the cluster"
+kind load docker-image "boba-api:$TAG" "boba-frontend:$TAG" --name "$CLUSTER"
+
+step "Applying manifests"
+kubectl apply -k k8s/overlays/dev
+
+# Migrations belong to the Job, never to container boot (§14.2). Waiting here
+# means `web` is not serving traffic against a schema that has not been applied.
+step "Waiting for migrations"
+kubectl -n "$NAMESPACE" wait --for=condition=complete job/migrate --timeout=300s
+
+# Pods that started before the Job finished may have crash-looped against a
+# missing schema; a restart clears that rather than waiting out the backoff.
+step "Restarting application pods"
+kubectl -n "$NAMESPACE" rollout restart deployment/web deployment/worker deployment/frontend
+kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
+kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=300s
+
+step "Ready"
+kubectl -n "$NAMESPACE" get pods
+printf '\nThe shop is at \033[1mhttp://localhost:8080\033[0m — board at /board\n'
