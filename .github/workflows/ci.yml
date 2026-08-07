@@ -10,13 +10,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Jobs are guarded on the files they need so CI stays green before the app is
-  # generated (DESIGN.md §12 step 1). Remove the guards once those files exist.
+  # The app doesn't exist yet (DESIGN.md §12 step 1). Rather than let CI be red
+  # from commit one, each suite is gated on the files it needs. Note that
+  # hashFiles() is not available in a job-level `if`, so the detection has to
+  # happen in a step and reach the other jobs through `needs`.
+  detect:
+    name: Detect suites
+    runs-on: ubuntu-latest
+    outputs:
+      rails: ${{ steps.check.outputs.rails }}
+      frontend: ${{ steps.check.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          test -f Gemfile && echo "rails=true" >> "$GITHUB_OUTPUT" || echo "rails=false" >> "$GITHUB_OUTPUT"
+          test -f frontend/package.json && echo "frontend=true" >> "$GITHUB_OUTPUT" || echo "frontend=false" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
 
   ruby:
     name: Rails — rubocop + rspec
     runs-on: ubuntu-latest
-    if: hashFiles('Gemfile') != ''
+    needs: detect
+    if: needs.detect.outputs.rails == 'true'
 
     services:
       postgres:
@@ -70,7 +86,8 @@ jobs:
   frontend:
     name: Frontend — lint + types + vitest
     runs-on: ubuntu-latest
-    if: hashFiles('frontend/package.json') != ''
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
     defaults:
       run:
         working-directory: frontend
@@ -89,18 +106,20 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test -- --run
 
-  # Always runs, so branch protection has a stable required check to point at
-  # even while the guarded jobs above are still skipping.
+  # Always runs, so branch protection has one stable required check to point at
+  # even while the gated jobs above are still skipping.
   ci:
     name: CI
     runs-on: ubuntu-latest
-    needs: [ruby, frontend]
+    needs: [detect, ruby, frontend]
     if: always()
     steps:
       - name: Check results
         run: |
-          echo "ruby=${{ needs.ruby.result }} frontend=${{ needs.frontend.result }}"
-          for r in "${{ needs.ruby.result }}" "${{ needs.frontend.result }}"; do
+          echo "detect=${{ needs.detect.result }}"
+          echo "ruby=${{ needs.ruby.result }}"
+          echo "frontend=${{ needs.frontend.result }}"
+          for r in "${{ needs.detect.result }}" "${{ needs.ruby.result }}" "${{ needs.frontend.result }}"; do
             case "$r" in
               success|skipped) ;;
               *) echo "::error::a required job did not pass"; exit 1 ;;
