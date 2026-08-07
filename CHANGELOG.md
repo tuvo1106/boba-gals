@@ -22,6 +22,26 @@ Categories, in this order:
 
 ### Added
 
+- Customers can place orders from the kiosk or the web (§12 step 1). Each drink is
+  recorded as its own unit of work with its prep time frozen at ordering — base time plus
+  the effect of every chosen option, so extra pearls really does mean fifteen more seconds
+  (§2, §4.1).
+- Menu endpoint exposing drinks, option groups, and availability, including the
+  selection limits the ordering screen uses to decide between single- and multi-choice
+  controls (§9.1).
+- Order lookup by pickup code, which acts as the access token — scoped to the current day,
+  so yesterday's code cannot read today's order (§13.1).
+- Kiosk health endpoint reporting whether the store is taking orders. It answers a business
+  question, not a "is the server alive" one, so switching ordering off never looks like an
+  unhealthy pod (§9.1, §14.3).
+- Full schema for stores, menu, orders, staff, prep-time statistics, and the append-only
+  scheduler event log, with the partial indexes the hot queries need (§4.1, §4.2).
+- Seed data with a real spread of prep times — 40 seconds for a Thai tea, 95 for a brown
+  sugar pearl drink. A menu where everything takes the same time would hide the problem
+  the scheduler exists to solve (§1).
+- Payment recorded as pay-at-counter behind a provider port, so terminal and Stripe
+  integrations can arrive later without touching the ordering flow (§9.3).
+
 - Containerized development environment (§12 step 0): `docker compose` runs Postgres,
   Redis, the Rails API, a Sidekiq worker, and the Vite dev server. The `api` and `worker`
   services run the same image with different commands, matching the production topology
