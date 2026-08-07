@@ -1,0 +1,86 @@
+# Postgres in-cluster (DESIGN.md §14.2).
+#
+# A real production store would use a managed database — this is a learning
+# project, and running the StatefulSet is the point. Said out loud here and in
+# the README so nobody mistakes it for a recommendation.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  # Headless: a StatefulSet's pods get stable DNS (postgres-0.postgres) rather
+  # than being load-balanced, which is what makes "the database" a fixed address
+  # instead of whichever replica answered.
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: boba-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: boba-secrets, key: POSTGRES_PASSWORD }
+            # In the Secret alongside DATABASE_URL, not the ConfigMap: initdb
+            # and the connection string have to name the same database, and
+            # keeping them in one object is what stops them drifting.
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: boba-secrets, key: POSTGRES_DB }
+            # The image's default data directory is the mount point itself, and
+            # a PVC arrives with a lost+found in it — which initdb refuses to
+            # treat as empty. A subdirectory sidesteps that.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              # -h 127.0.0.1 on purpose: without it pg_isready checks the unix
+              # socket, which answers during init while TCP is still refused, so
+              # the pod reports ready before anything can connect to it.
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

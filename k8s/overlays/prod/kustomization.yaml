@@ -1,0 +1,37 @@
+# The deploy target for CI (§14.5): test → build both images → push to GHCR →
+# `kubectl apply -k k8s/overlays/prod` with the new SHA tag, set by
+# `kustomize edit set image`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boba-gals
+
+resources:
+  - ../../base
+
+# No secretGenerator, deliberately. `boba-secrets` is created out of band and
+# never lives in this repo:
+#
+#   kubectl -n boba-gals create secret generic boba-secrets \
+#     --from-literal=POSTGRES_USER=... \
+#     --from-literal=POSTGRES_PASSWORD=... \
+#     --from-literal=POSTGRES_DB=boba_gals_production \
+#     --from-literal=DATABASE_URL=postgresql://... \
+#     --from-literal=REDIS_URL=redis://redis:6379/1 \
+#     --from-literal=RAILS_MASTER_KEY=... \
+#     --from-literal=SEED_ADMIN_PASSWORD=...
+#
+# SEED_ADMIN_PASSWORD must be a real value before the first deploy — db/seeds.rb
+# falls back to `changeme-in-any-real-deploy`, and the seed runs as part of the
+# migrate Job on an empty database (ADR-0007).
+
+images:
+  # `latest` is never used (§14.1). CI overwrites these with the git SHA; the
+  # placeholder is a tag that cannot exist, so a misconfigured pipeline fails to
+  # pull rather than silently deploying whatever was there before.
+  - name: boba-api
+    newName: ghcr.io/tuvo1106/boba-api
+    newTag: set-by-ci
+  - name: boba-frontend
+    newName: ghcr.io/tuvo1106/boba-frontend
+    newTag: set-by-ci

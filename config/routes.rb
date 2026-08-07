@@ -1,7 +1,13 @@
 Rails.application.routes.draw do
-  # Liveness and readiness for the kubelet (§14.3). Not the same thing as
-  # /api/v1/health, which is business-level.
+  # Liveness for the kubelet: is the process alive (§14.3)? Deliberately not
+  # gated on the database — a database blip should pull pods from the Service,
+  # not restart every one of them.
   get "up" => "rails/health#show", as: :rails_health_check
+
+  # Readiness: can this pod actually serve? Checks Postgres and Redis, which
+  # `/up` does not (ADR-0008). Neither is /api/v1/health, which answers the
+  # business question and must never drive the kubelet (§14.3).
+  get "readyz" => "readiness#show"
 
   namespace :api do
     namespace :v1 do

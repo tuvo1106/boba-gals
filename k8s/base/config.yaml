@@ -1,0 +1,28 @@
+# Non-secret configuration (§14.6): RAILS_ENV, log level, and the kiosk safelist.
+#
+# Connection details are *not* here. §14.6 puts DATABASE_URL and REDIS_URL in
+# the Secret, and the database name and credentials travel with them — splitting
+# a connection string across two objects is how the URL and the initdb values
+# drift apart and Postgres comes up with a database nobody connects to.
+#
+# `stores.scheduler_config` is deliberately absent: it is runtime tuning owned
+# by the dashboard's apply-to-store flow (§10.6) and stays in Postgres.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boba-config
+data:
+  RAILS_ENV: production
+  RAILS_LOG_LEVEL: info
+  # Puma threads and the ActiveRecord pool are the same number by design — a
+  # pool smaller than the thread count means threads queueing on connections
+  # under exactly the load the extra threads were added for.
+  RAILS_MAX_THREADS: "5"
+  # §13.2's kiosk safelist: a busy Saturday from one store IP would otherwise
+  # trip the order throttle. Empty until Rack::Attack lands at build step 10.
+  KIOSK_IPS: ""
+  # Comma-separated origins allowed to open a websocket. Empty here on purpose:
+  # unset means Rails' strict same-origin-over-https default, which is correct
+  # once cert-manager lands (§14.5) and wrong before it. The dev overlay sets
+  # the plain-http origin kind serves on; a real deploy sets its https host.
+  ACTIONCABLE_ALLOWED_ORIGINS: ""

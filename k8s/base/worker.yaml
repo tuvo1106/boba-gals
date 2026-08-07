@@ -1,0 +1,45 @@
+# Sidekiq (§14.1, §14.2). Same image as `web`, different command — which is the
+# whole reason the Dockerfile has one runtime stage rather than two.
+#
+# Today it runs the board's trailing broadcast flush (§9.2). It gains the ETA
+# recompute and idle tick (§7.2) at step 7, and the abandoned-order sweep
+# (§5.1), quality-timer checks (§9.6) and SMS (§9.7) at step 8 — all via
+# sidekiq-cron, never cron in a container.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: boba-api
+          command: ["bundle", "exec", "sidekiq"]
+          envFrom:
+            - configMapRef: { name: boba-config }
+            - secretRef: { name: boba-secrets }
+          # Liveness only — it serves no traffic, so there is nothing for a
+          # readiness gate to gate (§14.3). A process check rather than the
+          # sidekiq_alive gem: one fewer dependency and one fewer port, and it
+          # answers the question the kubelet is actually asking.
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "sidekiq"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 384Mi }
+            limits: { memory: 1Gi }
+      # Sidekiq's default shutdown gives running jobs 25s to finish before they
+      # are pushed back to Redis. The grace period has to exceed that or
+      # Kubernetes SIGKILLs the process mid-drain.
+      terminationGracePeriodSeconds: 40

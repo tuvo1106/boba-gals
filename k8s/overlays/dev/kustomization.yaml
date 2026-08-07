@@ -1,0 +1,65 @@
+# Local kind cluster (§14.2).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boba-gals
+
+resources:
+  - ../../base
+
+# Throwaway values for a cluster that lives on a laptop and is deleted with
+# `kind delete cluster`. They are committed on purpose so `bin/k8s-up` works
+# from a clean checkout with no setup step.
+#
+# Nothing here is reused anywhere: prod's Secret is created out of band and
+# never generated from a file in this repo. The `no-secrets` lefthook guard and
+# the deny rules in .claude/settings.json still cover the real ones.
+secretGenerator:
+  - name: boba-secrets
+    literals:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dev-only-not-a-real-password
+      - POSTGRES_DB=boba_gals_production
+      - DATABASE_URL=postgresql://postgres:dev-only-not-a-real-password@postgres:5432/boba_gals_production
+      - REDIS_URL=redis://redis:6379/1
+      # Rails needs *a* secret_key_base in production. Supplying it directly
+      # avoids putting the real config/master.key into a committed file — the
+      # dev cluster reads no encrypted credentials, so it needs nothing more.
+      # Prod's Secret carries RAILS_MASTER_KEY instead (§14.6).
+      - SECRET_KEY_BASE=dev0000000000000000000000000000000000000000000000000000000000000dev
+      - SEED_ADMIN_PASSWORD=dev-admin
+
+# Kustomize hashes generated Secrets and rewrites references, so changing a
+# value here rolls the pods that consume it. Disabled: the hash suffix would
+# also have to be threaded into anything referring to the Secret by literal
+# name, and on a laptop cluster a manual `kubectl rollout restart` is cheaper
+# than that coupling.
+generatorOptions:
+  disableNameSuffixHash: true
+
+# kind publishes the ingress on http://localhost:8080 (k8s/kind/cluster.yaml).
+# Without this ActionCable rejects the upgrade — the origin is plain http and
+# its production default is same-origin over https only.
+configMapGenerator:
+  - name: boba-config
+    behavior: merge
+    literals:
+      - ACTIONCABLE_ALLOWED_ORIGINS=http://localhost:8080
+
+images:
+  - name: boba-api
+    newTag: dev
+  - name: boba-frontend
+    newTag: dev
+
+patches:
+  - path: resources.yaml
+  # Images are side-loaded with `kind load docker-image`, not pulled — there is
+  # no registry. Without this the kubelet tries to pull `boba-api:dev` from
+  # Docker Hub and the pods sit in ErrImagePull.
+  - target:
+      kind: Deployment|Job
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
