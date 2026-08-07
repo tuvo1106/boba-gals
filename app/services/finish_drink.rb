@@ -36,7 +36,7 @@ class FinishDrink
       # must never block or fail the transition.
     end
 
-    KitchenBroadcast.call(order.store)
+    BroadcastStoreViews.call(order.store)
     Result.new(success?: true, item: item)
   end
 

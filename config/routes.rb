@@ -16,6 +16,9 @@ Rails.application.routes.draw do
       get "orders/:pickup_code", to: "orders#show",
           constraints: { pickup_code: /[A-Za-z0-9]{4}/ }
 
+      # Customer board — public (§9.5, §13.1).
+      get "board", to: "board#show"
+
       # Kitchen display (§9.1). Everything below the session requires a station
       # token (§13.3).
       namespace :kds do

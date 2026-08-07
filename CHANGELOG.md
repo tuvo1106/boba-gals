@@ -22,6 +22,20 @@ Categories, in this order:
 
 ### Added
 
+- Customer board (§9.5, §12 step 3): two columns readable across the shop, showing who is
+  waiting and who can collect. Names appear as first name and pickup code only — if two
+  Sarahs are waiting, the code tells them apart (§3).
+- Waits are shown in whole minutes, and anything under two minutes reads "Almost ready".
+  A countdown by the second would be false precision, and customers learn to distrust it.
+- The board updates itself as drinks are placed, started, and finished. A screen left on
+  the wall all day needs no attention: it reconnects on its own and shows a quiet
+  "Reconnecting…" to staff while it does.
+- A ready name stays on the board for five minutes and then makes room for the next one.
+  Pickup is not tracked — nobody taps anything at handoff (ADR-0005).
+- Estimated waits account for the queue in front of an order rather than the shop's total
+  workload, so the next order and the tenth show different numbers (ADR-0004). Order-ahead
+  orders no longer inflate the wait for everyone standing at the counter.
+
 - Kitchen display: a barista signs in with a PIN at a station, taps once to start the next
   drink and once to finish it, and can undo a mistap for 60 seconds. No confirmation
   dialogs anywhere (§9.4, §12 step 2).
@@ -78,6 +92,12 @@ Categories, in this order:
 
 ### Changed
 
+- Placing an order now reaches the kitchen and the board immediately. Previously the KDS
+  only learned about it when someone refreshed (§9.2).
+- The wait quoted at ordering time now includes the safety margin the board uses, so the
+  number a customer is told and the number they then watch are computed the same way
+  (§7.1). ETA error and bias are measured against that quote (§10.4), and comparing two
+  differently-computed numbers would have made the metric meaningless.
 - ActionCable now uses the Redis adapter in development as well as production. The async
   adapter is single-process, so it would work locally and silently fail across the two
   `web` pods the design runs from the first deploy (§14.4).
