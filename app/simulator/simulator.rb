@@ -24,6 +24,31 @@ module Simulator
                      :first_ready_at, :picked_up_at, :promised_at, :reneged, :web,
                      keyword_init: true) do
     def wait_seconds = ready_at && (ready_at - arrived_at)
+
+    # What the *customer* ordered. `items` grows when a drink is remade (§5.2),
+    # so counting it would move a remade 2-drink order into §10.4's "3-6" class
+    # — and remade orders are slow ones, carrying extra work and §6.4's priority
+    # floor, so dropping them out of "1-2" biases the headline number optimistic.
+    def ordered_items = items.reject(&:remake?)
+
+    def ordered_size = ordered_items.size
+
+    # Wait minus the work the order itself brought — the classic flow-time
+    # decomposition, and the only part a scheduler can act on.
+    #
+    # The critical path, not the sum: with idle stations a 2-drink order's
+    # drinks are made in parallel, so the least time it could possibly take is
+    # its slowest drink. Subtracting the sum would report negative queueing.
+    #
+    # A remade order therefore reads as having queued through its own failure —
+    # the wasted attempt is in `wait_seconds` but not in the critical path.
+    # Deliberate: the customer did not ask for the drink to be spilled, so from
+    # their side that time is indistinguishable from queueing.
+    def queue_seconds
+      return nil unless wait_seconds
+
+      [ wait_seconds - items.map(&:prep_seconds).max, 0.0 ].max
+    end
     def reneged? = reneged
 
     # ready_at − first_ready_at: how long the earliest drink sat while the rest

@@ -1098,3 +1098,15 @@ them is attributable to the change and not to luck. The subtlety is that a singl
 generator does not achieve this — if a change reorders when draws happen, the two runs
 consume the stream differently and diverge. The fix is an independent substream per entity,
 so a draw about a given drink is the same draw whenever that drink is made (ADR-0011).
+
+**Round robin (RR)** — serve one item from each queue in turn, then start again. Fair in
+*turns*, which is only fair in *time* if every item costs the same. DRR is RR plus a deficit
+counter, which is what converts equal turns into equal time (§6.3, ADR-0013).
+
+**Shortest job first (SJF)** — always serve the cheapest waiting item. Minimises mean wait,
+provably so on one server, and starves anything expensive while doing it. Kept as a benchmark
+arm rather than a policy: it bounds what fairness costs (§6.3).
+
+**Starvation** — a queue that never gets served because something is always ahead of it. The
+failure every fair-queueing algorithm exists to rule out, and what §6.2's aging guarantees
+against.

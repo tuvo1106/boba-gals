@@ -44,9 +44,13 @@ function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides 
           orders: 385, drinks: 757,
           wait_seconds: { p50: 60, p90: 120, p99: 300 },
           by_size_class: {
-            '1-2': { orders: 300, p50: 60, p90: 129.1, p99: 200 },
-            '3-6': { orders: 60, p50: 100, p90: 200, p99: 400 },
-            '7+': { orders: 25, p50: 300, p90: 494.8, p99: 900 },
+            '1-2': { orders: 300, p90_meaningful: true, p50: 60, p90: 129.1, p99: 200 },
+            '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
+            '7+': { orders: 25, p90_meaningful: true, p50: 300, p90: 494.8, p99: 900 },
+          },
+          wait_by_drink_cost: {
+            cheap: { orders: 200, p90: 100 }, dear: { orders: 40, p90: 127 }, ratio: 1.27,
+            comparable: true,
           },
           station_utilisation: 0.364,
           cohesion_spread_p90: 40,
@@ -100,7 +104,7 @@ describe('DashboardScreen', () => {
       await renderRun()
 
       expect(screen.getByText(/decides staffing/i)).toBeInTheDocument()
-      expect(screen.getByText(/replay this exact day/i)).toBeInTheDocument()
+      expect(screen.getByText(/a 95s drink takes 95s under any policy/i)).toBeInTheDocument()
     })
 
     // §10.4's threshold: past ~85% queues grow nonlinearly.
@@ -163,6 +167,83 @@ describe('DashboardScreen', () => {
       await user.click(await screen.findByRole('button', { name: 'clear' }))
 
       expect(screen.queryByRole('button', { name: 'clear' })).not.toBeInTheDocument()
+    })
+  })
+
+  // A p90 over five observations is the maximum, not a percentile — and it sat
+  // on screen next to one computed from 300 orders.
+  describe('when a figure has too few samples to mean anything', () => {
+    it('says the 7+ figure is one order rather than a percentile', async () => {
+      serveRun({
+        metrics: {
+          by_size_class: {
+            '1-2': { orders: 300, p90_meaningful: true, p50: 60, p90: 129.1, p99: 200 },
+            '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
+            '7+': { orders: 5, p90_meaningful: false, p50: 300, p90: 4659, p99: 4659 },
+          },
+        },
+      })
+      render(<DashboardScreen />)
+
+      expect(await screen.findByText(/only 5 catering orders/i)).toBeInTheDocument()
+      expect(screen.getByText(/slowest one rather than a percentile/i)).toBeInTheDocument()
+    })
+
+    it('trusts the figure once there are enough of them', async () => {
+      await renderRun()
+
+      expect(screen.getByText(/over 25 of them/i)).toBeInTheDocument()
+    })
+
+    // The headline number had no guard at all, which is what let the 7+ figure
+    // ship as a percentile over five orders.
+    it('guards the headline small-order figure too', async () => {
+      serveRun({
+        metrics: {
+          by_size_class: {
+            '1-2': { orders: 4, p90_meaningful: false, p50: 60, p90: 129.1, p99: 200 },
+            '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
+            '7+': { orders: 25, p90_meaningful: true, p50: 300, p90: 494.8, p99: 900 },
+          },
+        },
+      })
+      render(<DashboardScreen />)
+
+      expect(await screen.findByText(/only 4 small orders/i)).toBeInTheDocument()
+    })
+
+    // Zero is not a perfect score. Rendering it green was the same bug as the
+    // 7+ percentile, reintroduced by the metric added to expose that one.
+    it('shows no penalty rather than a flawless one when nothing is comparable', async () => {
+      serveRun({
+        metrics: {
+          wait_by_drink_cost: { cheap: { orders: 0, p90: 0 }, dear: { orders: 0, p90: 0 }, ratio: 0, comparable: false },
+        },
+      })
+      render(<DashboardScreen />)
+
+      expect(await screen.findByText('—')).toBeInTheDocument()
+      expect(screen.getByText(/not enough of one kind to compare/i)).toBeInTheDocument()
+      expect(screen.queryByText('0.00×')).not.toBeInTheDocument()
+    })
+  })
+
+  // Below saturation every policy dispatches almost the same order, so the
+  // dashboard must not invite a comparison it cannot support.
+  describe('when the shop is too quiet to compare policies', () => {
+    it('warns at low utilisation', async () => {
+      serveRun({ metrics: { station_utilisation: 0.34 } })
+      render(<DashboardScreen />)
+
+      expect(await screen.findByText(/within noise/i)).toBeInTheDocument()
+    })
+
+    it('stays quiet once there is a queue to schedule', async () => {
+      serveRun({ metrics: { station_utilisation: 0.8 } })
+      render(<DashboardScreen />)
+      await screen.findByText(/small-order p90/i)
+
+      expect(screen.queryByText(/within noise/i)).not.toBeInTheDocument()
     })
   })
 

@@ -43,6 +43,9 @@ export interface TimelineDrink {
 }
 
 /** The response from POST /api/v1/admin/simulations (§9.1). */
+/** §6.3. `rr` and `sjf` are simulator-only comparison arms. */
+export type Policy = 'drr' | 'fifo' | 'rr' | 'sjf'
+
 export interface SimulationRun {
   seed: number
   stations: number
@@ -56,11 +59,19 @@ export interface SimulationRun {
     station_utilisation: number
     reneged: number
     remakes: number
+    /** "Does your wait depend on what you ordered?" — 1.0 means no (§6.1). */
+    wait_by_drink_cost: {
+      cheap: { orders: number; p90: number }
+      dear: { orders: number; p90: number }
+      /** False when either side is too small to support the comparison. */
+      comparable: boolean
+      ratio: number
+    }
     quality_breach_rate: number
     /** The same, over multi-drink orders only — where cohesion is judged (§6.4, §9.6). */
     quality_breach_rate_multi: number
     wait_seconds: { p50: number; p90: number; p99: number }
-    by_size_class: Record<string, { orders: number; p50: number; p90: number; p99: number }>
+    by_size_class: Record<string, { orders: number; p90_meaningful: boolean; p50: number; p90: number; p99: number }>
   }
 }
 

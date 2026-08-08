@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react'
 import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { shopClock } from './clock'
-import type { SimulationRun } from '../api/types'
+import type { Policy, SimulationRun } from '../api/types'
+
+/** §6.3's arms, in the order the ablation reads: least fair to most. */
+const POLICIES: { id: Policy; title: string }[] = [
+  { id: 'fifo', title: 'Strict arrival order. Best for the catering order, worst for everyone behind it.' },
+  { id: 'rr', title: 'One drink per order per turn, ignoring how long each takes. DRR without the deficit.' },
+  { id: 'drr', title: 'Deficit round robin: equal barista *time* per order rather than equal turns.' },
+  { id: 'sjf', title: 'Always the shortest queued drink. The mean-wait floor, and never a shippable policy.' },
+]
 
 /**
  * The simulation dashboard (DESIGN.md §10.6), starting with its signature
@@ -19,7 +27,7 @@ export function DashboardScreen() {
   const [previous, setPrevious] = useState<{ run: SimulationRun; policy: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [seed, setSeed] = useState(7)
-  const [policy, setPolicy] = useState<'drr' | 'fifo'>('drr')
+  const [policy, setPolicy] = useState<Policy>('drr')
   // Zoom. A full day is ~700 drinks and every capsule would be sub-pixel; 20
   // minutes shows about 40. Wider answers "does this hold all day", narrower
   // answers "what exactly happened here".
@@ -114,10 +122,14 @@ export function DashboardScreen() {
 
         {/* §6.3's control arm, selectable — seeing FIFO next to DRR is the
             comparison the whole design rests on. */}
-        <div className="flex gap-1 font-mono text-xs">
-          {(['drr', 'fifo'] as const).map((p) => (
+        {/* §6.3's arms. RR is DRR without the deficit and SJF is the mean-wait
+            floor; both are simulator-only — `UpdateSchedulerConfig` refuses
+            them, because SJF starves large orders whenever drink cost tracks
+            order size. */}
+        <div className="flex gap-1 font-mono text-xs" role="group" aria-label="policy">
+          {POLICIES.map(({ id: p, title }) => (
             <button
-              key={p} onClick={() => { setPolicy(p); go(seed, p) }}
+              key={p} onClick={() => { setPolicy(p); go(seed, p) }} title={title}
               className={`px-2 py-0.5 uppercase ${policy === p ? 'bg-amber-600 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'}`}
             >
               {p}
@@ -223,6 +235,15 @@ export function DashboardScreen() {
 
       {run && (
         <>
+          {run.metrics.station_utilisation < 0.6 && (
+            <p className="mb-3 border-l-2 border-neutral-700 pl-3 font-mono text-xs text-neutral-500">
+              At {pct(run.metrics.station_utilisation)} utilisation there is rarely a queue, so
+              every policy dispatches almost the same order and the waits above are within noise
+              of each other. Raise demand or drop a station before comparing arms — §10.3:
+              “flat arrivals will make everything look fine”.
+            </p>
+          )}
+
           <Verdict run={run} policy={policy} previous={previous} />
 
           <LaneRibbon
@@ -238,12 +259,23 @@ export function DashboardScreen() {
               that decides whether to add a fourth station. */}
           <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-3 font-mono text-xs sm:grid-cols-2 lg:grid-cols-4">
             <Figure
-              label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`} accent
-              hint="9 of 10 orders of 1–2 drinks were ready within this. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4)."
+              label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`}
+              accent={run.metrics.by_size_class['1-2'].p90_meaningful}
+              state={run.metrics.by_size_class['1-2'].p90_meaningful ? undefined : 'warn'}
+              hint={
+                run.metrics.by_size_class['1-2'].p90_meaningful
+                  ? `9 of 10 orders of 1–2 drinks were ready within this, over ${run.metrics.by_size_class['1-2'].orders} of them. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4).`
+                  : `Only ${run.metrics.by_size_class['1-2'].orders} small orders in this run, so this is close to their slowest rather than a percentile.`
+              }
             />
             <Figure
               label="7+ p90" value={`${run.metrics.by_size_class['7+'].p90}s`}
-              hint="The same for catering orders. Expected to be higher — they are more drinks. The claim is that it rises while the line above does not."
+              state={run.metrics.by_size_class['7+'].p90_meaningful ? undefined : 'warn'}
+              hint={
+                run.metrics.by_size_class['7+'].p90_meaningful
+                  ? `The same for catering orders, over ${run.metrics.by_size_class['7+'].orders} of them. Expected to be higher — they are more drinks. The claim is that it rises while the line above does not.`
+                  : `Only ${run.metrics.by_size_class['7+'].orders} catering orders in this run, so this is their slowest one rather than a percentile. Raise demand to get enough of them to compare policies on.`
+              }
             />
             <Figure
               label="utilisation" value={pct(run.metrics.station_utilisation)}
@@ -268,9 +300,21 @@ export function DashboardScreen() {
               state={run.metrics.quality_breach_rate_multi > 0.25 ? 'warn' : 'good'}
               hint={`Drinks in multi-drink orders that waited over 5 minutes on the counter — ice melts, and this is what cohesion exists to reduce (§9.6). Across all orders it is ${pct(run.metrics.quality_breach_rate)}, but a lone drink's wait is just the customer walking over, which no schedule can improve.`}
             />
+            {/* Discriminates where p90 cannot: at default demand every policy
+                has the same p90, but SJF already spreads this 5.6x. */}
             <Figure
-              label="seed" value={String(run.seed)}
-              hint="Type this seed above to replay this exact day. Every run is a pure function of it (§10.2)."
+              label="ordered-a-slow-drink penalty"
+              value={run.metrics.wait_by_drink_cost.comparable ? `${run.metrics.wait_by_drink_cost.ratio.toFixed(2)}×` : '—'}
+              state={
+                !run.metrics.wait_by_drink_cost.comparable ? 'warn'
+                  : run.metrics.wait_by_drink_cost.ratio > 5 ? 'bad'
+                  : run.metrics.wait_by_drink_cost.ratio > 3 ? 'warn' : 'good'
+              }
+              hint={
+                run.metrics.wait_by_drink_cost.comparable
+                  ? `How much longer a small order queues before its drinks are started when it ordered slow ones (≥90s, n=${run.metrics.wait_by_drink_cost.dear.orders}) rather than quick ones (≤50s, n=${run.metrics.wait_by_drink_cost.cheap.orders}). Queueing only — a 95s drink takes 95s under any policy. Compare arms at the same demand rather than reading the number alone: the achievable floor falls as the shop fills.`
+                  : `Not enough of one kind to compare — ${run.metrics.wait_by_drink_cost.cheap.orders} quick and ${run.metrics.wait_by_drink_cost.dear.orders} slow. Raise demand or widen the run.`
+              }
             />
           </dl>
         </>
@@ -326,8 +370,8 @@ function Verdict({
         </p>
       ) : (
         <p className="mt-1 font-mono text-xs text-neutral-600">
-          Switch policy to compare the same day under {policy === 'drr' ? 'FIFO' : 'DRR'} —
-          identical arrivals, identical drinks (ADR-0011).
+          Switch policy to compare the same day under another arm — identical
+          arrivals, identical drinks (ADR-0011).
         </p>
       )}
     </section>

@@ -21,6 +21,15 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- A drink-cost penalty on the dashboard: how much longer a small order queues when it
+  ordered slow drinks rather than quick ones. It is the only figure that separates the
+  scheduling policies at the shop's normal demand — SJF reads 8.5× where every wait
+  percentile says it is the best policy on the board (§6.1).
+- Two comparison arms in the simulator, `rr` and `sjf` (§6.3, ADR-0013). Plain round robin is
+  DRR without the deficit, so it isolates what the deficit is worth — 19% off small-order p90
+  at 80% utilisation. Shortest-job-first is the mean-wait floor, so "DRR beats FIFO" becomes a
+  position on a scale rather than a comparison against the worst option. Both are
+  simulator-only; the store still accepts `drr` and `fifo` only.
 - Simulation dashboard can scrub to any part of the day, with the hourly arrival
   profile drawn into the control so the peaks are findable rather than guessed (§10.6).
 - "Find order" jumps the ribbon to where a given order was actually made and keeps
@@ -92,6 +101,17 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- Wait percentiles are reported by the number of drinks the customer *ordered*. A remake adds
+  a drink to the order (§5.2), which moved remade 2-drink orders out of the "1–2" class — and
+  since remade orders are slow ones, that made the headline small-order figure look about 2%
+  better than it was.
+- The dashboard no longer presents a "7+ p90" computed from five orders as if it were a
+  percentile. Below ten samples nearest-rank returns the maximum, so all four policies were
+  showing the same single worst catering order. Every wait figure now carries its sample
+  count, and says so when there are too few.
+- The dashboard says when the shop is too quiet to compare scheduling policies at all. At the
+  default demand utilisation is 34%, there is rarely a queue, and every policy dispatches
+  almost the same order — which read as "SJF beats DRR" rather than "this run cannot tell".
 - Simulation A/B comparisons are now honest. Changing the scheduler used to change *which
   drinks the day contained* — at one seed only 105 of 740 drinks kept the same prep time
   between DRR and FIFO, so every comparison mixed the policy effect with a different random

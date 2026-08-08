@@ -28,7 +28,7 @@ module Scheduler
   # @return [Hash{Symbol => Object}, nil] `{ flow:, item: }`, or nil when nothing
   #   is dispatchable
   def self.pick_next(state, now)
-    return pick_fifo(state, now) if state.config.fifo?
+    return pick_arm(state, now) unless state.config.drr?
 
     return nil if dispatchable(state, now).empty?
 
@@ -69,6 +69,21 @@ module Scheduler
     end
   end
 
+  # A §6.3 comparison arm. None of these carry a deficit, age, or cohere — that
+  # is the point: each removes one thing DRR does so the chart can attribute the
+  # difference to it.
+  #
+  # @param state [Scheduler::State]
+  # @param now [Time]
+  # @return [Hash{Symbol => Object}, nil]
+  def self.pick_arm(state, now)
+    case state.config.validate!.policy
+    when :fifo then pick_fifo(state, now)
+    when :rr   then pick_rr(state, now)
+    else            pick_sjf(state, now)
+    end
+  end
+
   # The §6.3 control arm, kept permanently: strict arrival order, no deficits,
   # no aging. This is what the ablation study (§10.5) measures DRR against, and
   # the fallback if DRR misbehaves in production.
@@ -78,6 +93,59 @@ module Scheduler
   # @return [Hash{Symbol => Object}, nil]
   def self.pick_fifo(state, now)
     flow = dispatchable(state, now).min_by { |f| [ f.head.enqueued_at, f.head.id ] }
+    return nil if flow.nil?
+
+    { flow: flow, item: flow.queue.shift }
+  end
+
+  # Plain round robin: one drink per order per turn, `prep_seconds` ignored
+  # (§6.3).
+  #
+  # This is DRR with the deficit removed, and nothing else changed — no
+  # `priority_ring`, so aging, cohesion and the remake floor are all absent too.
+  # Reintroducing any of them here would smuggle back part of what the arm
+  # exists to isolate.
+  #
+  # Equal *turns* are not equal *time*: a Brown Sugar Pearl with three toppings
+  # is 135s against a Thai Tea's 40s (§1), so an order of the former takes 3.4x
+  # the barista time per round. The deficit is what converts turns into time.
+  #
+  # @param state [Scheduler::State]
+  # @param now [Time]
+  # @return [Hash{Symbol => Object}, nil]
+  def self.pick_rr(state, now)
+    ring = state.flows
+
+    # Walks every flow and skips the undispatchable, rather than indexing into
+    # `dispatchable`'s filtered array. Filtering first looks simpler and is
+    # wrong: when a flow drains, every later flow shifts down one index and the
+    # pointer steps over whichever flow took the vacated slot. That skipped flow
+    # loses its turn, which in a round robin is the one thing that must not
+    # happen.
+    ring.size.times do
+      state.pointer = 0 if state.pointer >= ring.size
+      flow = ring[state.pointer]
+      state.advance!
+
+      return { flow: flow, item: flow.queue.shift } if dispatchable?(flow, now, state.config)
+    end
+
+    nil
+  end
+
+  # Shortest job first (§6.3): always the cheapest queued drink.
+  #
+  # Minimises mean wait — provably so on a single station — and starves large
+  # orders while doing it, which is exactly the failure §1 exists to prevent.
+  # It is here as the bound DRR is paying against, never as a policy: §6.6's
+  # allowlist does not accept it.
+  #
+  # @param state [Scheduler::State]
+  # @param now [Time]
+  # @return [Hash{Symbol => Object}, nil]
+  def self.pick_sjf(state, now)
+    flow = dispatchable(state, now)
+             .min_by { |f| [ f.head.prep_seconds, f.head.enqueued_at, f.head.id ] }
     return nil if flow.nil?
 
     { flow: flow, item: flow.queue.shift }
