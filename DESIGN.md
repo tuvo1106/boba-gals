@@ -289,11 +289,21 @@ Textbook DRR is unweighted and walks flows in arrival order. This design scales 
 
 > A 12-drink order arrives at 12:00. From 12:01 a new single-drink order arrives every 30 seconds. By 12:20 there are 39 other flows, and an unweighted ring would give the catering order 1/40th of the shop. With aging its multiplier is `1 + 0.15 × 20 = 4.0` against the newcomers' ~1.0, so it draws four times their quantum and finishes.
 
-**Cohesion** (§6.2, §6.4) — a flow more than half made gets `+cohesion_boost` (1.0) to its multiplier, so the rest of that order is finished rather than interleaved away. It exists for the **melted first drink**.
+**Cohesion** (§6.2, §6.4) — a flow more than half made gets `+cohesion_boost` to its multiplier, so the rest of that order is finished rather than interleaved away. It exists for the **melted first drink**, and measurement says it does not achieve that: it ships disabled (ADR-0014).
 
 > A four-drink order. Perfect interleaving serves drinks 1 and 2, then the order waits its turn behind everyone else for drinks 3 and 4. Drink 1 was finished at minute 1 and is still on the counter at minute 7 — ice melted, foam collapsed, past `quality_limit_seconds` (300). The customer receives one good drink and one that has been sitting for six minutes.
 >
 > Once 2 of 4 are made, cohesion doubles the quantum from 120 to 240, so the remaining two drinks come out in a single visit rather than two. Perfect interleaving is fair to *orders* and unkind to *drinks*, because a finished drink degrades while it waits. Cohesion is the deliberate unfairness that fixes it, and §9.6's quality timer measures whether it worked.
+
+**Measured, it does not work — it is off by default (ADR-0014).** Sweeping `cohesion_boost` from 0 to 4.0 over 20 seeds makes `cohesion_spread` — this section's own metric — monotonically *worse* at every load above idle, in every order-size class, including the four-drink case above:
+
+| order size | ×2.0 off → on | ×2.6 off → on |
+|---|---|---|
+| 2 | 113s → 126s | 104s → 120s |
+| 3–6 | 943s → 988s | 1576s → 2001s |
+| 7+ | 3159s → 3458s | 6715s → 7505s |
+
+The argument above is locally sound and globally wrong. The boost accelerates orders *past* halfway using barista time taken from orders *approaching* halfway — and those are exactly the orders with a first drink already sitting. It moves the melted drink rather than preventing it. The trigger is the flaw: "past half made" is not the same quantity as "a drink has been sitting too long", which is what §9.6 actually measures. A boost keyed on `now - first_ready_at` is the untested alternative.
 
 **Remake floor** (§6.4) — a flow with a pending remake sorts into a strictly higher tier.
 
@@ -385,7 +395,7 @@ def quantum_for(flow, now, config)
   # first drinks sit and melt.
   if config.cohesion_enabled && flow.total_items > 1 &&
      flow.made_count.to_f / flow.total_items >= 0.5
-    multiplier += config.cohesion_boost                   # default 1.0
+    multiplier += config.cohesion_boost                   # 1.0, but disabled by default (ADR-0014)
   end
 
   # Remake: extra throughput once its turn comes. The *ordering* guarantee lives
@@ -439,7 +449,7 @@ Reconsider this only above ~50 orders/hour sustained.
   "quantum": 120,
   "aging_enabled": true,
   "aging_rate": 0.15,
-  "cohesion_enabled": true,
+  "cohesion_enabled": false,
   "cohesion_boost": 1.0,
   "remake_multiplier": 4.0,
   "promise_buffer": 120,
@@ -620,7 +630,7 @@ Starts when a drink reaches `finished`. Measures `now - finished_at` until `pick
 - Per-drink breach when sitting time exceeds `quality_limit_seconds` (default 300).
 - Logged to `scheduler_events` as `quality_breach`.
 - On the KDS, a breached order shows a marker prompting a check-in or a proactive remake.
-- Multi-drink orders are the main source: the first drink sits while the last is made. This is exactly what the cohesion boost (§6.4) exists to reduce, and the breach rate is how you measure whether it's working.
+- Multi-drink orders are the main source: the first drink sits while the last is made. This is what the cohesion boost (§6.4) was meant to reduce; measured, it does not, and the breach rate is how that was established (ADR-0014).
 
 ### 9.7 SMS notification (web orders only)
 
@@ -788,7 +798,7 @@ Supporting:
 | Wait percentiles by size class (1–2 / 3–6 / 7+ drinks) | the fairness claim itself |
 | Station utilization | past ~85% queues grow nonlinearly — this is where staffing decisions get made |
 | ETA error (p50 abs) **and bias** (signed mean) | bias is the one that destroys trust |
-| Quality-timer breach rate | validates the cohesion boost |
+| Quality-timer breach rate | measures the cohesion boost — which it falsified (ADR-0014) |
 | Order cohesion spread (p90 of `ready_at − first_ready_at`) | melted-first-drink problem |
 | Remake latency | validates the priority floor |
 | Reneged orders | revenue cost of the current staffing |
