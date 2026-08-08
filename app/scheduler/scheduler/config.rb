@@ -11,6 +11,12 @@ module Scheduler
     # most — the first drink is already sitting.
     COHESION_THRESHOLD = 0.5
 
+    # §6.3. `drr` and `fifo` are selectable on a store; `rr` and `sjf` exist for
+    # the simulator's comparison arms and are rejected by `UpdateSchedulerConfig`
+    # — SJF starves large orders by construction, which is the failure §1 exists
+    # to prevent.
+    POLICIES = %i[drr fifo rr sjf].freeze
+
     DEFAULTS = {
       policy: :drr,
       quantum: 120,
@@ -48,6 +54,20 @@ module Scheduler
     # @return [Boolean] whether the §6.3 control arm is selected
     def fifo?
       policy == :fifo
+    end
+
+    # @return [Boolean] true unless a §6.3 comparison arm has replaced it
+    def drr?
+      policy == :drr
+    end
+
+    # @raise [ArgumentError] on a policy `pick_next` has no branch for. Silently
+    #   falling back to DRR would make a mis-typed sweep look like a null result
+    #   rather than a mistake.
+    def validate!
+      return self if POLICIES.include?(policy)
+
+      raise ArgumentError, "unknown policy #{policy.inspect}; expected one of #{POLICIES.join(', ')}"
     end
   end
 end

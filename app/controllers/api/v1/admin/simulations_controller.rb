@@ -18,6 +18,11 @@ module Api
         DEFAULT_WINDOW_SECONDS = 1_800
 
         def create
+          policy = params.dig(:scheduler_config, :policy)
+          if policy.present? && !::Scheduler::Config::POLICIES.include?(policy.to_sym)
+            return render json: { errors: [ "unknown policy #{policy}" ] }, status: :unprocessable_entity
+          end
+
           scenario = build_scenario
           world = ::Simulator.simulate(scenario)
           metrics = ::Simulator::Metrics.new(
@@ -50,9 +55,14 @@ module Api
           )
         end
 
-        # Only the scheduler's own keys, symbolized. Reuses the admin config
-        # allowlist so a simulation cannot be asked to run a policy the store
-        # could never be set to (§14.6).
+        # Only the scheduler's own keys, symbolized, reusing the admin allowlist
+        # so a simulation cannot set anything `stores.scheduler_config` could not
+        # hold (§14.6).
+        #
+        # Policy *values* are the deliberate exception: §6.3's `rr` and `sjf`
+        # arms run here and are refused by `UpdateSchedulerConfig`, because a
+        # policy that provably starves catering orders must not be one dropdown
+        # away from production.
         def scheduler_config
           raw = params[:scheduler_config]
           return {} unless raw.respond_to?(:to_unsafe_h)
