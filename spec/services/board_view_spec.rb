@@ -155,4 +155,33 @@ RSpec.describe BoardView do
       end
     end
   end
+
+  # The projection is O(n^2 log n)-ish in queue depth (ADR-0012) — 175ms at 436
+  # queued drinks, measured. §7.2 gives it its own 2-second budget in a
+  # background job precisely so a board broadcast at §9.2's 1/sec never drags it
+  # onto the request path.
+  describe "keeping the projection off the request path (§7.2)" do
+    it "reads the cached estimates rather than projecting" do
+      order = create(:order, store: store, status: "placed")
+      create(:order_item, order: order, menu_item: create(:menu_item, store: store),
+                          prep_seconds: 60, queued_at: 1.minute.ago, sequence: 1)
+      EtaCache.write(store, order.id => 4242)
+
+      expect(ProjectEta).not_to receive(:for_open_orders)
+
+      row = described_class.call(store)[:making].find { |r| r[:pickup_code] == order.pickup_code }
+      expect(row[:eta_seconds]).to eq(4242)
+    end
+
+    # The first render after a deploy has no entry and still owes a number.
+    it "projects once to warm a cold cache" do
+      order = create(:order, store: store, status: "placed")
+      create(:order_item, order: order, menu_item: create(:menu_item, store: store),
+                          prep_seconds: 60, queued_at: 1.minute.ago, sequence: 1)
+
+      described_class.call(store)
+
+      expect(EtaCache.read(store)).to be_present
+    end
+  end
 end
