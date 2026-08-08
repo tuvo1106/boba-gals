@@ -172,6 +172,11 @@ module Scheduler
 
     # Cohesion: once an order is half made, finish it rather than let the first
     # drinks sit and melt (§6.4, §9.6).
+    #
+    # Off by default — measured, it makes `cohesion_spread` monotonically worse
+    # at every load and order size (ADR-0014). Kept because the knob is what
+    # made that measurable, and because the idea is sound if re-triggered on how
+    # long a drink has actually been sitting rather than on fraction made.
     if config.cohesion_enabled && flow.total_items > 1 &&
        flow.fraction_made >= Config::COHESION_THRESHOLD
       multiplier += config.cohesion_boost

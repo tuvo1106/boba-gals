@@ -4,7 +4,7 @@ RSpec.describe Scheduler::Config do
   it "defaults to every §6.6 value" do
     expect(described_class.new).to have_attributes(
       policy: :drr, quantum: 120, aging_enabled: true, aging_rate: 0.15,
-      cohesion_enabled: true, cohesion_boost: 1.0, remake_multiplier: 4.0,
+      cohesion_enabled: false, cohesion_boost: 1.0, remake_multiplier: 4.0,
       promise_buffer: 120
     )
   end

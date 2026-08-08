@@ -22,7 +22,7 @@ module Scheduler
       quantum: 120,
       aging_enabled: true,
       aging_rate: 0.15,
-      cohesion_enabled: true,
+      cohesion_enabled: false,
       cohesion_boost: 1.0,
       remake_multiplier: 4.0,
       promise_buffer: 120
