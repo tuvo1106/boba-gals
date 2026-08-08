@@ -57,7 +57,7 @@ class BoardView
   private
 
   def making
-    estimates = NaiveEta.for_open_orders(@store, now: @now)
+    estimates = ProjectEta.for_open_orders(@store, now: @now)
 
     rows = orders(MAKING_STATUSES).map do |order|
       {
