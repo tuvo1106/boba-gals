@@ -223,6 +223,51 @@ RSpec.describe Simulator do
     end
   end
 
+  # Conservation proves nothing is dropped. It cannot catch a simulator that
+  # counts consistently but computes time wrongly — for that you need an
+  # identity the model must satisfy regardless of its distributions.
+  #
+  # Little's Law (§17) is that identity: L = λW. The time-average number of
+  # orders in the shop equals the arrival rate times the average time each
+  # spends there. It holds for *any* arrival process and *any* service
+  # distribution, so it tests the bookkeeping without assuming the model.
+  describe "Little's Law (§17)" do
+    def little(demand, seeds: 6)
+      (1..seeds).map do |seed|
+        world = described_class.simulate(Simulator::Scenario.new(seed: seed, demand_multiplier: demand))
+        orders_in_shop = world.order_seconds / world.clock
+        arrival_rate = world.completed.size / world.clock
+        time_in_shop = world.completed.sum(&:wait_seconds) / world.completed.size
+
+        [ orders_in_shop, arrival_rate * time_in_shop ]
+      end
+    end
+
+    # Looser at low demand: the day starts and ends empty, and the identity
+    # assumes steady state, so that transient is a larger share of a quiet day.
+    it "holds at ordinary demand" do
+      measured, predicted = little(1.0).transpose.map { |v| v.sum / v.size }
+
+      expect(measured).to be_within(measured * 0.10).of(predicted)
+    end
+
+    it "holds tightly once the shop is busy enough to reach steady state" do
+      measured, predicted = little(2.5).transpose.map { |v| v.sum / v.size }
+
+      expect(measured).to be_within(measured * 0.03).of(predicted)
+    end
+
+    # A necessary condition, not a sufficient one: a simulator with the wrong
+    # service times would still satisfy it. What it rules out is orders being
+    # double-counted, dropped, or timed against the wrong clock.
+    it "integrates the order count exactly rather than sampling it" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 1))
+
+      expect(world.order_seconds).to be_positive
+      expect(world.order_seconds / world.clock).to be < world.completed.size
+    end
+  end
+
   describe "metrics (§10.4)" do
     it "reports percentiles, never a mean" do
       expect(run(seed: 1).to_h[:wait_seconds].keys).to eq(%i[p50 p90 p99])

@@ -6,6 +6,7 @@
 
 > **Rails 8 note (locked):** do **not** adopt the Rails 8 "Solid" defaults (Solid Queue/Cable/Cache) or Kamal. Redis is load-bearing in this design — scheduler deficits and ring pointer (§6.5), ETA debounce lock (§7.2), ActionCable pub/sub across pods (§14.4) — so adopting Solid would mean running two coordination stores instead of one. Generate the app with `--skip-solid --skip-kamal`; use the Redis adapter for ActionCable and Sidekiq for jobs (§14.1). Deployment is Kubernetes (§14).
 **Audience:** An engineer or coding agent implementing this from scratch
+**Jargon:** queueing-theory and networking terms are defined in [§17](#17-glossary)
 
 ---
 
@@ -1044,6 +1045,13 @@ than spinning, because a stalled kitchen that reports nothing is worse than a cr
 practical consequence is that queues do not grow smoothly: going from ρ = 0.5 to 0.6 roughly
 doubles the wait factor, but 0.9 to 0.95 doubles it again from a far higher base. This is why
 §10.4 says queues grow nonlinearly past ~85%, and why it is where staffing decisions get made.
+
+**Little's Law** — **L = λW**: the average number of orders in the shop equals the arrival
+rate times the average time each one spends there. It holds for *any* arrival process and
+*any* service distribution, which makes it the strongest available check that a simulator's
+bookkeeping is sound — it can catch orders being double-counted, dropped, or timed against the
+wrong clock. It is necessary and not sufficient: a model with the wrong service times still
+satisfies it.
 
 **Percentile (p50 / p90 / p99)** — the value below which that share of observations fall. p90
 = 200s means nine customers in ten waited less than 200 seconds. §10.4 reports percentiles and

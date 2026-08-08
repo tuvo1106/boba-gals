@@ -59,6 +59,12 @@ module Simulator
   class World
     attr_reader :clock, :completed, :reneged, :remakes, :arrived
 
+    # Time-integral of the number of orders in the shop, for Little's Law
+    # (§17). Accumulated at every event because the count only changes at
+    # events — between them it is constant, so the integral is exact rather
+    # than sampled.
+    attr_reader :order_seconds
+
     QUALITY_LIMIT = 300 # §6.6 default, for the breach metric
 
     def initialize(scenario)
@@ -70,6 +76,8 @@ module Simulator
       @completed = []
       @reneged = 0
       @arrived = 0
+      @order_seconds = 0.0
+      @integrated_to = 0.0
       @remakes = 0
       @next_order_id = 0
       @stations = Array.new(scenario.stations) { { busy_until: nil, skill: @rng.between(0.85, 1.20) } }
@@ -81,6 +89,11 @@ module Simulator
     def run
       until @events.empty?
         event = @events.pop
+
+        # Integrate before advancing: @pending held this count for the whole
+        # interval just ended.
+        @order_seconds += @pending.size * (event.at - @integrated_to)
+        @integrated_to = event.at
         @clock = event.at
 
         case event.type
