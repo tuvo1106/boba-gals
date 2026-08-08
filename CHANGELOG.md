@@ -223,6 +223,10 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Changed
+- The cohesion boost is off by default. It was meant to stop an order's first drink melting
+  while the rest were made; measured over 20 seeds it makes that wait steadily *worse* as the
+  boost rises, in every order size, at every load — including the four-drink case it was
+  designed around. Shops running it will see catering orders finish sooner (ADR-0014).
 
 - Placing an order now reaches the kitchen and the board immediately. Previously the KDS
   only learned about it when someone refreshed (§9.2).
