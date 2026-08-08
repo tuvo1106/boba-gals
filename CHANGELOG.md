@@ -21,6 +21,20 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- Simulation dashboard can scrub to any part of the day, with the hourly arrival
+  profile drawn into the control so the peaks are findable rather than guessed (§10.6).
+- "Find order" jumps the ribbon to where a given order was actually made and keeps
+  it highlighted — an order-ahead order is dispatched hours after it arrives, so its
+  id says nothing about where to look (§10.3, §10.6).
+- Station count and demand multiplier are adjustable, so utilisation can be pushed
+  past §10.4's 85% knee and the nonlinear jump in waits and walkaways is something
+  you do rather than read about (§10.6).
+- Hovering a drink in the lane ribbon names its order and highlights every other
+  drink in that order across all stations, so you can trace one catering order
+  through the shift (§10.6).
+- Every figure under the ribbon now says what it measures and which direction is
+  good — utilisation, for instance, turns amber past 70% and red past 85%, where
+  §10.4 says queues start growing nonlinearly (§10.6).
 
 - A simulation dashboard showing what the kitchen actually did (§10.6): one row per station,
   every drink a coloured capsule, coloured by which order it belongs to. Switching between
@@ -78,6 +92,10 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- `bin/rspec` forces `RAILS_ENV=test`. The dev container sets `RAILS_ENV=development`,
+  which made `rails_helper.rb`'s `||=` default a no-op: Bundler skipped the `:test`
+  gem group, every Rails spec failed to load, and anything that did load ran against
+  the development database.
 
 - A barista tapping "start next" could be told the queue was empty while drinks were still
   waiting, if other baristas happened to be tapping at the same moment. The retries meant to

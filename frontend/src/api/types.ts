@@ -48,6 +48,8 @@ export interface SimulationRun {
   stations: number
   window: { from: number; to: number }
   timeline: TimelineDrink[]
+  /** `[order_id, first_start, last_finish, size]` for every order made, by start time. */
+  order_spans: [number, number, number, number][]
   metrics: {
     orders: number
     drinks: number
@@ -59,3 +61,4 @@ export interface SimulationRun {
     by_size_class: Record<string, { orders: number; p50: number; p90: number; p99: number }>
   }
 }
+

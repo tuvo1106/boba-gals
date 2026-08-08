@@ -32,7 +32,9 @@ module Api
             stations: scenario.stations,
             metrics: metrics.to_h,
             window: { from: window.begin, to: window.end },
-            timeline: world.timeline(window: window)
+            timeline: world.timeline(window: window),
+            # Lets the dashboard jump to any order without re-running the day.
+            order_spans: world.order_spans
           }
         end
 

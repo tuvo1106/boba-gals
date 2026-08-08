@@ -283,6 +283,26 @@ module Simulator
     # a picture of the schedule — the whole point is seeing a large order's
     # drinks *interleaved* with small ones, which only per-drink placement shows.
     #
+    # Where every order's drinks were made, without the per-drink detail — enough
+    # to find an order in a day the ribbon only ever shows a slice of (§10.6).
+    #
+    # Cheap by design: one entry per order rather than per drink, so the client
+    # can locate any order without asking the server to re-run the day.
+    #
+    # @return [Array<Array>] `[order_id, first_start, last_finish, size]`
+    def order_spans
+      (@completed + @pending).filter_map do |order|
+        started = order.items.filter_map(&:started_at)
+        next if started.empty?
+
+        finishes = order.items.filter_map(&:finished_at)
+
+        [ order.id, started.min.round(2), (finishes.max || started.max).round(2), order.items.size ]
+        # By start time, not id: an order-ahead order (§10.3) is dispatched hours
+        # after it arrives, so id order and ribbon order are genuinely different.
+      end.sort_by { |span| span[1] }
+    end
+
     # @param window [Range, nil] simulated seconds to include; the full day is
     #   thousands of capsules and no screen renders it legibly
     # @return [Array<Hash>]
