@@ -29,3 +29,36 @@ export interface BoardUpdate {
   making: MakingRow[]
   ready: ReadyRow[]
 }
+
+/** One dispatched drink, as the lane ribbon places it (§10.6). */
+export interface TimelineDrink {
+  order_id: number
+  drink_id: string
+  station: number
+  started_at: number
+  finished_at: number | null
+  prep_seconds: number
+  remake: boolean
+  order_size: number
+}
+
+/** The response from POST /api/v1/admin/simulations (§9.1). */
+export interface SimulationRun {
+  seed: number
+  stations: number
+  window: { from: number; to: number }
+  timeline: TimelineDrink[]
+  /** `[order_id, first_start, last_finish, size]` for every order made, by start time. */
+  order_spans: [number, number, number, number][]
+  metrics: {
+    orders: number
+    drinks: number
+    station_utilisation: number
+    reneged: number
+    remakes: number
+    quality_breach_rate: number
+    wait_seconds: { p50: number; p90: number; p99: number }
+    by_size_class: Record<string, { orders: number; p50: number; p90: number; p99: number }>
+  }
+}
+

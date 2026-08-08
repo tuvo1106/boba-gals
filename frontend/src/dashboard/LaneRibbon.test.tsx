@@ -1,0 +1,180 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it } from 'vitest'
+import { LaneRibbon } from './LaneRibbon'
+import type { TimelineDrink } from '../api/types'
+
+function drink(overrides: Partial<TimelineDrink> = {}): TimelineDrink {
+  return {
+    order_id: 1, drink_id: '1-0', station: 0,
+    started_at: 0, finished_at: 60, prep_seconds: 60,
+    remake: false, order_size: 1,
+    ...overrides,
+  }
+}
+
+describe('LaneRibbon', () => {
+  it('renders one lane per station', () => {
+    render(<LaneRibbon drinks={[]} stations={3} from={0} to={600} />)
+
+    expect(screen.getAllByRole('row')).toHaveLength(3)
+  })
+
+  it('places each drink on its own station', () => {
+    render(
+      <LaneRibbon
+        drinks={[ drink({ station: 0, drink_id: 'a' }), drink({ station: 2, drink_id: 'b' }) ]}
+        stations={3} from={0} to={600}
+      />,
+    )
+
+    expect(within(screen.getByRole('row', { name: 'Station 1' })).getByRole('button', { name: /Order 1/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: 'Station 3' })).getByRole('button', { name: /Order 1/ })).toBeInTheDocument()
+    expect(within(screen.getByRole('row', { name: 'Station 2' })).queryByRole('button', { name: /Order/ })).not.toBeInTheDocument()
+  })
+
+  // Colour is identity: the eye groups one hue into "that order", which is how
+  // interleaving becomes visible at all (§10.6).
+  it('gives every order a distinct, stable colour', () => {
+    const { container } = render(
+      <LaneRibbon
+        drinks={[ drink({ order_id: 1, drink_id: 'a' }), drink({ order_id: 2, drink_id: 'b' }), drink({ order_id: 1, drink_id: 'c' }) ]}
+        stations={1} from={0} to={600}
+      />,
+    )
+
+    const colours = Array.from(container.querySelectorAll('[role="button"]')).map(
+      (el) => (el as HTMLElement).style.background,
+    )
+
+    expect(colours[0]).toBe(colours[2])
+    expect(colours[0]).not.toBe(colours[1])
+  })
+
+  it('positions a capsule by when it ran', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ started_at: 300, finished_at: 360 }) ]} stations={1} from={0} to={600} />,
+    )
+
+    const capsule = container.querySelector('[role="button"]') as HTMLElement
+
+    expect(capsule.style.left).toBe('50%')
+    expect(capsule.style.width).toContain('10%')
+  })
+
+  // A sub-pixel capsule vanishes, and a drink that ran should always be visible.
+  it('keeps a very short drink visible', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ started_at: 0, finished_at: 1 }) ]} stations={1} from={0} to={36000} />,
+    )
+
+    // The floor is a hover target as much as a mark — a 1px capsule is unhittable.
+    expect((container.querySelector('[role="button"]') as HTMLElement).style.width).toContain('4px')
+  })
+
+  it('marks remakes distinctly, so the priority floor is visible (§9.4)', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ remake: true }) ]} stations={1} from={0} to={600} />,
+    )
+
+    expect(container.querySelector('.border-dashed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /remake/ })).toBeInTheDocument()
+  })
+
+  it('labels a drink with its order size, so large orders are identifiable', () => {
+    render(<LaneRibbon drinks={[ drink({ order_size: 12 }) ]} stations={1} from={0} to={600} />)
+
+    expect(screen.getByRole('button', { name: /12 drinks/ })).toBeInTheDocument()
+  })
+
+  it('renders a clock axis in shop time, not simulated seconds', () => {
+    render(<LaneRibbon drinks={[]} stations={1} from={0} to={7200} />)
+
+    expect(screen.getByText('10:00')).toBeInTheDocument()
+    expect(screen.getByText('12:00')).toBeInTheDocument()
+  })
+
+  // A drink can start inside the window and finish after it. Left unclamped the
+  // capsule bleeds out of its lane and reads as a rendering bug.
+  it('clamps a drink that runs past the window, and marks it as continuing', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ started_at: 540, finished_at: 900 }) ]} stations={1} from={0} to={600} />,
+    )
+    const capsule = container.querySelector('[role="button"]') as HTMLElement
+
+    expect(capsule.style.width).toContain('10%')
+    expect(capsule.className).toContain('rounded-l-full')
+    expect(capsule.className).not.toContain('rounded-full')
+    expect(screen.getByRole('button', { name: /360s\+/ })).toBeInTheDocument()
+  })
+
+  it('keeps a drink that fits fully rounded on both ends', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ started_at: 60, finished_at: 120 }) ]} stations={1} from={0} to={600} />,
+    )
+
+    expect((container.querySelector('[role="button"]') as HTMLElement).className).toContain('rounded-full')
+  })
+
+  it('renders an unfinished drink to the end of the window', () => {
+    const { container } = render(
+      <LaneRibbon drinks={[ drink({ started_at: 300, finished_at: null }) ]} stations={1} from={0} to={600} />,
+    )
+
+    expect((container.querySelector('[role="button"]') as HTMLElement).style.width).toContain('50%')
+  })
+
+  // The readout replaces a `title` tooltip: with hundreds of capsules you sweep
+  // the pointer along a lane, and a tooltip that waits a second then covers its
+  // neighbours makes that impossible.
+  describe('hover readout', () => {
+    it('prompts before anything is hovered', () => {
+      render(<LaneRibbon drinks={[ drink() ]} stations={1} from={0} to={600} />)
+
+      expect(screen.getByText(/hover a drink/i)).toBeInTheDocument()
+    })
+
+    it('names the hovered drink, and clears when the pointer leaves', async () => {
+      const user = userEvent.setup()
+      render(<LaneRibbon drinks={[ drink({ order_id: 9, order_size: 4 }) ]} stations={1} from={0} to={600} />)
+
+      await user.hover(screen.getByRole('button', { name: /Order 9/ }))
+      expect(screen.getByText(/Order 9 · 4 drinks · station 1 · 60s/)).toBeInTheDocument()
+
+      await user.unhover(screen.getByRole('button', { name: /Order 9/ }))
+      expect(screen.getByText(/hover a drink/i)).toBeInTheDocument()
+    })
+
+    // Tracing one order across the lanes is the question the ribbon exists to
+    // answer, so hovering highlights the order rather than the single drink.
+    it('dims every drink outside the hovered order', async () => {
+      const user = userEvent.setup()
+      render(
+        <LaneRibbon
+          drinks={[
+            drink({ order_id: 1, drink_id: 'a', station: 0 }),
+            drink({ order_id: 1, drink_id: 'b', station: 1 }),
+            drink({ order_id: 2, drink_id: 'c', station: 2 }),
+          ]}
+          stations={3} from={0} to={600}
+        />,
+      )
+
+      const [ a, b, c ] = screen.getAllByRole('button')
+      await user.hover(a)
+
+      expect(b.className).toContain('opacity-100')
+      expect(c.className).toContain('opacity-25')
+    })
+
+    // Keyboard reaches the same readout — the capsules are the only way to read
+    // per-drink detail, so they cannot be pointer-only.
+    it('is reachable by keyboard', async () => {
+      const user = userEvent.setup()
+      render(<LaneRibbon drinks={[ drink({ order_id: 5 }) ]} stations={1} from={0} to={600} />)
+
+      await user.tab()
+      expect(screen.getByText(/Order 5/)).toBeInTheDocument()
+    })
+  })
+})

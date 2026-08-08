@@ -268,6 +268,49 @@ RSpec.describe Simulator do
     end
   end
 
+  # The ribbon only ever shows a slice of the day, so finding a given order needs
+  # an index the client can search without re-running the simulation (§10.6).
+  describe "#order_spans" do
+    let(:world) { described_class.simulate(Simulator::Scenario.new(seed: 3, stations: 3)) }
+    let(:pending) { world.instance_variable_get(:@pending) }
+
+    it "spans every order that had a drink dispatched" do
+      dispatched = (world.completed + pending).count { |o| o.items.any?(&:started_at) }
+
+      expect(world.order_spans.size).to eq(dispatched)
+    end
+
+    it "brackets each order's drinks between its first start and last finish" do
+      by_id = world.completed.to_h { |o| [ o.id, o ] }
+
+      world.order_spans.each do |id, from, to, size|
+        order = by_id[id]
+        next if order.nil?
+
+        expect(size).to eq(order.items.size)
+        expect(from).to be_within(0.01).of(order.items.filter_map(&:started_at).min)
+        expect(to).to be_within(0.01).of(order.items.filter_map(&:finished_at).max)
+      end
+    end
+
+    # By start time rather than id: an order-ahead order (§10.3) is dispatched
+    # hours after it arrives, so the two orderings genuinely differ.
+    it "is ordered by start time, not by order id" do
+      starts = world.order_spans.map { |span| span[1] }
+      ids = world.order_spans.map(&:first)
+
+      expect(starts).to eq(starts.sort)
+      expect(ids).not_to eq(ids.sort)
+    end
+
+    it "omits orders whose drinks never started" do
+      never_started = pending.reject { |o| o.items.any?(&:started_at) }.map(&:id)
+
+      expect(world.order_spans.map(&:first)).not_to include(*never_started) if never_started.any?
+      expect(world.order_spans.map(&:first)).to all(be_positive)
+    end
+  end
+
   describe "metrics (§10.4)" do
     it "reports percentiles, never a mean" do
       expect(run(seed: 1).to_h[:wait_seconds].keys).to eq(%i[p50 p90 p99])
