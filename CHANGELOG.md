@@ -223,6 +223,16 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Changed
+- Wait times keep updating while a barista is mid-drink. Previously the board's numbers only
+  moved when something happened — a drink starting or finishing — so a customer watching a
+  95-second drink being made saw a frozen countdown, and a drink running over its estimate
+  never corrected until it landed. A tick every 30 seconds now refreshes them (§7.2).
+- Placing an order is no longer slower when the shop is busier. Working out wait times means
+  simulating the queue forward, which costs 3ms when quiet but 175ms with 436 drinks waiting —
+  and it was running inside the request that placed the order. It now runs in the background,
+  at most once every 2 seconds per store, with the board reading the latest result (§7.2).
+- Opening or closing a bar updates every wait time on the board immediately, rather than at
+  the next drink transition (§7.2).
 - Wait times on the board and at the counter are now projected by running the real scheduler
   forward over the current queue, rather than dividing outstanding work by the number of
   stations (§7.1). The old estimate quoted by queue position, so it told a customer with one

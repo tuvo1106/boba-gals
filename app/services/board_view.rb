@@ -57,7 +57,10 @@ class BoardView
   private
 
   def making
-    estimates = ProjectEta.for_open_orders(@store, now: @now)
+    # Read, not recompute. The projection is O(n^2 log n)-ish in queue depth
+    # (ADR-0012) and §7.2 gives it its own 2-second budget in a background job;
+    # a board broadcast at §9.2's 1/sec must not drag it onto the request path.
+    estimates = EtaCache.fetch(@store, now: @now)
 
     rows = orders(MAKING_STATUSES).map do |order|
       {

@@ -11,6 +11,11 @@ class BroadcastStoreViews
   # @return [void]
   def self.call(store)
     KitchenBroadcast.call(store)
-    BoardBroadcast.call(store)
+
+    # §7.2's recompute triggers all land here — order placed, item started or
+    # finished, remake created. It pushes the board itself once the projection
+    # is fresh, so this no longer calls `BoardBroadcast` directly: doing both
+    # would broadcast an ETA computed before the transition that caused it.
+    RecomputeEta.call(store)
   end
 end
