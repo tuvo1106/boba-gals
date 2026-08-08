@@ -29,21 +29,27 @@ export function LaneRibbon({
     <figure className="m-0">
       <div className="flex flex-col gap-px bg-neutral-800">
         {lanes.map((lane) => (
-          <div key={lane} className="relative h-9 bg-neutral-950" role="row" aria-label={`Station ${lane + 1}`}>
-            <span className="absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] tabular-nums text-neutral-600">
-              {lane + 1}
+          <div key={lane} className="flex items-stretch bg-neutral-950" role="row" aria-label={`Station ${lane + 1}`}>
+            <span className="flex w-20 shrink-0 items-center pl-2 font-mono text-[10px] tracking-wider text-neutral-600 uppercase">
+              Station {lane + 1}
             </span>
 
+            {/* Its own positioning context, so a capsule's left/width stay plain
+                percentages of the time window rather than an offset calc. */}
+            <div className="relative h-9 grow">
             {drinks
               .filter((d) => d.station === lane)
               .map((d) => (
                 <Capsule key={d.drink_id} drink={d} from={from} span={span} />
               ))}
+            </div>
           </div>
         ))}
       </div>
 
-      <Axis from={from} to={to} />
+      <div className="ml-20">
+        <Axis from={from} to={to} />
+      </div>
     </figure>
   )
 }

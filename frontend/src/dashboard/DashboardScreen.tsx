@@ -12,12 +12,19 @@ import type { SimulationRun } from '../api/types'
  */
 export function DashboardScreen() {
   const [run, setRun] = useState<SimulationRun | null>(null)
+  // §10.6: "the previous run ghosted behind the current one for comparison". A
+  // number with nothing to compare against is not a verdict.
+  const [previous, setPrevious] = useState<{ run: SimulationRun; policy: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [seed, setSeed] = useState(7)
   const [policy, setPolicy] = useState<'drr' | 'fifo'>('drr')
+  // Zoom. A full day is ~700 drinks and every capsule would be sub-pixel; 20
+  // minutes shows about 40. Wider answers "does this hold all day", narrower
+  // answers "what exactly happened here".
+  const [span, setSpan] = useState(1200)
   const [busy, setBusy] = useState(false)
 
-  async function go(nextSeed = seed, nextPolicy = policy) {
+  async function go(nextSeed = seed, nextPolicy = policy, nextSpan = span) {
     setBusy(true)
     setError(null)
     try {
@@ -31,11 +38,15 @@ export function DashboardScreen() {
           // The lunch peak — §10.3 puts 48 orders/hour in the third hour, and a
           // quiet window shows one station doing everything.
           window_from: 7200,
-          window_seconds: 1200,
+          window_seconds: nextSpan,
         }),
       })
       if (!response.ok) throw new Error(response.status === 401 ? 'Sign in as admin first' : `Run failed (${response.status})`)
-      setRun((await response.json()) as SimulationRun)
+      const next = (await response.json()) as SimulationRun
+      setRun((current) => {
+        if (current) setPrevious({ run: current, policy })
+        return next
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Run failed')
     } finally {
@@ -73,6 +84,20 @@ export function DashboardScreen() {
           ))}
         </div>
 
+        <label className="font-mono text-xs text-neutral-500">
+          window{' '}
+          <select
+            value={span} aria-label="window"
+            onChange={(e) => { const v = Number(e.target.value); setSpan(v); go(seed, policy, v) }}
+            className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
+          >
+            <option value={300}>5 min</option>
+            <option value={1200}>20 min</option>
+            <option value={3600}>1 hour</option>
+            <option value={10800}>3 hours</option>
+          </select>
+        </label>
+
         <button
           onClick={() => go()} disabled={busy}
           className="ml-auto border border-neutral-700 px-3 py-1 font-mono text-xs uppercase hover:border-amber-500 disabled:opacity-40"
@@ -85,10 +110,14 @@ export function DashboardScreen() {
 
       {run && (
         <>
+          <Verdict run={run} policy={policy} previous={previous} />
+
           <LaneRibbon
             drinks={run.timeline} stations={run.stations}
             from={run.window.from} to={run.window.to}
           />
+
+          <Legend />
 
           <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-2 font-mono text-xs sm:grid-cols-4">
             <Figure label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`} accent />
@@ -103,6 +132,84 @@ export function DashboardScreen() {
         </>
       )}
     </main>
+  )
+}
+
+/**
+ * The headline, in words (§10.4): "small-order p90 wait vs. concurrent
+ * large-order rate. If fair queuing is working, that line is flat."
+ *
+ * A ribbon without this is a picture with no claim attached — you can see that
+ * the colours differ between policies without knowing which way is better.
+ */
+function Verdict({
+  run,
+  policy,
+  previous,
+}: {
+  run: SimulationRun
+  policy: string
+  previous: { run: SimulationRun; policy: string } | null
+}) {
+  const small = run.metrics.by_size_class['1-2'].p90
+  const large = run.metrics.by_size_class['7+'].p90
+  const against =
+    previous && previous.policy !== policy && previous.run.seed === run.seed ? previous : null
+  const delta = against ? small - against.run.metrics.by_size_class['1-2'].p90 : null
+
+  return (
+    <section className="mb-4 border-l-2 border-amber-600 pl-3">
+      <p className="font-mono text-sm text-neutral-300">
+        A customer ordering <strong className="text-neutral-100">1–2 drinks</strong> waited{' '}
+        <strong className="tabular-nums text-amber-500">{small}s</strong> at the 90th percentile.
+        Someone ordering <strong className="text-neutral-100">7+</strong> waited{' '}
+        <span className="tabular-nums">{large}s</span>.
+      </p>
+
+      {delta !== null ? (
+        <p className="mt-1 font-mono text-xs text-neutral-400">
+          {delta < 0 ? (
+            <>
+              <span className="text-emerald-400">{Math.abs(delta).toFixed(1)}s faster</span> than{' '}
+              {against?.policy.toUpperCase()} on the same day — small orders are not stuck behind large ones.
+            </>
+          ) : (
+            <>
+              <span className="text-amber-500">{delta.toFixed(1)}s slower</span> than{' '}
+              {against?.policy.toUpperCase()} on the same day.
+            </>
+          )}
+        </p>
+      ) : (
+        <p className="mt-1 font-mono text-xs text-neutral-600">
+          Switch policy to compare the same day under {policy === 'drr' ? 'FIFO' : 'DRR'}.
+        </p>
+      )}
+    </section>
+  )
+}
+
+/** A ribbon is unreadable without a key to what its shapes mean. */
+function Legend() {
+  return (
+    <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[10px] text-neutral-500">
+      <li className="flex items-center gap-1.5">
+        <span className="h-3 w-6 rounded-full" style={{ background: 'hsl(137.5 62% 58%)' }} />
+        one drink — width is how long it took
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="flex gap-0.5">
+          <span className="h-3 w-3 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
+          <span className="h-3 w-3 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
+        </span>
+        same colour = same order
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span className="h-3 w-6 rounded-full border-2 border-dashed border-white/70" style={{ background: 'hsl(50 62% 58%)' }} />
+        remake
+      </li>
+      <li>rows are stations · left to right is time</li>
+    </ul>
   )
 }
 
