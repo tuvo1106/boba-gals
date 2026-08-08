@@ -259,8 +259,14 @@ export function DashboardScreen() {
               that decides whether to add a fourth station. */}
           <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-3 font-mono text-xs sm:grid-cols-2 lg:grid-cols-4">
             <Figure
-              label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`} accent
-              hint={`9 of 10 orders of 1–2 drinks were ready within this, over ${run.metrics.by_size_class['1-2'].orders} of them. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4).`}
+              label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`}
+              accent={run.metrics.by_size_class['1-2'].p90_meaningful}
+              state={run.metrics.by_size_class['1-2'].p90_meaningful ? undefined : 'warn'}
+              hint={
+                run.metrics.by_size_class['1-2'].p90_meaningful
+                  ? `9 of 10 orders of 1–2 drinks were ready within this, over ${run.metrics.by_size_class['1-2'].orders} of them. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4).`
+                  : `Only ${run.metrics.by_size_class['1-2'].orders} small orders in this run, so this is close to their slowest rather than a percentile.`
+              }
             />
             <Figure
               label="7+ p90" value={`${run.metrics.by_size_class['7+'].p90}s`}
@@ -297,9 +303,18 @@ export function DashboardScreen() {
             {/* Discriminates where p90 cannot: at default demand every policy
                 has the same p90, but SJF already spreads this 5.6x. */}
             <Figure
-              label="ordered-a-slow-drink penalty" value={`${run.metrics.wait_by_drink_cost.ratio.toFixed(2)}×`}
-              state={run.metrics.wait_by_drink_cost.ratio > 5 ? 'bad' : run.metrics.wait_by_drink_cost.ratio > 3 ? 'warn' : 'good'}
-              hint={`How much longer a small order queues before its drinks are started when it ordered slow ones (≥90s, n=${run.metrics.wait_by_drink_cost.dear.orders}) rather than quick ones (≤50s, n=${run.metrics.wait_by_drink_cost.cheap.orders}). Queueing only — a 95s drink takes 95s under any policy. Compare arms at the same demand rather than reading the number alone: the achievable floor falls as the shop fills.`}
+              label="ordered-a-slow-drink penalty"
+              value={run.metrics.wait_by_drink_cost.comparable ? `${run.metrics.wait_by_drink_cost.ratio.toFixed(2)}×` : '—'}
+              state={
+                !run.metrics.wait_by_drink_cost.comparable ? 'warn'
+                  : run.metrics.wait_by_drink_cost.ratio > 5 ? 'bad'
+                  : run.metrics.wait_by_drink_cost.ratio > 3 ? 'warn' : 'good'
+              }
+              hint={
+                run.metrics.wait_by_drink_cost.comparable
+                  ? `How much longer a small order queues before its drinks are started when it ordered slow ones (≥90s, n=${run.metrics.wait_by_drink_cost.dear.orders}) rather than quick ones (≤50s, n=${run.metrics.wait_by_drink_cost.cheap.orders}). Queueing only — a 95s drink takes 95s under any policy. Compare arms at the same demand rather than reading the number alone: the achievable floor falls as the shop fills.`
+                  : `Not enough of one kind to compare — ${run.metrics.wait_by_drink_cost.cheap.orders} quick and ${run.metrics.wait_by_drink_cost.dear.orders} slow. Raise demand or widen the run.`
+              }
             />
           </dl>
         </>

@@ -105,19 +105,28 @@ module Simulator
       {
         cheap: { orders: cheap.size, p90: cheap_p90 },
         dear: { orders: dear.size, p90: dear_p90 },
-        # 1.0 means what you ordered did not affect how long you waited.
+        # A ratio of 1.0 means the two sides queued alike. Zero means one side
+        # had nothing in it, which is not a good score — hence `comparable`:
+        # without it, an empty run reports 0.00x and reads as perfect fairness,
+        # the same way a p90 over five orders read as a percentile.
+        comparable: cheap.size >= P90_MIN_SAMPLES && dear.size >= P90_MIN_SAMPLES,
         ratio: cheap_p90.zero? ? 0.0 : (dear_p90 / cheap_p90).round(2)
       }
     end
 
+    # By what was ordered, not by what was made: a remake is a fresh draw from
+    # the menu (§5.2) and would reclassify the order the customer placed.
     def mean_prep(order)
-      order.items.sum(&:prep_seconds) / order.items.size.to_f
+      ordered = order.ordered_items
+
+      ordered.sum(&:prep_seconds) / ordered.size.to_f
     end
 
+    # Keyed on what the customer ordered, not on how many drinks were made.
     def orders_in(label)
       range = SIZE_CLASSES.fetch(label)
 
-      @orders.select { |o| range.cover?(o.items.size) }
+      @orders.select { |o| range.cover?(o.ordered_size) }
     end
 
     def percentiles(values)

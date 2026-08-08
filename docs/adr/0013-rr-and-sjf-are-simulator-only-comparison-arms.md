@@ -40,40 +40,53 @@ reporting a null result.
 Measured at 3 stations, demand ×2.0 (80% utilisation), 8 seeds, with ADR-0011's common random
 numbers so every row is the same day:
 
-| Arm | small-order p90 | 7+ p90 | stale drinks |
-|---|---|---|---|
-| FIFO | 1137s | **1249s** | **24.2%** |
-| RR — equal turns | 607s | 4184s | 49.9% |
-| DRR — equal time | **484s** | 4831s | 45.3% |
-| DRR + aging | 756s | 2932s | 36.6% |
-| DRR + aging + cohesion | 723s | 3599s | 36.9% |
-| SJF — mean-wait floor | 1221s | 2242s | 34.4% |
+| Arm | small-order p90 | 7+ p90 | stale drinks | slow-drink penalty |
+|---|---|---|---|---|
+| FIFO | 1138s | **1304s** | **24.2%** | 1.02× |
+| RR — equal turns | 616s | 4186s | 49.9% | **0.90×** |
+| DRR — equal time | **499s** | 4950s | 45.3% | 1.28× |
+| DRR + aging | 767s | 2975s | 36.6% | 1.06× |
+| DRR + aging + cohesion | 736s | 3696s | 36.9% | 1.14× |
+| SJF — mean-wait floor | 1262s | 2256s | 34.4% | 19.63× |
+
+Size classes are keyed on the drinks the customer *ordered*, not the drinks made: a remake
+appends to `items` (§5.2), and counting those moved remade 2-drink orders into the "3-6"
+class. Remade orders carry extra work and §6.4's priority floor, so they are slow ones, and
+dropping them out of "1-2" biased the headline optimistic by ~2%.
 
 Three things fall out, two of them uncomfortable.
 
-**The deficit is worth 20%, and was previously invisible.** RR → DRR moves small-order p90 from
-607s to 484s at a cost of 15% on the catering tail. §6.1's claim holds. But it only shows up
+**The deficit is worth 19%, and was previously invisible.** RR → DRR moves small-order p90 from
+616s to 499s at a cost of 18% on the catering tail. §6.1's claim holds. But it only shows up
 with aging and cohesion held off on both sides — compared against *default* DRR, plain RR
 looks 20% better, because aging is doing something else entirely.
 
-**Aging costs small orders 56%.** 484s → 756s, buying back 39% of the catering tail. §6.2
+**Aging costs small orders 54%.** 499s → 767s, buying back 40% of the catering tail. §6.2
 presents aging as an anti-starvation guarantee rather than a tuning knob, and at `aging_rate:
 0.15` it is the single largest effect in the ladder — larger than the deficit it is layered
 on. That is a defensible trade, but it is not the trade §6.1 describes, and nothing currently
 measures it.
 
 **Cohesion does not reduce staleness.** §6.4 and §9.6 both say that is its purpose. Adding it
-moves stale drinks 36.6% → 36.9% and the catering tail 2932s → 3599s — both marginally
-*worse*. One load point and eight seeds is not enough to call it, and the effect is small
+moves stale drinks 36.6% → 36.9% and the catering tail 2975s → 3696s — both *worse*, the
+second by 24%. One load point and eight seeds is not enough to call it, and the effect is small
 enough to be noise, but it is the wrong sign and it is the one claim §6.4 rests on. It needs
 a dedicated sweep before `cohesion_enabled` is trusted, and this ADR does not settle it.
 
-**SJF does not starve catering orders here** — 2242s against DRR's 3599s. The design's fear
+**SJF does not starve catering orders here** — 2256s against DRR's 3696s. The design's fear
 assumes drink cost tracks order size, and in §10.3's menu the two are independent: a 20-drink
 order draws from the same distribution as everyone else, so it has twenty chances to hold a
 cheap drink. SJF starves *expensive drinks*, not *large orders*. It remains unshippable, but
 the reason is narrower than §6.3 states, and a menu where catering orders skewed toward the
 95s items would make it bite.
+
+**Which the last column is the direct measure of.** The slow-drink penalty — how much longer a
+small order queues when it ordered ≥90s drinks rather than ≤50s ones — separates SJF from
+everything else by an order of magnitude (19.63× against 0.90–1.28×), and it is the only
+figure here that still discriminates at the shop's default demand, where every wait
+percentile agrees. RR's 0.90× is the cleanest statement of what it is: equal *turns* ignores
+prep time entirely, so a slow drink is not penalised at all — it is simply served in its turn
+while everyone behind it absorbs the cost.
 
 ## Alternatives considered
 

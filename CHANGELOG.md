@@ -26,7 +26,7 @@ Categories, in this order:
   scheduling policies at the shop's normal demand — SJF reads 8.5× where every wait
   percentile says it is the best policy on the board (§6.1).
 - Two comparison arms in the simulator, `rr` and `sjf` (§6.3, ADR-0013). Plain round robin is
-  DRR without the deficit, so it isolates what the deficit is worth — 20% off small-order p90
+  DRR without the deficit, so it isolates what the deficit is worth — 19% off small-order p90
   at 80% utilisation. Shortest-job-first is the mean-wait floor, so "DRR beats FIFO" becomes a
   position on a scale rather than a comparison against the worst option. Both are
   simulator-only; the store still accepts `drr` and `fifo` only.
@@ -101,6 +101,10 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- Wait percentiles are reported by the number of drinks the customer *ordered*. A remake adds
+  a drink to the order (§5.2), which moved remade 2-drink orders out of the "1–2" class — and
+  since remade orders are slow ones, that made the headline small-order figure look about 2%
+  better than it was.
 - The dashboard no longer presents a "7+ p90" computed from five orders as if it were a
   percentile. Below ten samples nearest-rank returns the maximum, so all four policies were
   showing the same single worst catering order. Every wait figure now carries its sample
