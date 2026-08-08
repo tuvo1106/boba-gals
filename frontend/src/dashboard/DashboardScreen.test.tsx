@@ -9,9 +9,16 @@ import type { SimulationRun } from '../api/types'
 /** Every request the screen makes, so a test can assert what it asked for. */
 let requests: Record<string, unknown>[] = []
 
-function serveRun({ metrics: metricOverrides = {}, ...overrides }: Partial<SimulationRun> & {
+/**
+ * `Omit` rather than intersecting `Partial<SimulationRun>` with a partial
+ * `metrics`: intersecting leaves `metrics` as `Metrics & Partial<Metrics>`,
+ * which is still fully required, so no partial override is assignable.
+ */
+type RunOverrides = Omit<Partial<SimulationRun>, 'metrics'> & {
   metrics?: Partial<SimulationRun['metrics']>
-} = {}) {
+}
+
+function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides = {}) {
   requests = []
   server.use(
     http.post('/api/v1/admin/simulations', async ({ request }) => {
