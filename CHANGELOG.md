@@ -228,6 +228,10 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Changed
+- The simulation dashboard is quieter. Every figure carried three lines of explanation, above
+  a stack of banners that pushed the lane ribbon — the thing the page exists for — most of the
+  way down the screen. The explanations are now behind a `?` toggle (or a hover), and the
+  duplicated warnings are one line that only appears when it applies (§10.6).
 - Wait times keep updating while a barista is mid-drink. Previously the board's numbers only
   moved when something happened — a drink starting or finishing — so a customer watching a
   95-second drink being made saw a frozen countdown, and a drink running over its estimate

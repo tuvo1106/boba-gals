@@ -73,6 +73,11 @@ async function renderRun() {
   await screen.findByText(/small-order p90/i)
 }
 
+/** Glosses are opt-in — permanently-on prose made the panel a wall of text. */
+async function explain(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: '?' }))
+}
+
 /** Drives the real control rather than relying on implicit form submission,
  *  which jsdom does not implement. */
 async function findOrder(user: ReturnType<typeof userEvent.setup>, id: string) {
@@ -100,8 +105,12 @@ describe('DashboardScreen', () => {
   // Every figure has to say which direction is good, or an operator reading
   // "0.364" has no way to know whether to add a station.
   describe('metric glosses', () => {
-    it('explains what each figure measures', async () => {
+    it('explains what each figure measures once asked', async () => {
+      const user = userEvent.setup()
       await renderRun()
+
+      expect(screen.queryByText(/decides staffing/i)).not.toBeInTheDocument()
+      await explain(user)
 
       expect(screen.getByText(/decides staffing/i)).toBeInTheDocument()
       expect(screen.getByText(/a 95s drink takes 95s under any policy/i)).toBeInTheDocument()
@@ -183,14 +192,19 @@ describe('DashboardScreen', () => {
           },
         },
       })
+      const user = userEvent.setup()
       render(<DashboardScreen />)
+      await screen.findByText(/small-order p90/i)
+      await explain(user)
 
-      expect(await screen.findByText(/only 5 catering orders/i)).toBeInTheDocument()
+      expect(screen.getByText(/only 5 catering orders/i)).toBeInTheDocument()
       expect(screen.getByText(/slowest one rather than a percentile/i)).toBeInTheDocument()
     })
 
     it('trusts the figure once there are enough of them', async () => {
+      const user = userEvent.setup()
       await renderRun()
+      await explain(user)
 
       expect(screen.getByText(/over 25 of them/i)).toBeInTheDocument()
     })
@@ -207,9 +221,12 @@ describe('DashboardScreen', () => {
           },
         },
       })
+      const user = userEvent.setup()
       render(<DashboardScreen />)
+      await screen.findByText(/small-order p90/i)
+      await explain(user)
 
-      expect(await screen.findByText(/only 4 small orders/i)).toBeInTheDocument()
+      expect(screen.getByText(/only 4 small orders/i)).toBeInTheDocument()
     })
 
     // Zero is not a perfect score. Rendering it green was the same bug as the
@@ -220,11 +237,14 @@ describe('DashboardScreen', () => {
           wait_by_drink_cost: { cheap: { orders: 0, p90: 0 }, dear: { orders: 0, p90: 0 }, ratio: 0, comparable: false },
         },
       })
+      const user = userEvent.setup()
       render(<DashboardScreen />)
 
       expect(await screen.findByText('—')).toBeInTheDocument()
-      expect(screen.getByText(/not enough of one kind to compare/i)).toBeInTheDocument()
       expect(screen.queryByText('0.00×')).not.toBeInTheDocument()
+
+      await explain(user)
+      expect(screen.getByText(/not enough of one kind to compare/i)).toBeInTheDocument()
     })
   })
 
@@ -235,7 +255,7 @@ describe('DashboardScreen', () => {
       serveRun({ metrics: { station_utilisation: 0.34 } })
       render(<DashboardScreen />)
 
-      expect(await screen.findByText(/within noise/i)).toBeInTheDocument()
+      expect(await screen.findByText(/too quiet to compare arms/i)).toBeInTheDocument()
     })
 
     it('stays quiet once there is a queue to schedule', async () => {
@@ -243,7 +263,7 @@ describe('DashboardScreen', () => {
       render(<DashboardScreen />)
       await screen.findByText(/small-order p90/i)
 
-      expect(screen.queryByText(/within noise/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/too quiet to compare arms/i)).not.toBeInTheDocument()
     })
   })
 

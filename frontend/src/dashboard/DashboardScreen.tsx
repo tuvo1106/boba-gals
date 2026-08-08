@@ -45,6 +45,9 @@ export function DashboardScreen() {
   const [find, setFind] = useState('')
   const [pinned, setPinned] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  // Off by default. Every figure carrying three lines of explanation turned the
+  // panel into a wall of prose you read once and then scroll past forever.
+  const [explain, setExplain] = useState(false)
 
   async function go(
     nextSeed = seed, nextPolicy = policy, nextSpan = span, nextFrom = from,
@@ -190,8 +193,17 @@ export function DashboardScreen() {
         </form>
 
         <button
+          onClick={() => setExplain((on) => !on)}
+          aria-pressed={explain}
+          title="Explain what each figure measures"
+          className={`ml-auto border px-2 py-1 font-mono text-xs ${explain ? 'border-amber-500 text-amber-500' : 'border-neutral-700 text-neutral-500 hover:text-neutral-300'}`}
+        >
+          ?
+        </button>
+
+        <button
           onClick={() => go()} disabled={busy}
-          className="ml-auto border border-neutral-700 px-3 py-1 font-mono text-xs uppercase hover:border-amber-500 disabled:opacity-40"
+          className="border border-neutral-700 px-3 py-1 font-mono text-xs uppercase hover:border-amber-500 disabled:opacity-40"
         >
           {busy ? 'Running…' : 'Run'}
         </button>
@@ -224,27 +236,16 @@ export function DashboardScreen() {
           <span className="w-8 tabular-nums text-neutral-300">{demand.toFixed(1)}×</span>
         </label>
 
-        {/* The point of both knobs: §10.4's threshold is a cliff, not a slope,
-            and you only believe that by walking up to it. */}
-        <p className="text-[11px] text-neutral-600">
-          Push these until utilisation passes 85% — waits and walkaways go nonlinear, not linear.
-        </p>
       </div>
 
       {error && <p role="alert" className="font-mono text-sm text-amber-500">{error}</p>}
 
       {run && (
         <>
-          {run.metrics.station_utilisation < 0.6 && (
-            <p className="mb-3 border-l-2 border-neutral-700 pl-3 font-mono text-xs text-neutral-500">
-              At {pct(run.metrics.station_utilisation)} utilisation there is rarely a queue, so
-              every policy dispatches almost the same order and the waits above are within noise
-              of each other. Raise demand or drop a station before comparing arms — §10.3:
-              “flat arrivals will make everything look fine”.
-            </p>
-          )}
-
-          <Verdict run={run} policy={policy} previous={previous} />
+          <Verdict
+            run={run} policy={policy} previous={previous}
+            quiet={run.metrics.station_utilisation < 0.6}
+          />
 
           <LaneRibbon
             drinks={run.timeline} stations={run.stations}
@@ -259,7 +260,7 @@ export function DashboardScreen() {
               that decides whether to add a fourth station. */}
           <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-3 font-mono text-xs sm:grid-cols-2 lg:grid-cols-4">
             <Figure
-              label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`}
+              explain={explain} label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`}
               accent={run.metrics.by_size_class['1-2'].p90_meaningful}
               state={run.metrics.by_size_class['1-2'].p90_meaningful ? undefined : 'warn'}
               hint={
@@ -269,7 +270,7 @@ export function DashboardScreen() {
               }
             />
             <Figure
-              label="7+ p90" value={`${run.metrics.by_size_class['7+'].p90}s`}
+              explain={explain} label="7+ p90" value={`${run.metrics.by_size_class['7+'].p90}s`}
               state={run.metrics.by_size_class['7+'].p90_meaningful ? undefined : 'warn'}
               hint={
                 run.metrics.by_size_class['7+'].p90_meaningful
@@ -278,32 +279,32 @@ export function DashboardScreen() {
               }
             />
             <Figure
-              label="utilisation" value={pct(run.metrics.station_utilisation)}
+              explain={explain} label="utilisation" value={pct(run.metrics.station_utilisation)}
               state={utilisationState(run.metrics.station_utilisation)}
               hint="Share of barista time spent making drinks. Past ~85% queues grow nonlinearly, so this is the number that decides staffing (§10.4)."
             />
             <Figure
-              label="orders served" value={String(run.metrics.orders)}
+              explain={explain} label="orders served" value={String(run.metrics.orders)}
               hint={`${run.metrics.drinks} drinks across an 11-hour day, 10:00–21:00.`}
             />
             <Figure
-              label="remakes" value={String(run.metrics.remakes)}
+              explain={explain} label="remakes" value={String(run.metrics.remakes)}
               hint="Drinks made wrong and remade. A remake is a new drink on the same order and gets a priority floor, so it does not go to the back (§5.2, §6.4)."
             />
             <Figure
-              label="walked away" value={String(run.metrics.reneged)}
+              explain={explain} label="walked away" value={String(run.metrics.reneged)}
               state={run.metrics.reneged > 0 ? 'warn' : 'good'}
               hint="Web customers who saw the quoted wait and left without ordering. This prices slowness in lost sales rather than seconds (§10.3)."
             />
             <Figure
-              label="sat too long" value={pct(run.metrics.quality_breach_rate_multi)}
+              explain={explain} label="sat too long" value={pct(run.metrics.quality_breach_rate_multi)}
               state={run.metrics.quality_breach_rate_multi > 0.25 ? 'warn' : 'good'}
               hint={`Drinks in multi-drink orders that waited over 5 minutes on the counter — ice melts, and this is what cohesion exists to reduce (§9.6). Across all orders it is ${pct(run.metrics.quality_breach_rate)}, but a lone drink's wait is just the customer walking over, which no schedule can improve.`}
             />
             {/* Discriminates where p90 cannot: at default demand every policy
                 has the same p90, but SJF already spreads this 5.6x. */}
             <Figure
-              label="ordered-a-slow-drink penalty"
+              explain={explain} label="ordered-a-slow-drink penalty"
               value={run.metrics.wait_by_drink_cost.comparable ? `${run.metrics.wait_by_drink_cost.ratio.toFixed(2)}×` : '—'}
               state={
                 !run.metrics.wait_by_drink_cost.comparable ? 'warn'
@@ -334,10 +335,12 @@ function Verdict({
   run,
   policy,
   previous,
+  quiet,
 }: {
   run: SimulationRun
   policy: string
   previous: { run: SimulationRun; policy: string } | null
+  quiet: boolean
 }) {
   const small = run.metrics.by_size_class['1-2'].p90
   const large = run.metrics.by_size_class['7+'].p90
@@ -346,32 +349,25 @@ function Verdict({
   const delta = against ? small - against.run.metrics.by_size_class['1-2'].p90 : null
 
   return (
-    <section className="mb-4 border-l-2 border-amber-600 pl-3">
-      <p className="font-mono text-sm text-neutral-300">
-        A customer ordering <strong className="text-neutral-100">1–2 drinks</strong> waited{' '}
-        <strong className="tabular-nums text-amber-500">{small}s</strong> at the 90th percentile.
-        Someone ordering <strong className="text-neutral-100">7+</strong> waited{' '}
-        <span className="tabular-nums">{large}s</span>.
+    <section className="mb-3 border-l-2 border-amber-600 pl-3 font-mono text-sm text-neutral-300">
+      <p>
+        <strong className="text-neutral-100">1–2 drinks</strong>{' '}
+        <strong className="tabular-nums text-amber-500">{small}s</strong> at p90 ·{' '}
+        <strong className="text-neutral-100">7+</strong>{' '}
+        <span className="tabular-nums">{large}s</span>
+        {delta !== null && (
+          <span className={delta < 0 ? 'text-emerald-400' : 'text-orange-400'}>
+            {' '}· {Math.abs(delta).toFixed(1)}s {delta < 0 ? 'faster' : 'slower'} than{' '}
+            {against?.policy.toUpperCase()} on the same day
+          </span>
+        )}
       </p>
 
-      {delta !== null ? (
-        <p className="mt-1 font-mono text-xs text-neutral-400">
-          {delta < 0 ? (
-            <>
-              <span className="text-emerald-400">{Math.abs(delta).toFixed(1)}s faster</span> than{' '}
-              {against?.policy.toUpperCase()} on the same day — small orders are not stuck behind large ones.
-            </>
-          ) : (
-            <>
-              <span className="text-amber-500">{delta.toFixed(1)}s slower</span> than{' '}
-              {against?.policy.toUpperCase()} on the same day.
-            </>
-          )}
-        </p>
-      ) : (
-        <p className="mt-1 font-mono text-xs text-neutral-600">
-          Switch policy to compare the same day under another arm — identical
-          arrivals, identical drinks (ADR-0011).
+      {/* Below saturation every policy dispatches almost the same order, so the
+          panel must not invite a comparison it cannot support (§10.3). */}
+      {quiet && (
+        <p className="mt-0.5 text-xs text-neutral-500">
+          Too quiet to compare arms — raise demand or drop a station.
         </p>
       )}
     </section>
@@ -381,23 +377,19 @@ function Verdict({
 /** A ribbon is unreadable without a key to what its shapes mean. */
 function Legend() {
   return (
-    <ul className="mt-4 ml-24 flex flex-wrap gap-x-6 gap-y-1 font-mono text-[11px] text-neutral-500">
-      <li className="flex items-center gap-1.5">
-        <span className="h-3 w-6 rounded-full" style={{ background: 'hsl(137.5 62% 58%)' }} />
-        one drink — width is how long it took
-      </li>
+    <ul className="mt-3 ml-24 flex flex-wrap gap-x-5 font-mono text-[10px] text-neutral-600">
       <li className="flex items-center gap-1.5">
         <span className="flex gap-0.5">
-          <span className="h-3 w-3 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
-          <span className="h-3 w-3 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'hsl(275 62% 58%)' }} />
         </span>
         same colour = same order
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="h-3 w-6 rounded-full border-2 border-dashed border-white/70" style={{ background: 'hsl(50 62% 58%)' }} />
+        <span className="h-2.5 w-5 rounded-full border-2 border-dashed border-white/70" style={{ background: 'hsl(50 62% 58%)' }} />
         remake
       </li>
-      <li>rows are stations · left to right is time</li>
+      <li>rows are stations · width is how long a drink took</li>
     </ul>
   )
 }
@@ -411,18 +403,18 @@ const STATE_COLOUR = {
 } as const
 
 function Figure({
-  label, value, hint, accent = false, state,
+  label, value, hint, explain, accent = false, state,
 }: {
-  label: string; value: string; hint: string
+  label: string; value: string; hint: string; explain: boolean
   accent?: boolean; state?: keyof typeof STATE_COLOUR
 }) {
   const colour = state ? STATE_COLOUR[state] : accent ? 'text-amber-500' : 'text-neutral-200'
 
   return (
-    <div className="border-t border-neutral-800 pt-1">
+    <div className="border-t border-neutral-800 pt-1" title={explain ? undefined : hint}>
       <dt className="text-[10px] tracking-wider text-neutral-600 uppercase">{label}</dt>
       <dd className={`text-base tabular-nums ${colour}`}>{value}</dd>
-      <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">{hint}</p>
+      {explain && <p className="mt-0.5 text-[10px] leading-snug text-neutral-500">{hint}</p>}
     </div>
   )
 }
