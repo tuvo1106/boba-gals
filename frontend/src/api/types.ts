@@ -63,6 +63,8 @@ export interface SimulationRun {
     wait_by_drink_cost: {
       cheap: { orders: number; p90: number }
       dear: { orders: number; p90: number }
+      /** False when either side is too small to support the comparison. */
+      comparable: boolean
       ratio: number
     }
     quality_breach_rate: number

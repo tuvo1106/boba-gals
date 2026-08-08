@@ -372,6 +372,42 @@ RSpec.describe Simulator do
 
   # The ribbon only ever shows a slice of the day, so finding a given order needs
   # an index the client can search without re-running the simulation (§10.6).
+  # §10.4 reports by the size of the order the *customer placed*. `items` grows
+  # when a drink is remade (§5.2), so counting it moves a remade 2-drink order
+  # into the "3-6" class — and remade orders are the slow ones, carrying extra
+  # work and §6.4's priority floor, so dropping them out of "1-2" makes the
+  # headline number look better than it is.
+  describe "size classes (§10.4)" do
+    def order_with(ordered:, remakes:)
+      items = Array.new(ordered) { |i| Simulator::Drink.new(id: "1-#{i}", prep_seconds: 60, service_seconds: 60, finished_at: 60) } +
+              Array.new(remakes) { |i| Simulator::Drink.new(id: "1-#{i}r", prep_seconds: 60, service_seconds: 60, finished_at: 60, remake: true) }
+
+      Simulator::Order.new(id: 1, arrived_at: 0, ready_at: 600, items: items)
+    end
+
+    it "counts the drinks ordered, not the drinks made" do
+      remade = order_with(ordered: 2, remakes: 1)
+
+      expect(remade.items.size).to eq(3)
+      expect(remade.ordered_size).to eq(2)
+
+      classes = described_class::Metrics.new(orders: [ remade ], seconds: 600, stations: 1).to_h[:by_size_class]
+
+      expect(classes["1-2"][:orders]).to eq(1)
+      expect(classes["3-6"][:orders]).to eq(0)
+    end
+
+    it "keeps the headline number honest across a real run" do
+      w = described_class.simulate(Simulator::Scenario.new(seed: 7, stations: 3, demand_multiplier: 2.0))
+      reclassified = w.completed.count { |o| o.items.size != o.ordered_size }
+
+      expect(reclassified).to be_positive, "no remakes in this run — the guard would prove nothing"
+      expect(described_class::Metrics.new(orders: w.completed, seconds: w.clock, stations: 3)
+               .to_h[:by_size_class]["1-2"][:orders])
+        .to eq(w.completed.count { |o| o.ordered_size <= 2 })
+    end
+  end
+
   # "Does your wait depend on what you ordered?" — the sharpest single number
   # for what equalising barista *time* buys, and the only figure that separates
   # the arms at default demand, where every p90 is within noise (§10.3).
@@ -390,6 +426,20 @@ RSpec.describe Simulator do
 
     it "separates the arms even at the default demand where every p90 agrees" do
       expect(penalty("sjf", demand: 1.0)[:ratio]).to be > penalty("drr", demand: 1.0)[:ratio]
+    end
+
+    # Zero is not a good score. Without a `comparable` flag an empty run reports
+    # 0.00x, which the dashboard paints green — the same failure as a p90 over
+    # five orders reading as a percentile.
+    it "does not report a perfect score when there is nothing to compare" do
+      empty = described_class::Metrics.new(orders: [], seconds: 100, stations: 3).to_h[:wait_by_drink_cost]
+
+      expect(empty[:ratio]).to be_zero
+      expect(empty[:comparable]).to be(false)
+    end
+
+    it "is comparable once both sides have enough orders" do
+      expect(penalty("drr")[:comparable]).to be(true)
     end
 
     # Queueing, not wait. A 95s drink takes 95s under any policy, so including
