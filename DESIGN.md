@@ -198,11 +198,111 @@ Rule: `finished` is terminal. A failed drink is never "un-finished" — a new `O
 
 ### 6.1 Algorithm: Deficit Round Robin over orders
 
-Each **order is a flow**. Each flow has a `deficit` counter measured in prep-seconds. The scheduler walks flows in a ring; a flow may dispatch a drink only if its deficit covers that drink's `prep_seconds`. If not, the flow is granted a quantum and the pointer advances.
+Deficit Round Robin comes from network routers (Shreedhar & Varghese, 1995), where it shares bandwidth between connections sending different-sized packets. The mapping onto a boba shop is direct:
+
+| Networking | Here |
+|---|---|
+| Flow | An **order** |
+| Packet | A **drink** |
+| Packet size | `prep_seconds` |
+| Bandwidth | Barista time |
+
+#### Why plain round robin is not enough
+
+Give every order one turn per round and you have shared *turns*, not shared *time*.
+
+Sarah orders five Thai teas (40 prep-seconds each). Mike orders five brown sugar pearl drinks (95 each). Strict alternation looks scrupulously fair:
+
+| Round | Served | Sarah's barista time | Mike's barista time |
+|---|---|---|---|
+| 1 | Sarah, Mike | 40s | 95s |
+| 2 | Sarah, Mike | 80s | 190s |
+| 3 | Sarah, Mike | 120s | 285s |
+| 4 | Sarah, Mike | 160s | 380s |
+| 5 | Sarah, Mike | 200s | **475s** |
+
+Mike consumed **2.4× the shop's capacity** while receiving exactly the same number of turns. Nobody did anything wrong; the unit of accounting is simply incorrect. Fair queuing has to allocate *work*, and a turn is not a unit of work.
+
+#### The deficit
+
+Each flow carries a counter measured in prep-seconds, and one rule governs it:
+
+```
+per round:   deficit += quantum
+serve while: deficit >= head.prep_seconds   →   deficit -= head.prep_seconds
+```
+
+**Unspent credit carries to the next round.** That single property is what the algorithm is named for, and dropping it breaks everything: with a 60-second quantum and a 95-second drink, a flow that reset each round could never afford its head and would starve permanently. Carrying means it holds 60, then 120, and serves on the second round.
+
+Run Sarah and Mike through it with `Q = 120`. Sarah's drinks cost 40, Mike's cost 95:
+
+| Round | Sarah: deficit → served | Mike: deficit → served |
+|---|---|---|
+| 1 | 0+120 → **3 drinks**, 0 left | 0+120 → **1 drink**, 25 left |
+| 2 | 0+120 → **3 drinks**, 0 left | 25+120=145 → **1 drink**, 50 left |
+| 3 | 0+120 → **3 drinks**, 0 left | 50+120=170 → **1 drink**, 75 left |
+| 4 | 0+120 → **3 drinks**, 0 left | 75+120=195 → **2 drinks**, 5 left |
+
+After four rounds Sarah has received **480 seconds** of barista time and Mike **475** — from wildly different drink counts (12 versus 5). The carried remainder is doing the work: Mike's leftovers accumulate across rounds until they buy him an extra drink in round 4, which is exactly where the discrepancy gets repaid.
+
+Compare that to the plain round-robin table above, where the same two customers ended 200 against 475.
+
+#### The guarantee
+
+Over `r` rounds a flow receives at least `r × Q − max_drink` seconds of service and at most `r × Q`. The error never accumulates, because whatever a round underspends is exactly what carries into the next one. So:
+
+```
+service_i(r)  =  r × Q  ±  max_drink
+```
+
+Two flows with equal quanta therefore differ by at most one drink's worth of work, *no matter how differently sized their drinks are*, and the relative error shrinks as `r` grows. In the trace above the gap after four rounds is 5 seconds against a 480-second allocation — about 1%.
+
+That is the sense in which DRR is fair, and it is a stronger statement than "everyone gets a turn".
+
+#### Choosing the quantum
+
+**Quantum default: 120 prep-seconds** — roughly 1–2 drinks per round.
+
+The constraint the literature cares about is `Q ≥ max_item`. When it holds, every visit to a flow serves at least one item and the work per dispatch is O(1) amortised. That is why DRR exists at all: weighted fair queuing achieves comparable fairness but needs virtual-time bookkeeping and a priority queue, at O(log n) per packet. DRR trades a bounded fairness error for a counter and an array.
+
+**On the seeded menu, that constraint does not hold.** The most expensive drink is a Brown Sugar Pearl at 95 seconds with three toppings — boba pearls +15, extra pearls +15, grass jelly +10 — for **135**, against a 120-second default quantum.
+
+Nothing breaks, because the deficit carries:
+
+| Visit | Deficit | Can it afford 135? |
+|---|---|---|
+| 1 | 0 + 120 = 120 | No — yield, carry 120 |
+| 2 | 120 + 120 = 240 | **Yes** — serve, 105 left |
+
+The priciest drink in the shop waits one extra ring traversal, and the amortised bound weakens from O(1) to O(⌈max_item / Q⌉) — here, two.
+
+That is a *choice* rather than an oversight. Raising `Q` to 135 restores the bound, and simultaneously lengthens every order's uninterrupted run, which is worse for the solo customer waiting behind a catering order. The default optimises for the drink people actually order over the worst case on the menu. §10.5's quantum sweep is where that trade gets measured instead of argued.
+
+**Raise the quantum** and each order is served in longer uninterrupted stretches — better for cohesion, worse for the small order waiting behind. **Lower it** and interleaving is finer, up to the point where `Q < max_drink` starts costing empty rounds. §10.5's quantum sweep exists to find that crossover empirically rather than by argument.
+
+#### What this design adds
+
+Textbook DRR is unweighted and walks flows in arrival order. This design scales each flow's quantum by three factors and reorders the ring. The deficit accounting underneath is unchanged, which is what preserves the guarantee above.
+
+**Aging** (§6.2) — a flow's quantum grows by `aging_rate` (0.15) per minute waited. This is the anti-starvation guarantee, and it is needed because "an equal share of every round" still means "never finishes" when rounds keep gaining new flows.
+
+> A 12-drink order arrives at 12:00. From 12:01 a new single-drink order arrives every 30 seconds. By 12:20 there are 39 other flows, and an unweighted ring would give the catering order 1/40th of the shop. With aging its multiplier is `1 + 0.15 × 20 = 4.0` against the newcomers' ~1.0, so it draws four times their quantum and finishes.
+
+**Cohesion** (§6.2, §6.4) — a flow more than half made gets `+cohesion_boost` (1.0) to its multiplier, so the rest of that order is finished rather than interleaved away. It exists for the **melted first drink**.
+
+> A four-drink order. Perfect interleaving serves drinks 1 and 2, then the order waits its turn behind everyone else for drinks 3 and 4. Drink 1 was finished at minute 1 and is still on the counter at minute 7 — ice melted, foam collapsed, past `quality_limit_seconds` (300). The customer receives one good drink and one that has been sitting for six minutes.
+>
+> Once 2 of 4 are made, cohesion doubles the quantum from 120 to 240, so the remaining two drinks come out in a single visit rather than two. Perfect interleaving is fair to *orders* and unkind to *drinks*, because a finished drink degrades while it waits. Cohesion is the deliberate unfairness that fixes it, and §9.6's quality timer measures whether it worked.
+
+**Remake floor** (§6.4) — a flow with a pending remake sorts into a strictly higher tier.
+
+> A drink is dropped at 12:30 and re-queued. An ordinary order placed at 12:00 has been aging for 30 minutes: multiplier `1 + 0.15 × 30 = 5.5`. The fresh remake, as an additive bump, is `1 + 4.0 = 5.0` — and **loses**. The customer whose drink was dropped waits behind someone whose only distinction is having ordered earlier. A tier means the remake sorts first regardless of age, while `-quantum` *within* the tier keeps two remakes competing by age.
+
+**Priority-ordered ring** (ADR-0009) — flows are visited in descending quantum rather than arrival order.
+
+> Two orders placed in the same second, one carrying a remake. Walked in arrival order, the ring asks index 0 first — and the ordinary order is served first no matter how large the remake's quantum is. Measured on the unmodified pseudocode, the remake got 5× the throughput per round and still went second. A multiplier decides *how much* service a flow gets, never *who is asked first*; without reordering, all three boosts above are invisible as ordering.
 
 The result: a solo customer behind a 12-drink order waits roughly one quantum, while the large order still progresses steadily rather than being starved.
-
-**Quantum default: 120 prep-seconds.** (Roughly 1–2 drinks per round.)
 
 ### 6.2 Pseudocode
 
