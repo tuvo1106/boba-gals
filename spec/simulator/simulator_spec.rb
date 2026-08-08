@@ -56,6 +56,71 @@ RSpec.describe Simulator do
   end
 
   # §10.1's one rule, asserted rather than assumed.
+  # Common random numbers (§17). Without this the simulator cannot answer the
+  # question it exists to answer: a policy change reorders `drink_finished`
+  # events, which reorders every draw made from a shared generator, and the two
+  # runs end up facing different demand. The delta you measure is then policy
+  # plus a different random day, with no way to separate them.
+  describe "common random numbers" do
+    def index(policy, seed: 7)
+      Simulator.simulate(Simulator::Scenario.new(seed: seed, stations: 3, scheduler_config: { "policy" => policy }))
+               .completed.flat_map(&:items).to_h { |drink| [ drink.id, drink ] }
+    end
+
+    let(:drr) { index("drr") }
+    let(:fifo) { index("fifo") }
+
+    it "serves the same drinks under either policy" do
+      expect(drr.keys).to match_array(fifo.keys)
+    end
+
+    it "gives a drink the same intrinsic prep time however it is scheduled" do
+      differing = drr.keys.reject { |id| drr[id].actual_prep_seconds == fifo[id].actual_prep_seconds }
+
+      expect(differing).to be_empty, "#{differing.size} drinks changed prep time between policies"
+    end
+
+    it "gives an order the same customer however it is scheduled" do
+      %w[drr fifo].each_cons(2) do
+        a = Simulator.simulate(Simulator::Scenario.new(seed: 7, scheduler_config: { "policy" => "drr" })).completed
+        b = Simulator.simulate(Simulator::Scenario.new(seed: 7, scheduler_config: { "policy" => "fifo" })).completed
+        by_id = b.to_h { |o| [ o.id, o ] }
+
+        a.each { |order| expect(order.web).to eq(by_id[order.id].web) if by_id.key?(order.id) }
+      end
+    end
+
+    # The part that must still differ: which station picks a drink up is a
+    # scheduling outcome, not a property of the drink.
+    it "still lets the schedule decide which station makes what" do
+      moved = drr.keys.count { |id| drr[id].station != fifo[id].station }
+
+      expect(moved).to be_positive
+    end
+
+    # A substream must be reproducible across processes. `String#hash` is
+    # randomised per boot, so deriving from it would make a seed replayable only
+    # within one run of the program — the opposite of §10.2's promise.
+    it "derives a substream from the seed alone, not from process state" do
+      key = Simulator::Rng.new(99).stream(:drink, "12-3")
+      same = Simulator::Rng.new(99).stream(:drink, "12-3")
+      other = Simulator::Rng.new(99).stream(:drink, "12-4")
+
+      expect(Array.new(5) { key.uniform }).to eq(Array.new(5) { same.uniform })
+      expect(Array.new(5) { key.uniform }).not_to eq(Array.new(5) { other.uniform })
+    end
+
+    it "keeps substreams independent of how much anything else has drawn" do
+      quiet = Simulator::Rng.new(5)
+      noisy = Simulator::Rng.new(5)
+
+      100.times { noisy.stream(:drink, "noise").uniform }
+
+      expect(Array.new(3) { noisy.stream(:pickup, 7).uniform })
+        .to eq(Array.new(3) { quiet.stream(:pickup, 7).uniform })
+    end
+  end
+
   describe "the one rule (§10.1)" do
     it "dispatches through Scheduler.pick_next" do
       expect(Scheduler).to receive(:pick_next).at_least(20).times.and_call_original
@@ -175,6 +240,35 @@ RSpec.describe Simulator do
       expect(run(seed: 42).to_h[:quality_breach_rate]).to be_between(0, 1)
     end
 
+    # §9.6 is explicit that the quality timer is *per drink*. Measuring it per
+    # order — from the earliest drink's finish — scores a 20-drink order where
+    # nineteen drinks went stale as a single breach, which is precisely the
+    # failure the cohesion boost exists to prevent.
+    it "counts one breach per stale drink, not one per stale order" do
+      order = Simulator::Order.new(
+        id: 1, arrived_at: 0, items: [
+          Simulator::Drink.new(id: "1-0", prep_seconds: 60, service_seconds: 60, finished_at: 0),
+          Simulator::Drink.new(id: "1-1", prep_seconds: 60, service_seconds: 60, finished_at: 10),
+          Simulator::Drink.new(id: "1-2", prep_seconds: 60, service_seconds: 60, finished_at: 590)
+        ],
+        first_ready_at: 0, ready_at: 590, picked_up_at: 600
+      )
+
+      # Two drinks sat 600s and 590s; the last sat 10s.
+      expect(order.sat_seconds).to eq([ 600, 590, 10 ])
+      expect(described_class::Metrics.new(orders: [ order ], seconds: 600, stations: 1)
+               .to_h[:quality_breach_rate]).to eq((2.0 / 3).round(3))
+    end
+
+    # A single-drink order's sitting time *is* the customer's walk-up delay, so
+    # it can never be improved by scheduling. Reporting it mixed into one figure
+    # puts a floor near 10% under the number and hides the cohesion signal.
+    it "reports multi-drink orders separately from the pickup-delay floor" do
+      metrics = run(seed: 7, stations: 1, demand_multiplier: 3.0).to_h
+
+      expect(metrics[:quality_breach_rate_multi]).to be > metrics[:quality_breach_rate]
+    end
+
     it "generates order-ahead orders, which exercise backward scheduling" do
       world = described_class.simulate(Simulator::Scenario.new(seed: 42))
 
@@ -184,8 +278,16 @@ RSpec.describe Simulator do
     # "Reneging prices the cost of slowness in lost revenue rather than abstract
     # seconds." It must be quiet in a healthy shop and bite in a saturated one —
     # a renege model that fires at low load would understate every wait.
-    it "does not renege in a shop that is keeping up" do
-      expect(run(seed: 7, demand_multiplier: 1.0).to_h[:reneged]).to eq(0)
+    # Negligible, not zero. §10.3's renege probability is a soft ramp above an
+    # 8-minute quoted wait, and a shop averaging 36% utilisation still crosses
+    # that in bursts — at seed 7, 9 of 142 web arrivals are quoted over 480s and
+    # one of them leaves. Asserting exactly zero pins the test to one alignment
+    # of the random streams rather than to anything the model claims.
+    it "barely reneges in a shop that is keeping up" do
+      calm = run(seed: 7, demand_multiplier: 1.0).to_h
+
+      expect(calm[:station_utilisation]).to be < 0.5
+      expect(calm[:reneged].to_f / calm[:orders]).to be < 0.01
     end
 
     it "reneges sharply once the shop saturates" do

@@ -1,3 +1,5 @@
+require "digest"
+
 module Simulator
   # Every random draw in the simulator, from one seeded source (DESIGN.md §10.2).
   #
@@ -10,6 +12,27 @@ module Simulator
     def initialize(seed)
       @seed = seed
       @random = Random.new(seed)
+      @streams = {}
+    end
+
+    # An independent substream, so a draw about one entity is unaffected by how
+    # many draws anything else has made (DESIGN.md §17, "common random numbers").
+    #
+    # This is what makes an A/B honest. With a single generator, changing the
+    # scheduler changes the *order* in which remakes and pickups are drawn, the
+    # streams desynchronise on the first reordered dispatch, and the two runs
+    # face different demand — measured at seed 7, only 105 of 740 shared drinks
+    # kept the same prep time between DRR and FIFO. Keyed by entity, drink
+    # `32-0` draws the same prep time no matter when, or whether, it is made.
+    #
+    # SHA-256 rather than `String#hash`: Ruby randomises that per process, which
+    # would make a seed reproducible only within a single boot.
+    #
+    # @param purpose [Symbol] which concern is drawing — `:drink`, `:pickup`, …
+    # @param key [Object, nil] the entity, usually an order or drink id
+    # @return [Simulator::Rng]
+    def stream(purpose, key = nil)
+      @streams[[ purpose, key ]] ||= Rng.new(derive(purpose, key))
     end
 
     # @return [Float] uniform in [0, 1)
@@ -66,6 +89,15 @@ module Simulator
       end
 
       weighted.keys.last
+    end
+
+    private
+
+    # 64 bits off the digest is ample — `Random.new` accepts an arbitrary
+    # integer, and collisions between substreams would only matter at a scale no
+    # scenario reaches.
+    def derive(purpose, key)
+      Digest::SHA256.digest("#{@seed}:#{purpose}:#{key}").unpack1("Q>")
     end
   end
 end

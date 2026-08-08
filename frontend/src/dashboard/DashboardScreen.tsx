@@ -264,9 +264,9 @@ export function DashboardScreen() {
               hint="Web customers who saw the quoted wait and left without ordering. This prices slowness in lost sales rather than seconds (§10.3)."
             />
             <Figure
-              label="sat too long" value={pct(run.metrics.quality_breach_rate)}
-              state={run.metrics.quality_breach_rate > 0.1 ? 'warn' : 'good'}
-              hint="Share of collected orders whose first drink waited over 5 minutes on the counter. Ice melts; this is what the cohesion boost exists to reduce (§9.6)."
+              label="sat too long" value={pct(run.metrics.quality_breach_rate_multi)}
+              state={run.metrics.quality_breach_rate_multi > 0.25 ? 'warn' : 'good'}
+              hint={`Drinks in multi-drink orders that waited over 5 minutes on the counter — ice melts, and this is what cohesion exists to reduce (§9.6). Across all orders it is ${pct(run.metrics.quality_breach_rate)}, but a lone drink's wait is just the customer walking over, which no schedule can improve.`}
             />
             <Figure
               label="seed" value={String(run.seed)}
@@ -315,18 +315,19 @@ function Verdict({
           {delta < 0 ? (
             <>
               <span className="text-emerald-400">{Math.abs(delta).toFixed(1)}s faster</span> than{' '}
-              {against?.policy.toUpperCase()} at this seed — small orders are not stuck behind large ones.
+              {against?.policy.toUpperCase()} on the same day — small orders are not stuck behind large ones.
             </>
           ) : (
             <>
               <span className="text-amber-500">{delta.toFixed(1)}s slower</span> than{' '}
-              {against?.policy.toUpperCase()} at this seed.
+              {against?.policy.toUpperCase()} on the same day.
             </>
           )}
         </p>
       ) : (
         <p className="mt-1 font-mono text-xs text-neutral-600">
-          Switch policy to compare against {policy === 'drr' ? 'FIFO' : 'DRR'}.
+          Switch policy to compare the same day under {policy === 'drr' ? 'FIFO' : 'DRR'} —
+          identical arrivals, identical drinks (ADR-0011).
         </p>
       )}
     </section>

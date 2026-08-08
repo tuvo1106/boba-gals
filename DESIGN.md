@@ -404,9 +404,18 @@ def eligible?(flow, now, config)
 end
 ```
 
-### 6.3 FIFO comparison path
+### 6.3 Comparison arms
 
 Keep `policy: :fifo` implemented permanently — strict `ORDER BY queued_at, id`. It is the control arm for the simulator's ablation study (§10.5) and the fallback if DRR misbehaves in production.
+
+Two further arms exist **for the simulator only**, because FIFO alone cannot separate the two claims this design actually makes:
+
+| Arm | Rule | What it isolates |
+|---|---|---|
+| `rr` | one drink per order per turn, ignoring `prep_seconds` | **What the deficit is for.** DRR is round robin plus the deficit; RR is the same ring without it. FIFO shows you need fairness, RR shows you need *this* fairness — that serving turns equally is not the same as serving time equally when the menu spans 40s to 135s (§1). |
+| `sjf` | always the shortest queued drink | **The price of fairness.** Shortest-job-first minimises mean wait and is the bound DRR is paying against. It starves large orders by construction, which is exactly the failure §1 exists to prevent — so it is a benchmark, never a policy. |
+
+`rr` and `sjf` are not selectable on a store. `UpdateSchedulerConfig` (§6.6) accepts `drr` and `fifo` only. A policy that provably starves catering orders must not be one dropdown away from production, and a policy whose whole purpose is to make an argument in a chart has no business dispatching real drinks.
 
 ### 6.4 Why a priority *floor* for remakes
 
@@ -1082,3 +1091,10 @@ mistaken for two mechanisms.
 surviving mutant means no assertion depended on the altered expression. Scoped to the
 scheduler (ADR-0002), with the rationale and the equivalent-mutant caveat in
 `docs/testing.md`.
+
+**Common random numbers (CRN)** — a variance-reduction technique for comparing two
+configurations of a simulation: give both the *same* random draws, so the difference between
+them is attributable to the change and not to luck. The subtlety is that a single shared
+generator does not achieve this — if a change reorders when draws happen, the two runs
+consume the stream differently and diverge. The fix is an independent substream per entity,
+so a draw about a given drink is the same draw whenever that drink is made (ADR-0011).
