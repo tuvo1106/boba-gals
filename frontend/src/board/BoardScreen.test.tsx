@@ -131,9 +131,14 @@ describe('BoardScreen', () => {
       ),
     )
 
-    const ready = await screen.findByRole('region', { name: 'Ready' })
-    expect(within(ready).getByText('Sarah')).toBeInTheDocument()
-    expect(within(await screen.findByRole('region', { name: 'Making' })).queryByText('Sarah'))
+    // Await something only the new snapshot renders. "Sarah" is no good here —
+    // she is already on screen under Making, so findByText would match the old
+    // state instantly and the assertions below would race the re-render.
+    await screen.findByText('Just now')
+
+    expect(within(screen.getByRole('region', { name: 'Ready' })).getByText('Sarah'))
+      .toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Making' })).queryByText('Sarah'))
       .not.toBeInTheDocument()
   })
 
