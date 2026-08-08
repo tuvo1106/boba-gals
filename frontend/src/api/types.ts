@@ -43,6 +43,9 @@ export interface TimelineDrink {
 }
 
 /** The response from POST /api/v1/admin/simulations (§9.1). */
+/** §6.3. `rr` and `sjf` are simulator-only comparison arms. */
+export type Policy = 'drr' | 'fifo' | 'rr' | 'sjf'
+
 export interface SimulationRun {
   seed: number
   stations: number

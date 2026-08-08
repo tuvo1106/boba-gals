@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react'
 import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { shopClock } from './clock'
-import type { SimulationRun } from '../api/types'
+import type { Policy, SimulationRun } from '../api/types'
+
+/** §6.3's arms, in the order the ablation reads: least fair to most. */
+const POLICIES: { id: Policy; title: string }[] = [
+  { id: 'fifo', title: 'Strict arrival order. Best for the catering order, worst for everyone behind it.' },
+  { id: 'rr', title: 'One drink per order per turn, ignoring how long each takes. DRR without the deficit.' },
+  { id: 'drr', title: 'Deficit round robin: equal barista *time* per order rather than equal turns.' },
+  { id: 'sjf', title: 'Always the shortest queued drink. The mean-wait floor, and never a shippable policy.' },
+]
 
 /**
  * The simulation dashboard (DESIGN.md §10.6), starting with its signature
@@ -19,7 +27,7 @@ export function DashboardScreen() {
   const [previous, setPrevious] = useState<{ run: SimulationRun; policy: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [seed, setSeed] = useState(7)
-  const [policy, setPolicy] = useState<'drr' | 'fifo'>('drr')
+  const [policy, setPolicy] = useState<Policy>('drr')
   // Zoom. A full day is ~700 drinks and every capsule would be sub-pixel; 20
   // minutes shows about 40. Wider answers "does this hold all day", narrower
   // answers "what exactly happened here".
@@ -114,10 +122,14 @@ export function DashboardScreen() {
 
         {/* §6.3's control arm, selectable — seeing FIFO next to DRR is the
             comparison the whole design rests on. */}
-        <div className="flex gap-1 font-mono text-xs">
-          {(['drr', 'fifo'] as const).map((p) => (
+        {/* §6.3's arms. RR is DRR without the deficit and SJF is the mean-wait
+            floor; both are simulator-only — `UpdateSchedulerConfig` refuses
+            them, because SJF starves large orders whenever drink cost tracks
+            order size. */}
+        <div className="flex gap-1 font-mono text-xs" role="group" aria-label="policy">
+          {POLICIES.map(({ id: p, title }) => (
             <button
-              key={p} onClick={() => { setPolicy(p); go(seed, p) }}
+              key={p} onClick={() => { setPolicy(p); go(seed, p) }} title={title}
               className={`px-2 py-0.5 uppercase ${policy === p ? 'bg-amber-600 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'}`}
             >
               {p}
@@ -326,8 +338,8 @@ function Verdict({
         </p>
       ) : (
         <p className="mt-1 font-mono text-xs text-neutral-600">
-          Switch policy to compare the same day under {policy === 'drr' ? 'FIFO' : 'DRR'} —
-          identical arrivals, identical drinks (ADR-0011).
+          Switch policy to compare the same day under another arm — identical
+          arrivals, identical drinks (ADR-0011).
         </p>
       )}
     </section>

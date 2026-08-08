@@ -21,6 +21,11 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- Two comparison arms in the simulator, `rr` and `sjf` (§6.3, ADR-0013). Plain round robin is
+  DRR without the deficit, so it isolates what the deficit is worth — 20% off small-order p90
+  at 80% utilisation. Shortest-job-first is the mean-wait floor, so "DRR beats FIFO" becomes a
+  position on a scale rather than a comparison against the worst option. Both are
+  simulator-only; the store still accepts `drr` and `fifo` only.
 - Simulation dashboard can scrub to any part of the day, with the hourly arrival
   profile drawn into the control so the peaks are findable rather than guessed (§10.6).
 - "Find order" jumps the ribbon to where a given order was actually made and keeps

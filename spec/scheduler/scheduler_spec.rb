@@ -362,4 +362,116 @@ RSpec.describe Scheduler do
       expect(dispatch_all(build.call, now: at(60))).to eq(dispatch_all(build.call, now: at(60)))
     end
   end
+
+  # §6.3's comparison arms. Each removes one thing DRR does, so the ablation
+  # chart can attribute a difference to it rather than assert one.
+  describe "the comparison arms (§6.3)" do
+    describe "plain round robin" do
+      # The claim RR exists to make. DRR is RR plus the deficit, so when every
+      # drink costs exactly one quantum the deficit has nothing left to correct
+      # and the two produce the identical sequence — §1's "a menu where
+      # everything takes the same time would hide the problem", as a test.
+      it "is indistinguishable from DRR when a drink costs exactly one quantum" do
+        flows = -> { [ flow(id: :a, drinks: 4, prep_seconds: 60), flow(id: :b, drinks: 4, prep_seconds: 60) ] }
+
+        expect(dispatch_all(state(flows.call, policy: :rr)))
+          .to eq(dispatch_all(state(flows.call, policy: :drr, quantum: 60,
+                                    aging_enabled: false, cohesion_enabled: false)))
+      end
+
+      # With uniform costs the two still divide the shop identically even when
+      # the quantum buys several drinks a visit — only the granularity differs.
+      it "divides the shop the same way as DRR whatever the quantum buys" do
+        rr = dispatch_all(state([ flow(id: :a, drinks: 6, prep_seconds: 60), flow(id: :b, drinks: 6, prep_seconds: 60) ], policy: :rr))
+        drr = dispatch_all(state([ flow(id: :a, drinks: 6, prep_seconds: 60), flow(id: :b, drinks: 6, prep_seconds: 60) ],
+                                 policy: :drr, aging_enabled: false, cohesion_enabled: false))
+
+        expect(rr.tally).to eq(drr.tally)
+        expect(rr).not_to eq(drr), "a 120s quantum buys two 60s drinks a visit, so DRR is coarser"
+      end
+
+      # The bug a filtered ring hides: index into `dispatchable` and a draining
+      # flow shifts everyone after it down one, so the pointer steps over
+      # whichever flow moved into the vacated slot.
+      it "does not skip a flow when an earlier one drains" do
+        s = state([ flow(id: :short, drinks: 1), flow(id: :a, drinks: 2), flow(id: :b, drinks: 2) ], policy: :rr)
+
+        expect(dispatch_all(s)).to eq(%i[short a b a b])
+      end
+
+      # And the claim it exists to *break*. Equal turns are not equal time: two
+      # orders alternate one-for-one, so the expensive one takes 135/40 = 3.4x
+      # the barista time while RR calls that fair.
+      it "gives equal turns and therefore unequal time when the menu is spread" do
+        cheap = flow(id: :cheap, drinks: 6, prep_seconds: 40)
+        dear = flow(id: :dear, drinks: 6, prep_seconds: 135)
+
+        sequence = dispatch_all(state([ cheap, dear ], policy: :rr))
+
+        expect(sequence.each_slice(2).map(&:sort).uniq).to eq([ %i[cheap dear] ]),
+          "RR should alternate strictly, got #{sequence.inspect}"
+      end
+
+      it "takes exactly one drink per order per turn" do
+        sequence = dispatch_all(state([ flow(id: :a, drinks: 3), flow(id: :b, drinks: 3) ], policy: :rr))
+
+        expect(sequence).to eq(%i[a b a b a b])
+      end
+
+      # No `priority_ring`, so none of DRR's boosts apply. If any of them leaked
+      # in, the arm would no longer isolate the deficit.
+      it "ignores aging, cohesion and the remake floor" do
+        old = flow(id: :old, drinks: 2, arrived_at: at(-3600))
+        half = flow(id: :half, drinks: 2, made_count: 2, total_items: 4)
+        remade = flow(id: :remade, drinks: 2, remake: true)
+        s = state([ old, half, remade ], policy: :rr, aging_rate: 5.0, cohesion_boost: 10.0, remake_multiplier: 50.0)
+
+        expect(dispatch_all(s, now: at(0))).to eq(%i[old half remade old half remade])
+      end
+
+      it "returns nil when nothing is dispatchable" do
+        expect(described_class.pick_next(state([], policy: :rr), at(0))).to be_nil
+      end
+    end
+
+    describe "shortest job first" do
+      it "always takes the cheapest queued drink" do
+        s = state([ flow(id: :dear, drinks: 2, prep_seconds: 135),
+                    flow(id: :cheap, drinks: 2, prep_seconds: 40),
+                    flow(id: :mid, drinks: 2, prep_seconds: 70) ], policy: :sjf)
+
+        expect(dispatch_all(s)).to eq(%i[cheap cheap mid mid dear dear])
+      end
+
+      # The failure §1 exists to prevent, demonstrated rather than asserted.
+      # This is why SJF is a benchmark and never a policy (§6.3).
+      it "starves a large order under a stream of cheaper drinks" do
+        catering = flow(id: :catering, drinks: 15, prep_seconds: 135, arrived_at: at(0))
+        smalls = Array.new(30) { |i| flow(id: :"small_#{i}", drinks: 1, prep_seconds: 40, arrived_at: at(i * 5)) }
+
+        sequence = dispatch_all(state([ catering, *smalls ], policy: :sjf), now: at(200))
+
+        expect(sequence.first(30)).to all(start_with("small")), "the catering order should not get a look in"
+        expect(sequence.index(:catering)).to eq(30)
+      end
+
+      it "breaks ties on arrival then id, so a run is reproducible" do
+        a = flow(id: :a, drinks: 1, prep_seconds: 60, arrived_at: at(10))
+        b = flow(id: :b, drinks: 1, prep_seconds: 60, arrived_at: at(0))
+
+        expect(dispatch_all(state([ a, b ], policy: :sjf))).to eq(%i[b a])
+      end
+
+      it "returns nil when nothing is dispatchable" do
+        expect(described_class.pick_next(state([], policy: :sjf), at(0))).to be_nil
+      end
+    end
+
+    # A mis-typed policy in a sweep would otherwise run as DRR and look like a
+    # null result rather than a mistake.
+    it "refuses a policy it has no branch for" do
+      expect { described_class.pick_next(state([ flow(id: :a) ], policy: :lifo), at(0)) }
+        .to raise_error(ArgumentError, /unknown policy :lifo/)
+    end
+  end
 end
