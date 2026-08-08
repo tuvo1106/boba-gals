@@ -22,6 +22,20 @@ Categories, in this order:
 
 ### Added
 
+- The kitchen now decides what to make next by fair queuing rather than strict order of
+  arrival (§6.1, §12 step 5). A customer who orders one drink behind a fifteen-drink
+  catering order waits about one drink, not fifteen — while the catering order still
+  finishes rather than being pushed back indefinitely by a stream of small ones.
+- Remade drinks jump ahead of ordinary work of the same age, and an older remake goes before
+  a newer one, so the customer whose drink was dropped ten minutes ago is served before the
+  one dropped a minute ago (§6.4).
+- An order that is more than half made gets finished rather than left to sit, which is what
+  stops the first drink melting while the last is still being poured (§6.4, §9.6).
+- Orders placed for a later pickup are not started early. The shop works backwards from the
+  promised time so an 11am collection is not made at 9am (§6.2).
+- Strict order-of-arrival remains selectable as a setting, both as a fallback and as the
+  comparison the fairness claim is measured against (§6.3).
+
 - Every change is now deployed to a throwaway Kubernetes cluster and exercised before it
   can be merged: an order is placed through the front door, the health checks are read, and
   the cache is pulled out from under the running system to confirm it steps aside rather

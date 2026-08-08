@@ -1,0 +1,23 @@
+# Mutation testing, scoped to the scheduler (ADR-0002).
+#
+# Only app/scheduler/** is covered. It is pure, its specs run in milliseconds,
+# and it is the code the whole design rests on — mutant runs the suite once per
+# mutant, which is affordable there and nowhere else in this app.
+---
+# The repo is public, which is exactly what this usage type is for and what
+# ADR-0002 was waiting on.
+usage: opensource
+
+integration:
+  name: rspec
+  arguments:
+    - spec/scheduler
+requires:
+  - ./config/mutant_boot.rb
+matcher:
+  subjects:
+    - Scheduler*
+coverage_criteria:
+  timeout: false
+  test_result: true
+  process_abort: true
