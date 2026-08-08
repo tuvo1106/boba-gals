@@ -41,9 +41,12 @@ module Simulator
         cohesion_spread_p90: percentile(@orders.map(&:cohesion_spread), 90),
         max_queue_depth: @orders.map(&:queue_depth_on_arrival).max || 0,
         # §9.6: a drink sitting longer than quality_limit_seconds after it was
-        # finished. Multi-drink orders are the main source, so this is how the
-        # cohesion boost is judged (§10.4).
-        quality_breach_rate: breach_rate,
+        # finished. Split because a single-drink order's sitting time *is* the
+        # customer's walk-up delay — nothing the scheduler can affect — which
+        # puts a floor near 10% under any aggregate figure. Multi-drink orders
+        # are where cohesion is judged (§10.4, §6.4).
+        quality_breach_rate: breach_rate(@orders),
+        quality_breach_rate_multi: breach_rate(@orders.reject { |o| o.items.size == 1 }),
         # "Reneging prices the cost of slowness in lost revenue rather than
         # abstract seconds." (§10.3)
         reneged: @reneged,
@@ -91,11 +94,14 @@ module Simulator
 
     QUALITY_LIMIT = 300
 
-    def breach_rate
-      collected = @orders.filter_map(&:sat_seconds)
-      return 0.0 if collected.empty?
+    # Per drink, per §9.6 — not per order. `sat_seconds` returns one figure per
+    # finished drink, so an order contributes as many observations as it had
+    # drinks sitting.
+    def breach_rate(orders)
+      sat = orders.flat_map(&:sat_seconds)
+      return 0.0 if sat.empty?
 
-      (collected.count { |s| s > QUALITY_LIMIT }.to_f / collected.size).round(3)
+      (sat.count { |s| s > QUALITY_LIMIT }.to_f / sat.size).round(3)
     end
 
     def utilisation

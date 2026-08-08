@@ -92,6 +92,18 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- Simulation A/B comparisons are now honest. Changing the scheduler used to change *which
+  drinks the day contained* — at one seed only 105 of 740 drinks kept the same prep time
+  between DRR and FIFO, so every comparison mixed the policy effect with a different random
+  day. Runs now draw from per-entity random substreams (ADR-0011). Figures from earlier runs
+  should be re-measured, not compared against.
+- The quality timer counts one breach per stale drink rather than one per stale order, as
+  §9.6 specifies. A 20-drink order where nineteen drinks went stale scored as a single breach.
+- "Sat too long" is now reported over multi-drink orders, where cohesion can actually change
+  it. A lone drink's counter time is just the customer walking over, which put a floor near
+  10% under the old figure and hid the signal.
+- An order promised a pickup time after closing was never dispatched and never counted — it
+  was neither served nor lost, and vanished from every metric.
 - `bin/rspec` forces `RAILS_ENV=test`. The dev container sets `RAILS_ENV=development`,
   which made `rails_helper.rb`'s `||=` default a no-op: Bundler skipped the `:test`
   gem group, every Rails spec failed to load, and anything that did load ran against

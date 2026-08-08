@@ -52,6 +52,7 @@ function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides 
           cohesion_spread_p90: 40,
           max_queue_depth: 12,
           quality_breach_rate: 0.132,
+          quality_breach_rate_multi: 0.263,
           reneged: 0,
           remakes: 19,
           ...metricOverrides,
