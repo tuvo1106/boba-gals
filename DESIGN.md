@@ -674,13 +674,95 @@ A 12-hour simulated day completes in well under a second, which is what makes pa
 
 λ(t), orders/hour, 10:00–21:00: `12, 22, 48, 40, 26, 38, 52, 44, 36, 42, 24`
 
-Notes on why each matters:
+#### What each distribution is, and why that shape
 
-- **Flat arrivals will make everything look fine.** Boba demand is spiky — lunch, after-school, evening. The peaks are the test.
-- **Order size must be heavy-tailed.** The catering orders are the entire reason DRR exists.
-- **Prep time is right-skewed.** Drinks occasionally go wrong; they never go faster than possible. Lognormal, not normal.
-- **Pickup delay** is what exercises the quality timer.
-- **Reneging** prices the cost of slowness in lost revenue rather than abstract seconds.
+Every choice here is load-bearing. Flattening any of them makes the simulator agree with
+whatever you already believed. Terms are defined in §17.
+
+**Non-homogeneous Poisson arrivals, by thinning.** A Poisson process is "events happen
+independently at some average rate" — the standard model for customers walking in, because
+one person's arrival tells you nothing about the next. *Non-homogeneous* means the rate
+changes through the day. *Thinning* is how you sample it: generate arrivals at the busiest
+rate (52/hour), then keep each one with probability `rate_now / peak`. At 10am, where the rate
+is 12/hour, you keep about 23% and discard the rest.
+
+> **Flat arrivals will make everything look fine.** A uniform rate keeps the shop below
+> saturation all day, and below saturation every scheduler looks identical. The peaks are the
+> entire test.
+
+**Heavy-tailed order sizes.** "Heavy-tailed" means rare-but-large values are common enough to
+matter. 62% of orders are a single drink, but 3% are 8–20 — and that 3% carries about a
+quarter of the shop's total work.
+
+> **Order size must be heavy-tailed.** A tidier distribution — Poisson or geometric — would
+> almost never generate the 15-drink catering order, and the catering order is the entire
+> reason DRR exists.
+
+**Lognormal prep times, σ = 0.28.** A lognormal is a bell curve applied to the *logarithm* of
+the value, which makes it asymmetric: a floor at zero, and a long tail on the slow side. For a
+45-second drink at σ = 0.28, roughly two thirds land between 34 and 60 seconds, but a small
+fraction take 90 or more.
+
+> **Prep time is right-skewed.** Drinks occasionally go wrong; they never go faster than
+> possible. A normal distribution has a left tail, which would produce drinks made in negative
+> time.
+
+**Uniform barista skill, U(0.85, 1.20).** Drawn once per station and held for the shift, so a
+fast barista is fast all day. That is what makes station utilisation uneven in a way averaging
+would hide.
+
+**Exponential pickup delay.** The exponential is the "memoryless" waiting distribution: most
+customers collect quickly, a few take much longer, and knowing someone has already waited
+three minutes tells you nothing about how much longer they will be. Mean 100s at the kiosk,
+180s on the web — web customers are not standing in the shop.
+
+> **Pickup delay** is what exercises the quality timer (§9.6). Without it, no drink ever sits,
+> and the cohesion boost has nothing to be measured against.
+
+**Bernoulli remakes, 2% per drink.** A Bernoulli trial is a single weighted coin flip. Each
+finished drink gets one; on a hit, the drink is re-queued as a remake on the same order (§5.2),
+which is the only path that exercises §6.4's priority floor.
+
+#### Reneging: what it is, and what it is for
+
+The table calls this reneging, which is the term of art for *abandoning a queue you have
+already joined*. What is specified — a decision made from the quoted wait, before ordering —
+is strictly **balking**: declining to join at all. The formula is the one that matters; the
+name is loose, and §17 records both.
+
+`p = clamp((eta − 480) / 1200, 0, 0.8)` — nobody leaves under 8 minutes, and the probability
+climbs to a ceiling of 80%.
+
+**It is not a metric an owner can act on directly.** A customer who does not order leaves no
+trace: no row, no event, nothing in `scheduler_events`. Making it observable in production
+would need a `quote_shown` event alongside `order_placed`, which is a schema and privacy
+question this design has not addressed.
+
+**Its job is to correct the other metrics.** Reneging is negative feedback: a longer queue
+means a longer quote, which means fewer people join, which stops the queue growing. Remove it
+and nothing limits the queue once demand exceeds capacity. Measured, same seeds, one line of
+the model changed:
+
+| demand | model | p90 wait | orders served | customers lost |
+|---|---|---|---|---|
+| ×2.5 | no reneging | **99.8 min** | 961 | 0 |
+| | with reneging | **31.1 min** | 814 | 146 |
+| ×3.0 | no reneging | **230.9 min** | 1173 | 0 |
+| | with reneging | **62.2 min** | 905 | 267 |
+
+Nobody waits four hours for bubble tea. Without reneging the model computes a queue that
+cannot physically exist, because the people required to form it would have left.
+
+The consequence is a wrong decision, not just a wrong number. "At three stations, p90 is 100
+minutes" sends you hiring two more baristas to fix a queue that would never form. "At three
+stations, p90 is 31 minutes and you lose 146 customers" is an actual business question — 146
+customers against the cost of one more barista — and it is the question §10.5's staffing curve
+exists to answer.
+
+It also breaks calibration in the other direction. Waits measured in a real shop are censored
+by this effect: you would record 31 minutes, because the people who would have waited 100 are
+not in your data. Fit a model to that without accounting for who left and you conclude demand
+is 814 orders when it is 960.
 
 ### 10.4 Metrics
 
@@ -916,3 +998,79 @@ The simulator already defined what matters (§10.4). Production watches **the sa
 - **Multi-store.** Schema is store-scoped throughout, and §14.4 removes the one-process-per-store assumption for a single store's pods. True multi-store mostly reduces to what's already namespaced (`sched:{store_id}:*` Redis keys, store-scoped channels); the real gaps are request routing to a store and admin scoping. Revisit before store #2.
 - **Peak-hour large-order policy.** Should catering orders above N drinks require a `promised_at` during peak windows? This is a business rule, but the scheduler already supports it via backward scheduling.
 - **Service mesh.** Considered and deferred. There is almost nothing to mesh: the only in-cluster hops are `web`/`worker` → Postgres and Redis, both TCP, so a mesh contributes L4 mTLS and none of the L7 retries, routing, or golden signals that justify one. Its metrics also do not answer §15's questions, which are business gauges under the simulator's definitions (§10.4). Two sharp edges if adopted anyway: a sidecar keeps the `migrate` Job (§14.2) from ever completing unless native sidecars are used, and ActionCable's shift-long websockets are a known source of idle-timeout trouble. The one real gap it would close is outlier ejection — readiness removes a pod that has lost a dependency, but not one that is Ready and serving 500s. That is not enough to carry the cost. Belongs after everything in §14.5, and after hitting a problem that calls for it.
+
+---
+
+## 17. Glossary
+
+Terms used above that are standard in queueing theory or networking, and are not otherwise
+common. Ordered roughly by where they first appear.
+
+**Flow** — in fair queuing, one competing stream of work. Here, one **order** (§6.1). The
+whole design follows from choosing the order rather than the drink as the flow.
+
+**Deficit Round Robin (DRR)** — a fair-queuing algorithm that shares capacity between flows
+whose items are different sizes, by giving each flow a credit allowance per round and carrying
+the unspent remainder. Explained with worked examples in §6.1.
+
+**Quantum** — the credit, in prep-seconds, a flow receives on each turn of the ring. Default
+120 (§6.6).
+
+**Deficit** — a flow's unspent credit, carried between rounds. The property the algorithm is
+named for: without carrying, a flow whose drinks cost more than one quantum would starve
+forever.
+
+**Ring / ring pointer** — the rotation through flows, and the position within it. Persisted as
+an order id rather than an array index, because indices are meaningless once the flow set is
+rebuilt (§6.5).
+
+**Aging** — growing a flow's quantum with how long it has waited, so nothing starves under a
+continuous stream of newcomers (§6.1, §6.2).
+
+**Cohesion** — boosting a flow that is already more than half made, so its remaining drinks
+finish rather than being interleaved away. Exists for the *melted first drink* (§6.1, §6.4).
+
+**Priority floor** — a guarantee that one class of work outranks another regardless of age.
+Implemented as a sort tier, because any number added to a multiplier can be exceeded by a
+sufficiently aged competitor (§6.4, ADR-0009).
+
+**Livelock** — a loop that keeps running without making progress. §6.2's guard raises rather
+than spinning, because a stalled kitchen that reports nothing is worse than a crash.
+
+**Utilisation (ρ, "rho")** — the fraction of capacity in use: total work divided by
+(stations × time). ρ = 0.6 means the shop is busy 60% of the time.
+
+**Kingman's formula** — the result that waiting time scales with **ρ / (1 − ρ)**. The
+practical consequence is that queues do not grow smoothly: going from ρ = 0.5 to 0.6 roughly
+doubles the wait factor, but 0.9 to 0.95 doubles it again from a far higher base. This is why
+§10.4 says queues grow nonlinearly past ~85%, and why it is where staffing decisions get made.
+
+**Percentile (p50 / p90 / p99)** — the value below which that share of observations fall. p90
+= 200s means nine customers in ten waited less than 200 seconds. §10.4 reports percentiles and
+never the mean, because the mean hides exactly the failures fair queuing exists to prevent.
+
+**Poisson process** — events arriving independently at some average rate. **Non-homogeneous**
+means the rate varies with time. **Thinning** is the sampling technique: generate at the peak
+rate and probabilistically discard to match the current one (§10.3).
+
+**Heavy-tailed** — a distribution where rare large values are common enough to dominate the
+total. 3% of orders being 8–20 drinks carries about a quarter of the shop's work (§10.3).
+
+**Lognormal** — a bell curve on the logarithm of a value, giving a floor at zero and a long
+tail on the high side. Used for prep times, which can run over but never under (§10.3).
+
+**Exponential** — the memoryless waiting distribution: how much longer you will wait does not
+depend on how long you already have. Used for pickup delay (§10.3).
+
+**Bernoulli trial** — a single weighted coin flip. Used for the 2% per-drink remake rate
+(§10.3).
+
+**Balking / reneging** — *balking* is declining to join a queue; *reneging* is abandoning one
+already joined. §10.3's table says reneging, but the specified behaviour — deciding from the
+quoted wait, before ordering — is balking. Both names appear here so the mismatch is not
+mistaken for two mechanisms.
+
+**Mutation testing** — deliberately altering code and checking whether the tests notice. A
+surviving mutant means no assertion depended on the altered expression. Scoped to the
+scheduler (ADR-0002), with the rationale and the equivalent-mutant caveat in
+`docs/testing.md`.
