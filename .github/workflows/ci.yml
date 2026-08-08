@@ -7,7 +7,13 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs, never main runs. On a PR a newer push makes the
+  # old one irrelevant. On main it makes a commit that never got an image: two
+  # merges in quick succession cancelled the first, and `f25cf5a` has no entry
+  # in the registry as a result. SHA-tagged images exist so any main commit can
+  # be deployed or rolled back to (§14.1) — a gap in that sequence is the one
+  # thing the tagging scheme is supposed to rule out.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # The app doesn't exist yet (DESIGN.md §12 step 1). Rather than let CI be red
