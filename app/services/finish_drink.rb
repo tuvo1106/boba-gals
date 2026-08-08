@@ -20,12 +20,15 @@ class FinishDrink
       payload: {
         station_id: item.station_id,
         barista_id: item.barista_id,
-        # Observed duration. Unused until the EWMA lands at build step 7 (§7.3),
-        # but recorded from the first finished drink so the history is already
-        # there when it does.
         observed_seconds: (item.finished_at - item.started_at).round
       }
     )
+
+    # §7.3 learns from `finished_at - started_at`, so this is the only moment
+    # the observation exists. Outliers are rejected inside the recorder rather
+    # than here — a barista who forgot to tap "finish" is a data problem, not a
+    # reason to fail the transition they did make.
+    RecordPrepTime.new.call(item)
 
     order = RollUpOrderStatus.new.call(item.order)
 
