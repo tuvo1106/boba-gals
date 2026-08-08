@@ -24,6 +24,18 @@ module Simulator
                      :first_ready_at, :picked_up_at, :promised_at, :reneged, :web,
                      keyword_init: true) do
     def wait_seconds = ready_at && (ready_at - arrived_at)
+
+    # Wait minus the work the order itself brought — the classic flow-time
+    # decomposition, and the only part a scheduler can act on.
+    #
+    # The critical path, not the sum: with idle stations a 2-drink order's
+    # drinks are made in parallel, so the least time it could possibly take is
+    # its slowest drink. Subtracting the sum would report negative queueing.
+    def queue_seconds
+      return nil unless wait_seconds
+
+      [ wait_seconds - items.map(&:prep_seconds).max, 0.0 ].max
+    end
     def reneged? = reneged
 
     # ready_at − first_ready_at: how long the earliest drink sat while the rest

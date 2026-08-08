@@ -21,6 +21,10 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- A drink-cost penalty on the dashboard: how much longer a small order queues when it
+  ordered slow drinks rather than quick ones. It is the only figure that separates the
+  scheduling policies at the shop's normal demand — SJF reads 8.5× where every wait
+  percentile says it is the best policy on the board (§6.1).
 - Two comparison arms in the simulator, `rr` and `sjf` (§6.3, ADR-0013). Plain round robin is
   DRR without the deficit, so it isolates what the deficit is worth — 20% off small-order p90
   at 80% utilisation. Shortest-job-first is the mean-wait floor, so "DRR beats FIFO" becomes a
@@ -97,6 +101,13 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- The dashboard no longer presents a "7+ p90" computed from five orders as if it were a
+  percentile. Below ten samples nearest-rank returns the maximum, so all four policies were
+  showing the same single worst catering order. Every wait figure now carries its sample
+  count, and says so when there are too few.
+- The dashboard says when the shop is too quiet to compare scheduling policies at all. At the
+  default demand utilisation is 34%, there is rarely a queue, and every policy dispatches
+  almost the same order — which read as "SJF beats DRR" rather than "this run cannot tell".
 - Simulation A/B comparisons are now honest. Changing the scheduler used to change *which
   drinks the day contained* — at one seed only 105 of 740 drinks kept the same prep time
   between DRR and FIFO, so every comparison mixed the policy effect with a different random

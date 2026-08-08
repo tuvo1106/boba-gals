@@ -45,6 +45,10 @@ module Simulator
         # customer's walk-up delay — nothing the scheduler can affect — which
         # puts a floor near 10% under any aggregate figure. Multi-drink orders
         # are where cohesion is judged (§10.4, §6.4).
+        # "Does your wait depend on what you ordered?" — the sharpest single
+        # number for what equalising *time* rather than *jobs* buys (§6.1).
+        # SJF spreads these 14x apart; DRR keeps them within ~15%.
+        wait_by_drink_cost: wait_by_drink_cost,
         quality_breach_rate: breach_rate(@orders),
         quality_breach_rate_multi: breach_rate(@orders.reject { |o| o.items.size == 1 }),
         # "Reneging prices the cost of slowness in lost revenue rather than
@@ -63,12 +67,51 @@ module Simulator
 
     private
 
+    # A p90 over 5 observations is the maximum, not a percentile — nearest-rank
+    # lands on the last element for any n below 10. Reporting one next to a p90
+    # over 300 orders invites a comparison that is really "one bad catering
+    # order" against "a distribution", so the count travels with the figure and
+    # `p90_meaningful` says outright whether it is one.
+    P90_MIN_SAMPLES = 10
+
     def by_size_class
       SIZE_CLASSES.keys.index_with do |label|
         waits = orders_in(label).map(&:wait_seconds)
 
-        { orders: waits.size }.merge(percentiles(waits))
+        { orders: waits.size, p90_meaningful: waits.size >= P90_MIN_SAMPLES }.merge(percentiles(waits))
       end
+    end
+
+    # Cheap and dear are the ends of §10.3's menu — Thai Tea at 40s against a
+    # Brown Sugar Pearl at 95s. Restricted to small orders so order size cannot
+    # confound it: every order here is 1-2 drinks, and the only thing varying is
+    # what those drinks cost to make.
+    CHEAP_SECONDS = 50
+    DEAR_SECONDS = 90
+
+    # Queueing time, not wait. A Brown Sugar Pearl takes 95s to make against a
+    # Thai Tea's 40s whatever the scheduler does, so comparing *waits* would
+    # report a 2.4x penalty in an empty shop and call it unfairness. What the
+    # scheduler controls is the time before your drink is started, and that is
+    # the only part this ratio may contain.
+    def wait_by_drink_cost
+      small = orders_in("1-2")
+      cheap = small.select { |o| mean_prep(o) <= CHEAP_SECONDS }.map(&:queue_seconds)
+      dear = small.select { |o| mean_prep(o) >= DEAR_SECONDS }.map(&:queue_seconds)
+
+      cheap_p90 = percentile(cheap, 90)
+      dear_p90 = percentile(dear, 90)
+
+      {
+        cheap: { orders: cheap.size, p90: cheap_p90 },
+        dear: { orders: dear.size, p90: dear_p90 },
+        # 1.0 means what you ordered did not affect how long you waited.
+        ratio: cheap_p90.zero? ? 0.0 : (dear_p90 / cheap_p90).round(2)
+      }
+    end
+
+    def mean_prep(order)
+      order.items.sum(&:prep_seconds) / order.items.size.to_f
     end
 
     def orders_in(label)

@@ -372,6 +372,51 @@ RSpec.describe Simulator do
 
   # The ribbon only ever shows a slice of the day, so finding a given order needs
   # an index the client can search without re-running the simulation (§10.6).
+  # "Does your wait depend on what you ordered?" — the sharpest single number
+  # for what equalising barista *time* buys, and the only figure that separates
+  # the arms at default demand, where every p90 is within noise (§10.3).
+  describe "the drink-cost penalty (§6.1)" do
+    def penalty(policy, demand: 2.0, seed: 7)
+      w = described_class.simulate(Simulator::Scenario.new(seed: seed, stations: 3, demand_multiplier: demand,
+                                                          scheduler_config: { "policy" => policy }))
+      described_class::Metrics.new(orders: w.completed, seconds: w.clock, stations: 3).to_h[:wait_by_drink_cost]
+    end
+
+    # The headline. SJF defers whatever is expensive, and a small order holding
+    # one Brown Sugar Pearl has no cheap drink to hide behind.
+    it "is far worse under SJF than under DRR" do
+      expect(penalty("sjf")[:ratio]).to be > penalty("drr")[:ratio] * 3
+    end
+
+    it "separates the arms even at the default demand where every p90 agrees" do
+      expect(penalty("sjf", demand: 1.0)[:ratio]).to be > penalty("drr", demand: 1.0)[:ratio]
+    end
+
+    # Queueing, not wait. A 95s drink takes 95s under any policy, so including
+    # its own prep would report the menu spread as unfairness in an empty shop.
+    it "excludes the work the order itself brought" do
+      order = Simulator::Order.new(
+        id: 1, arrived_at: 0, ready_at: 300,
+        items: [ Simulator::Drink.new(id: "1-0", prep_seconds: 95, service_seconds: 95, finished_at: 300) ]
+      )
+
+      expect(order.wait_seconds).to eq(300)
+      expect(order.queue_seconds).to eq(205)
+    end
+
+    # Two drinks on two idle stations finish together, so the least the order
+    # could take is its slowest drink — subtracting the sum would go negative.
+    it "measures the critical path rather than total work" do
+      order = Simulator::Order.new(
+        id: 1, arrived_at: 0, ready_at: 95,
+        items: [ Simulator::Drink.new(id: "1-0", prep_seconds: 95, service_seconds: 95, finished_at: 95),
+                 Simulator::Drink.new(id: "1-1", prep_seconds: 40, service_seconds: 40, finished_at: 40) ]
+      )
+
+      expect(order.queue_seconds).to eq(0)
+    end
+  end
+
   describe "#order_spans" do
     let(:world) { described_class.simulate(Simulator::Scenario.new(seed: 3, stations: 3)) }
     let(:pending) { world.instance_variable_get(:@pending) }
