@@ -21,6 +21,12 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- The kitchen display exists (§9.4). Baristas sign in with a station and PIN and get a single
+  lane of drink cards — drink name, options as bold tokens, pickup code, and position within a
+  multi-drink order so it is obvious when the scheduler is interleaving one. One tap starts a
+  drink, one tap finishes it, no confirmation dialogs, and a 60-second undo is the escape
+  hatch. A "Next up" section always shows the next three so cups and toppings can be
+  pre-staged. The header carries queue depth and the oldest wait, and nothing else.
 - The shop learns how long its drinks actually take. Every finished drink updates a running
   average per menu item, and once there are ten of them the board quotes from what the shop
   really does rather than from the seeded guess (§7.3). Durations wildly out of line with the

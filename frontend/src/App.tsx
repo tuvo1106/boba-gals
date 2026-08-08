@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { BoardScreen } from './board/BoardScreen'
+import { KdsScreen } from './kds/KdsScreen'
 import { DashboardScreen } from './dashboard/DashboardScreen'
 
 // One React codebase, one build (§9.3). Each surface is a route rather than a
@@ -11,6 +12,7 @@ function App() {
       <Routes>
         <Route path="/board" element={<BoardScreen />} />
         <Route path="/dashboard" element={<DashboardScreen />} />
+        <Route path="/kds" element={<KdsScreen />} />
         <Route path="*" element={<Placeholder />} />
       </Routes>
     </BrowserRouter>
