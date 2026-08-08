@@ -62,10 +62,22 @@ control. Letting both move is the classic confound, and the fix is the classic o
 
 ## Consequences
 
-**§11's ±15% is not met, and appears not to be reachable.** DRR gives ±30% under constant
-load. Sweeping the quantum, which §10.5 proposes as the tuning lever:
+**§11's ±15% cannot be assessed at this sample size.** DRR gives ±30% under constant load, but
+the run-to-run variance is larger than that difference. Over 40 seeds at 12% large orders:
 
-| quantum | spread 0%→12% |
+```
+mean 147.2s   sd 26.4s   range 99.8s – 211.3s
+```
+
+A single seed spans 76% of the mean. At the six seeds this suite averages, the 95% confidence
+interval of the mean is **±21s, about ±14%** — so each endpoint of a "0% vs 12%" comparison
+carries roughly that much uncertainty and the measured +30% could plausibly be anywhere from
++5% to +55%. **±15% sits inside the noise.** Any statement that it is or is not reachable
+needs far more seeds than are run here.
+
+The quantum sweep has the same problem and should be read as a direction, not as values:
+
+| quantum | measured spread 0%→12% |
 |---|---|
 | 30s | 27% |
 | 60s | 27% |
@@ -73,24 +85,31 @@ load. Sweeping the quantum, which §10.5 proposes as the tuning lever:
 | 240s | 37% |
 | 400s | 47% |
 
-Smaller quanta flatten the line, exactly as §10.4's "if it slopes up, the quantum is too large"
-predicts — but it plateaus around 27% and never approaches 15%. The residual looks structural:
-a small order arriving mid-service still waits behind at least one in-flight drink per station,
-and no quantum removes that.
+The monotonic trend across five points is more believable than any individual figure, and it
+matches §10.4's "if it slopes up, the quantum is too large". Whether the line plateaus near
+27% or continues down is not resolvable at n=10.
 
-So §11's criterion needs revisiting, and the choice is the design's rather than the
-implementation's:
+**What the numbers do and do not support:**
 
-- **Relax the number** to something the system can actually achieve (±30% at default demand).
-- **Make it relative** — "DRR's slope is less than half FIFO's" is what the data supports
-  strongly and is arguably the claim worth making, since it compares against the alternative
-  rather than against an absolute nobody derived.
-- **Keep ±15% as an aspiration** and treat the gap as a known open item.
+| Claim | Confidence | Why |
+|---|---|---|
+| DRR beats FIFO on small-order p90 | **High** | Large effect (roughly 2× at 12%), same seeds both arms, consistent in direction at every seed tried |
+| The sweep confounds load with composition | **High** | Arithmetic, not statistics — drinks/day 636 → 1184, ρ 0.318 → 0.595 |
+| DRR's line is flatter than FIFO's | **High** | Paired comparison; day-to-day variance largely cancels |
+| Any specific figure (156.6s, +30%) | **Low** | sd/mean ≈ 18%, n = 6 |
+| ±15% is unreachable | **Not supported** | Inside the confidence interval |
 
-The spec suite currently asserts the relative form: DRR's small-order p90 at 12% is under 75%
-of FIFO's, FIFO rises by more than half, and DRR's slope is shallower than FIFO's. Those are
-statements the simulator supports at every seed tried, rather than one it fails.
+Paired comparisons on identical seeds are the reliable output here. Absolute waits are not,
+and should not be quoted as though they were.
 
-**Every reported figure is an average across seeds** (6 in the suite, 10 in exploratory runs).
-A single seed is one day, and the variance between days at these volumes is larger than the
-effect being measured.
+**The generative model is unvalidated, and partial.** §10.3's distributions are the design's
+assumptions rather than measurements from a real shop — §10.5's replay experiment ("feed
+historical `scheduler_events` through the simulator to calibrate σ") is what would ground
+them, and it is listed as later work. Until then even a perfectly-estimated number describes
+the model, not the shop.
+
+Four of §10.3's nine processes are also not yet in the loop: **remakes, pickup delay,
+reneging, and order-ahead**. That matters for what can be concluded — the remake priority
+floor (§6.4) is currently exercised only by unit tests, never in simulation, and §10.4's
+reneged-orders metric cannot be produced at all. They are the first thing to add before the
+ablation study (§10.5 #1) is run in anger.
