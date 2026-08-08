@@ -404,9 +404,18 @@ def eligible?(flow, now, config)
 end
 ```
 
-### 6.3 FIFO comparison path
+### 6.3 Comparison arms
 
 Keep `policy: :fifo` implemented permanently — strict `ORDER BY queued_at, id`. It is the control arm for the simulator's ablation study (§10.5) and the fallback if DRR misbehaves in production.
+
+Two further arms exist **for the simulator only**, because FIFO alone cannot separate the two claims this design actually makes:
+
+| Arm | Rule | What it isolates |
+|---|---|---|
+| `rr` | one drink per order per turn, ignoring `prep_seconds` | **What the deficit is for.** DRR is round robin plus the deficit; RR is the same ring without it. FIFO shows you need fairness, RR shows you need *this* fairness — that serving turns equally is not the same as serving time equally when the menu spans 40s to 135s (§1). |
+| `sjf` | always the shortest queued drink | **The price of fairness.** Shortest-job-first minimises mean wait and is the bound DRR is paying against. It starves large orders by construction, which is exactly the failure §1 exists to prevent — so it is a benchmark, never a policy. |
+
+`rr` and `sjf` are not selectable on a store. `UpdateSchedulerConfig` (§6.6) accepts `drr` and `fifo` only. A policy that provably starves catering orders must not be one dropdown away from production, and a policy whose whole purpose is to make an argument in a chart has no business dispatching real drinks.
 
 ### 6.4 Why a priority *floor* for remakes
 
