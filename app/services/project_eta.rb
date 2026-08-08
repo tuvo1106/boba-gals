@@ -178,12 +178,37 @@ class ProjectEta
     end
   end
 
-  # §7.3 will replace this with a learned EWMA per menu item. Reading it through
-  # one method now means that change lands in one place rather than three.
+  # The learned duration once §7.3's evidence bar is met, the seeded guess
+  # until then. `MINIMUM_SAMPLES` exists because an EWMA over three drinks is
+  # one unlucky Tuesday, and quoting from it is worse than quoting the seed.
+  #
+  # Keyed by menu item, so a drink's estimate improves as the shop makes more of
+  # that drink rather than more drinks in general.
+  #
+  # `Scheduler::Item` carries no `menu_item_id` — the scheduler is plain Ruby
+  # that must not know what a menu is (§6.2) — but its `id` is the `OrderItem`
+  # id, so the mapping is a lookup here rather than a new field there.
   #
   # @param item [OrderItem, Scheduler::Item]
   def prep_seconds_for(item)
-    item.prep_seconds
+    learned_seconds[menu_item_ids[item.id]] || item.prep_seconds
+  end
+
+  # Two queries for the whole projection rather than two per drink: a 400-drink
+  # queue would otherwise issue 800 lookups inside a loop that already costs
+  # 175ms (ADR-0012).
+  def learned_seconds
+    @learned_seconds ||= PrepTimeStat.where(menu_item_id: menu_item_ids.values.uniq)
+                                     .select(&:confident?)
+                                     .to_h { |stat| [ stat.menu_item_id, stat.ewma_seconds ] }
+  end
+
+  def menu_item_ids
+    @menu_item_ids ||= OrderItem.joins(:order)
+                                .where(orders: { store_id: @store.id })
+                                .where(status: %w[queued in_progress])
+                                .pluck(:id, :menu_item_id)
+                                .to_h
   end
 
   # §7.1: the projection is multiplied by `eta_safety_factor`. Quoting the raw

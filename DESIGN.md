@@ -1120,3 +1120,11 @@ arm rather than a policy: it bounds what fairness costs (§6.3).
 **Starvation** — a queue that never gets served because something is always ahead of it. The
 failure every fair-queueing algorithm exists to rule out, and what §6.2's aging guarantees
 against.
+
+**EWMA (exponentially weighted moving average)** — a running average that forgets old data
+smoothly. Each new observation takes weight `α` and everything already known takes `1 − α`, so
+at §7.3's `α = 0.2` the most recent sample counts for 20%, the one before it 16%, and about
+90% of the value comes from the last ten observations. Preferred over a plain mean because a
+mean over a thousand drinks barely moves for the next one — a new barista or a changed recipe
+would take a month to appear — and over "the last N samples" because it is a single number per
+menu item rather than a stored window (§7.3).
