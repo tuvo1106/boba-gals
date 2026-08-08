@@ -12,12 +12,18 @@ module Scheduler
     # @param flows [Array<Scheduler::Flow>] ordered by arrival (§6.5)
     # @param config [Scheduler::Config]
     # @param pointer [Integer] the ring pointer, resumed from Redis
-    def initialize(flows:, config: Config.new, pointer: 0)
+    # @param granted_to [Object, nil] the flow id already granted this round,
+    #   resumed from Redis. Round state, and safe to lose for the same reason
+    #   the deficit is (§6.5): a forgotten grant costs one extra quantum.
+    def initialize(flows:, config: Config.new, pointer: 0, granted_to: nil)
       @flows = flows
       @config = config
       @pointer = pointer
-      @granted_to = nil
+      @granted_to = granted_to
     end
+
+    # @return [Object, nil]
+    attr_reader :granted_to
 
     # Which flow has already drawn its quantum for the current visit.
     #
