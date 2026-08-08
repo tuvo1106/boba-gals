@@ -38,7 +38,12 @@ class CreateOrder
       # includes the work the customer just created. Quoting before they exist
       # tells the first customer of the day they will wait zero seconds, which
       # is the fastest way to teach people the number is a lie (§7.3).
-      order.update!(quoted_wait_seconds: NaiveEta.for_store(@store))
+      #
+      # The projection reads Redis for the live deficits (§6.5). That is a read,
+      # not a side effect, so it is safe inside the transaction in a way §8's
+      # ban on broadcasts and jobs is not about — nothing here needs rolling
+      # back if the payment below is declined.
+      order.update!(quoted_wait_seconds: ProjectEta.for_order(@store, order))
 
       payment = @payment_provider.authorize(order)
       raise InvalidRequest, payment.error || "payment was declined" unless payment.success?

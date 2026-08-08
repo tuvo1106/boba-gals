@@ -69,13 +69,28 @@ RSpec.describe CreateOrder do
       expect(result.order.quoted_wait_seconds).to be_positive
     end
 
-    it "grows as the queue deepens" do
+    # Deep enough to saturate the three stations, deliberately. Under the §7.1
+    # projection the *second* customer of the day is not quoted longer than the
+    # first — with an idle station their drink starts immediately, and saying
+    # otherwise was an artefact of dividing cumulative work by capacity
+    # (ADR-0004). The estimate grows once there is a genuine queue.
+    it "grows once every station is busy" do
+      item = create(:menu_item, :brown_sugar_pearl, store: store)
+
+      first = place(items: [ { menu_item_id: item.id } ])
+      4.times { place(items: [ { menu_item_id: item.id } ]) }
+      last = place(items: [ { menu_item_id: item.id } ])
+
+      expect(last.order.quoted_wait_seconds).to be > first.order.quoted_wait_seconds
+    end
+
+    it "quotes the second customer the same as the first while stations sit idle" do
       item = create(:menu_item, :brown_sugar_pearl, store: store)
 
       first = place(items: [ { menu_item_id: item.id } ])
       second = place(items: [ { menu_item_id: item.id } ])
 
-      expect(second.order.quoted_wait_seconds).to be > first.order.quoted_wait_seconds
+      expect(second.order.quoted_wait_seconds).to eq(first.order.quoted_wait_seconds)
     end
   end
 

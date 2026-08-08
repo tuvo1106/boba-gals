@@ -223,6 +223,12 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Changed
+- Wait times on the board and at the counter are now projected by running the real scheduler
+  forward over the current queue, rather than dividing outstanding work by the number of
+  stations (§7.1). The old estimate quoted by queue position, so it told a customer with one
+  drink behind a 15-drink catering order that they were fifteenth in line — when fair queuing
+  will actually interleave them almost immediately. It also stays right when the scheduler is
+  retuned, which a formula cannot.
 - The cohesion boost is off by default. It was meant to stop an order's first drink melting
   while the rest were made; measured over 20 seeds it makes that wait steadily *worse* as the
   boost rises, in every order size, at every load — including the four-drink case it was
