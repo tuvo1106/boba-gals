@@ -22,6 +22,16 @@ Categories, in this order:
 
 ### Added
 
+- A simulator that runs the real scheduler against a generated day, so staffing and tuning
+  decisions can be tested before they are made in the shop (§10.1, §12 step 6). An eleven-hour
+  day takes 7 milliseconds, which is what makes sweeping hundreds of configurations practical
+  rather than trying three and guessing.
+- Every run is reproducible from its seed, so a bad day can be replayed exactly instead of
+  described (§10.2).
+- Results report the 50th, 90th and 99th percentile wait — never an average — broken out by
+  order size, because an average hides precisely the customers fair queuing exists to protect
+  (§10.4).
+
 - The kitchen now decides what to make next by fair queuing rather than strict order of
   arrival, and this is now what the "start next drink" button actually uses (§6.1, §8,
   §12 step 5). A customer who orders one drink behind a fifteen-drink
