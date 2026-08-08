@@ -1082,3 +1082,10 @@ mistaken for two mechanisms.
 surviving mutant means no assertion depended on the altered expression. Scoped to the
 scheduler (ADR-0002), with the rationale and the equivalent-mutant caveat in
 `docs/testing.md`.
+
+**Common random numbers (CRN)** — a variance-reduction technique for comparing two
+configurations of a simulation: give both the *same* random draws, so the difference between
+them is attributable to the change and not to luck. The subtlety is that a single shared
+generator does not achieve this — if a change reorders when draws happen, the two runs
+consume the stream differently and diverge. The fix is an independent substream per entity,
+so a draw about a given drink is the same draw whenever that drink is made (ADR-0011).

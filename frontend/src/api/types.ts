@@ -57,6 +57,8 @@ export interface SimulationRun {
     reneged: number
     remakes: number
     quality_breach_rate: number
+    /** The same, over multi-drink orders only — where cohesion is judged (§6.4, §9.6). */
+    quality_breach_rate_multi: number
     wait_seconds: { p50: number; p90: number; p99: number }
     by_size_class: Record<string, { orders: number; p50: number; p90: number; p99: number }>
   }

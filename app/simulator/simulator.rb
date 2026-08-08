@@ -30,10 +30,18 @@ module Simulator
     # were made (§10.4).
     def cohesion_spread = ready_at && first_ready_at ? ready_at - first_ready_at : 0.0
 
-    # §9.6's quality timer: how long the *first* finished drink sat before the
-    # customer collected. Multi-drink orders are the main source, which is
-    # exactly what the cohesion boost exists to reduce.
-    def sat_seconds = picked_up_at && first_ready_at ? picked_up_at - first_ready_at : nil
+    # §9.6's quality timer, per drink: "measures `now - finished_at` until
+    # `picked_up_at`". Per *drink* and not per order — a 20-drink order where 19
+    # drinks sat eight minutes is nineteen breaches, and counting it as one
+    # (which measuring from `first_ready_at` does) hides exactly the failure the
+    # cohesion boost exists to prevent.
+    #
+    # @return [Array<Float>] seconds each finished drink sat on the counter
+    def sat_seconds
+      return [] unless picked_up_at
+
+      items.filter_map { |drink| drink.finished_at && (picked_up_at - drink.finished_at) }
+    end
   end
 
   # Runs one shift.
@@ -80,7 +88,8 @@ module Simulator
       @integrated_to = 0.0
       @remakes = 0
       @next_order_id = 0
-      @stations = Array.new(scenario.stations) { |i| { index: i, busy_until: nil, skill: @rng.between(0.85, 1.20) } }
+      skills = @rng.stream(:stations)
+      @stations = Array.new(scenario.stations) { |i| { index: i, busy_until: nil, skill: skills.between(0.85, 1.20) } }
       @state = Scheduler::State.new(flows: [], config: scenario.config)
 
       schedule_arrivals
@@ -115,19 +124,20 @@ module Simulator
       peak = @scenario.peak_rate
       return if peak <= 0
 
+      arrivals = @rng.stream(:arrivals)
       t = 0.0
       while t < @scenario.duration_seconds
-        t += @rng.exponential(1.0 / peak)
+        t += arrivals.exponential(1.0 / peak)
         break if t >= @scenario.duration_seconds
 
-        @events.push(t, :order_arrives, size: sample_size) if @rng.chance(@scenario.arrival_rate_at((t / 3600).floor) / peak)
+        @events.push(t, :order_arrives, size: sample_size(arrivals)) if arrivals.chance(@scenario.arrival_rate_at((t / 3600).floor) / peak)
       end
     end
 
-    def sample_size
-      choice = @rng.categorical(@scenario.size_mix)
+    def sample_size(arrivals)
+      choice = arrivals.categorical(@scenario.size_mix)
 
-      choice.is_a?(Range) ? @rng.between(choice.min, choice.max + 1).floor : choice
+      choice.is_a?(Range) ? arrivals.between(choice.min, choice.max + 1).floor : choice
     end
 
     def on_arrival(payload)
@@ -139,7 +149,7 @@ module Simulator
       # abstract seconds (§10.4), and it is why a saturated shop's wait
       # percentiles stop rising — the customers who would have waited longest
       # are the ones who never join.
-      if order.web && @rng.chance(renege_probability)
+      if order.web && @rng.stream(:renege, order.id).uniform < renege_probability
         order.reneged = true
         @reneged += 1
         return
@@ -152,26 +162,43 @@ module Simulator
       id = @next_order_id += 1
       weighted = @scenario.menu.to_h { |item| [ item, item[:weight] ] }
 
+      customer = @rng.stream(:order, id)
       items = Array.new(size) { |i| build_drink("#{id}-#{i}", weighted) }
-      web = @rng.chance(@scenario.web_share)
+      web = customer.chance(@scenario.web_share)
 
       Order.new(
         id: id, arrived_at: @clock, items: items, web: web, reneged: false,
         queue_depth_on_arrival: queued_drinks,
         # §10.3 order-ahead, web only (§9.3). Exercises the scheduler's
         # backward-scheduling path, which nothing else in the model reaches.
-        promised_at: (web && @rng.chance(@scenario.order_ahead_share)) ? @clock + @rng.between(1800, 7200) : nil
+        promised_at: promise_for(web, customer)
       )
     end
 
+    # Keyed by the drink's own id: what a drink is, and how long it intrinsically
+    # takes, are properties of the drink and must not depend on when the
+    # scheduler got round to it (§17, common random numbers).
+    # A pickup time the shop is open for. Without the bound, a late-evening order
+    # could be promised after close, and §6.2's backward scheduling would then
+    # correctly never dispatch it — the order would sit in `@pending` forever,
+    # counted as neither served nor lost, silently absent from every metric.
+    def promise_for(web, customer)
+      return nil unless web && customer.chance(@scenario.order_ahead_share)
+
+      promised = @clock + customer.between(1800, 7200)
+
+      promised <= @scenario.duration_seconds ? promised : nil
+    end
+
     def build_drink(id, weighted, remake: false)
-      menu_item = @rng.categorical(weighted)
+      draw = @rng.stream(:drink, id)
+      menu_item = draw.categorical(weighted)
 
       Drink.new(
         id: id, prep_seconds: menu_item[:prep_seconds],
         # Lognormal around the item's mean, so the tail is on the slow side only
         # — a drink never takes negative time (§10.3).
-        actual_prep_seconds: @rng.lognormal(menu_item[:prep_seconds], @scenario.prep_sigma),
+        actual_prep_seconds: draw.lognormal(menu_item[:prep_seconds], @scenario.prep_sigma),
         remake: remake
       )
     end
@@ -249,9 +276,9 @@ module Simulator
       # §10.3: 2% of drinks go wrong. The remake is a *new* drink on the same
       # order (§5.2), which is what gives the order a pending remake and
       # therefore §6.4's priority floor — the only path that exercises it.
-      if @rng.chance(@scenario.remake_rate)
+      if @rng.stream(:quality, drink.id).chance(@scenario.remake_rate)
         @remakes += 1
-        order.items << build_drink("#{drink.id}r#{@remakes}", @scenario.menu.to_h { |i| [ i, i[:weight] ] }, remake: true)
+        order.items << build_drink("#{drink.id}r", @scenario.menu.to_h { |i| [ i, i[:weight] ] }, remake: true)
         drink.finished_at = @clock
         return
       end
@@ -267,7 +294,7 @@ module Simulator
 
       # §10.3 pickup delay: exponential, and "what exercises the quality timer".
       mean = order.web ? 180 : 100
-      @events.push(@clock + @rng.exponential(mean), :pickup, order: order)
+      @events.push(@clock + @rng.stream(:pickup, order.id).exponential(mean), :pickup, order: order)
     end
 
     def on_pickup(payload)
