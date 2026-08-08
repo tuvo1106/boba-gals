@@ -48,18 +48,18 @@ is worthless. The §11 checklist below is what actually matters.
 Every one of these must exist as a named example before DRR ships. Do not merge the
 scheduler with any of them missing.
 
-- [ ] One 15-drink order + one 1-drink order arriving 10s later → the single drink
+- [x] One 15-drink order + one 1-drink order arriving 10s later → the single drink
       dispatches within one quantum.
-- [ ] Continuous stream of 1-drink orders + one 20-drink order → the large order still
+- [x] Continuous stream of 1-drink orders + one 20-drink order → the large order still
       completes; assert no starvation.
-- [ ] A remake outranks all same-age normal work.
-- [ ] An older remake outranks a newer remake.
-- [ ] An order with `promised_at` two hours out is not eligible until its
+- [x] A remake outranks all same-age normal work.
+- [x] An older remake outranks a newer remake.
+- [x] An order with `promised_at` two hours out is not eligible until its
       backward-scheduled start (§6.2 `eligible?`).
-- [ ] Cohesion: an order past 50% completion outranks an equal-age order at 0%.
-- [ ] An empty queue returns `nil` and never raises.
-- [ ] The livelock guard trips rather than spinning.
-- [ ] FIFO policy produces strict `queued_at, id` order (the §6.3 control arm).
+- [x] Cohesion: an order past 50% completion outranks an equal-age order at 0%.
+- [x] An empty queue returns `nil` and never raises.
+- [x] The livelock guard trips rather than spinning.
+- [x] FIFO policy produces strict `queued_at, id` order (the §6.3 control arm).
 
 ## Concurrency
 
@@ -96,6 +96,27 @@ namespaces its channels, so a test run cannot disturb the development keyspace.
 
 Do not `sleep` through a Redis TTL. Assert the TTL exists, or delete the key to simulate
 expiry — see `spec/services/board_broadcast_spec.rb`.
+
+## Mutation testing
+
+```bash
+COVERAGE=0 bundle exec mutant run          # the whole scheduler
+COVERAGE=0 bundle exec mutant run -- 'Scheduler.quantum_for'   # one subject
+```
+
+Config is `config/mutant.yml`; `config/mutant_boot.rb` loads the scheduler **without
+Rails**, which is both faster and a check that the §6.2 purity rule still holds.
+
+`COVERAGE=0` matters — SimpleCov's at-exit gate would otherwise run inside every one of the
+hundreds of forked mutant processes.
+
+Current score: **93.14%** (734 of 788 killed). Do not chase 100%. The survivors are
+equivalent mutants — `guard = 0` → `1` against a 10,000-iteration limit, `0` → `-1` in a
+sort tier where both sort below 1 — plus default-argument removals no caller exercises.
+Killing those means writing tests that assert nothing anyone cares about.
+
+What to do with a *new* survivor: read it as a question. "Would a barista notice if this
+changed?" If yes, it is a missing test. If no, it is equivalent and should be left alone.
 
 ## Golden tests
 
