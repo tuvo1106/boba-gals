@@ -38,3 +38,8 @@ node_modules/
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+
+# Mutant's session cache — one ~33MB JSON per run. Swept in by `git add -A`
+# before this rule existed; they compress to almost nothing in git but
+# materialise as hundreds of megabytes in every working tree.
+/.mutant/
