@@ -125,8 +125,8 @@ function Capsule({
 function Readout({ drink, from, span, pinned }: { drink: TimelineDrink | null; from: number; span: number; pinned: boolean }) {
   if (!drink) {
     return (
-      <p className="mb-2 h-6 font-mono text-sm text-neutral-600">
-        Hover a drink to trace its order.
+      <p className="mb-2 h-6 font-mono text-xs text-neutral-700">
+        Hover a drink to trace its order
       </p>
     )
   }
