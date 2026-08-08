@@ -39,6 +39,16 @@ echo 'export PATH="$HOME/.local/share/mise/shims:$PATH"' >> ~/.zprofile # hooks 
 docker compose up            # postgres, redis, api :3000, worker, vite :5173
 ```
 
+Adding a gem needs `bundle install` **inside** the container, not a rebuild:
+
+```bash
+docker compose run --rm --no-deps api bundle install
+```
+
+Gems live in a named volume (`bundle:/usr/local/bundle`) that is mounted over the
+path the image installed them to, so `docker compose build` alone leaves the
+container booting against the old lockfile.
+
 `api` and `worker` run the same image with different commands — the production
 topology (§14.1), rehearsed locally so it isn't discovered at deploy time.
 

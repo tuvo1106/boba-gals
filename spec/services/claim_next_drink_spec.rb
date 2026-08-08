@@ -6,12 +6,43 @@ RSpec.describe ClaimNextDrink do
   let(:barista) { create(:barista, store: store) }
   let(:menu_item) { create(:menu_item, store: store) }
 
-  def queue_drink(queued_at: Time.current, order: create(:order, store: store))
+  def queue_drink(queued_at: Time.current, order: nil, placed_at: nil)
+    order ||= create(:order, store: store, placed_at: placed_at || queued_at)
     create(:order_item, order: order, menu_item: menu_item, queued_at: queued_at)
   end
 
-  describe "FIFO selection (build step 2)" do
-    it "claims the oldest queued drink" do
+  describe "selection (§6)" do
+    # Age is a property of the *order*, not the drink: `arrived_at` comes from
+    # `placed_at`, and aging is what §6.2 grows the quantum by. Two drinks
+    # queued at different times on orders placed at the same instant are the
+    # same age as far as the scheduler is concerned.
+    it "claims from the order that has been waiting longest" do
+      newer = queue_drink(queued_at: 1.minute.ago)
+      older = queue_drink(queued_at: 5.minutes.ago)
+
+      expect(described_class.new.call(station: station, barista: barista)).to eq(older)
+      expect(newer.reload.status).to eq("queued")
+    end
+
+    # The design's central claim, now exercised through the real claim path
+    # rather than only against the pure function (§2, §6.1).
+    it "does not make a single-drink order wait behind a whole catering order" do
+      catering = create(:order, store: store, placed_at: 5.minutes.ago)
+      10.times { |i| create(:order_item, order: catering, menu_item: menu_item, queued_at: 5.minutes.ago, sequence: i + 1) }
+      single = queue_drink(queued_at: 1.minute.ago)
+
+      claimed = 6.times.map { described_class.new.call(station: station, barista: barista) }
+
+      # Under FIFO the single drink is 11th. Under DRR the catering order gets
+      # one quantum's worth per round — aged five minutes that is 210s, which
+      # buys four 45s drinks — and then yields.
+      expect(claimed).to include(single), "the single drink waited behind the catering order"
+      expect(claimed.compact.count { |i| i.order_id == catering.id }).to be < 10
+    end
+
+    # §6.3's control arm, reachable from the store's config.
+    it "falls back to strict arrival order under the fifo policy" do
+      store.update!(scheduler_config: { "policy" => "fifo" })
       newer = queue_drink(queued_at: 1.minute.ago)
       older = queue_drink(queued_at: 5.minutes.ago)
 

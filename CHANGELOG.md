@@ -23,7 +23,8 @@ Categories, in this order:
 ### Added
 
 - The kitchen now decides what to make next by fair queuing rather than strict order of
-  arrival (§6.1, §12 step 5). A customer who orders one drink behind a fifteen-drink
+  arrival, and this is now what the "start next drink" button actually uses (§6.1, §8,
+  §12 step 5). A customer who orders one drink behind a fifteen-drink
   catering order waits about one drink, not fifteen — while the catering order still
   finishes rather than being pushed back indefinitely by a stream of small ones.
 - Remade drinks jump ahead of ordinary work of the same age, and an older remake goes before
