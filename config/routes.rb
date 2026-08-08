@@ -50,6 +50,10 @@ Rails.application.routes.draw do
         patch "scheduler_config", to: "scheduler_config#update"
 
         get "prep_time_stats", to: "prep_time_stats#index"
+
+        # Runs a scenario server-side and returns metrics plus the per-drink
+        # timeline the lane ribbon renders (§9.1, §10.1, §10.6).
+        post "simulations", to: "simulations#create"
       end
     end
   end

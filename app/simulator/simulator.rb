@@ -16,7 +16,7 @@ module Simulator
   # skill and any fatigue. Utilisation must be computed from the latter or it
   # understates how busy the shop was — and §10.4 makes staffing decisions on it.
   Drink = Struct.new(:id, :prep_seconds, :actual_prep_seconds, :service_seconds, :remake,
-                     :started_at, :finished_at, keyword_init: true) do
+                     :started_at, :finished_at, :station, keyword_init: true) do
     def remake? = remake
   end
 
@@ -80,7 +80,7 @@ module Simulator
       @integrated_to = 0.0
       @remakes = 0
       @next_order_id = 0
-      @stations = Array.new(scenario.stations) { { busy_until: nil, skill: @rng.between(0.85, 1.20) } }
+      @stations = Array.new(scenario.stations) { |i| { index: i, busy_until: nil, skill: @rng.between(0.85, 1.20) } }
       @state = Scheduler::State.new(flows: [], config: scenario.config)
 
       schedule_arrivals
@@ -236,6 +236,7 @@ module Simulator
 
       drink.service_seconds = duration
       drink.started_at = @clock
+      drink.station = station[:index]
       station[:busy_until] = @clock + duration
 
       @events.push(@clock + duration, :drink_finished, order: order, drink: drink, station: station)
@@ -271,6 +272,32 @@ module Simulator
 
     def on_pickup(payload)
       payload[:order].picked_up_at = @clock
+    end
+
+    public
+
+    # Every dispatched drink, as the lane ribbon needs it (§10.6): which station
+    # made it, when, and for which order.
+    #
+    # A ribbon fed by summary statistics would be a chart of numbers rather than
+    # a picture of the schedule — the whole point is seeing a large order's
+    # drinks *interleaved* with small ones, which only per-drink placement shows.
+    #
+    # @param window [Range, nil] simulated seconds to include; the full day is
+    #   thousands of capsules and no screen renders it legibly
+    # @return [Array<Hash>]
+    def timeline(window: nil)
+      drinks = (@completed + @pending).flat_map { |order| order.items.map { |d| [ order, d ] } }
+
+      drinks.filter_map do |order, drink|
+        next if drink.started_at.nil?
+        next if window && !window.cover?(drink.started_at)
+
+        { order_id: order.id, drink_id: drink.id, station: drink.station,
+          started_at: drink.started_at.round(2), finished_at: drink.finished_at&.round(2),
+          prep_seconds: drink.prep_seconds, remake: drink.remake?,
+          order_size: order.items.size }
+      end.sort_by { |d| [ d[:started_at], d[:station] ] }
     end
   end
 end

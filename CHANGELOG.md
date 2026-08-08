@@ -22,6 +22,12 @@ Categories, in this order:
 
 ### Added
 
+- A simulation dashboard showing what the kitchen actually did (§10.6): one row per station,
+  every drink a coloured capsule, coloured by which order it belongs to. Switching between
+  fair queuing and first-come-first-served on the same day makes the difference visible —
+  under first-come one order holds a station while everyone waits; under fair queuing the
+  colours alternate. The wait figures move with the picture.
+
 - The simulator now models the whole shift, not just the making of drinks (§10.2, §10.3):
   drinks occasionally go wrong and get remade, customers take a while to collect, some order
   ahead for a later pickup, and some look at the quoted wait and decide not to order at all.
