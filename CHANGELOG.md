@@ -22,6 +22,13 @@ Categories, in this order:
 
 ### Added
 
+- The simulator now models the whole shift, not just the making of drinks (§10.2, §10.3):
+  drinks occasionally go wrong and get remade, customers take a while to collect, some order
+  ahead for a later pickup, and some look at the quoted wait and decide not to order at all.
+  That last one matters most — without it, being slow costs nothing on paper.
+- Reports how often a finished drink sat past its quality limit before collection, and how
+  many customers were lost to long waits (§9.6, §10.4).
+
 - A simulator that runs the real scheduler against a generated day, so staffing and tuning
   decisions can be tested before they are made in the shop (§10.1, §12 step 6). An eleven-hour
   day takes 7 milliseconds, which is what makes sweeping hundreds of configurations practical

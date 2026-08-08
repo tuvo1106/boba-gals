@@ -13,6 +13,7 @@ require "#{root}/app/scheduler/scheduler/state"
 require "#{root}/app/scheduler/scheduler"
 require "#{root}/app/simulator/simulator/rng"
 require "#{root}/app/simulator/simulator/scenario"
+require "#{root}/app/simulator/simulator/event_queue"
 require "#{root}/app/simulator/simulator/metrics"
 require "#{root}/app/simulator/simulator"
 

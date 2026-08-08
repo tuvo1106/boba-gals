@@ -18,10 +18,12 @@ module Simulator
     # @param orders [Array<Simulator::Order>] completed orders
     # @param seconds [Numeric] simulated duration
     # @param stations [Integer]
-    def initialize(orders:, seconds:, stations:)
+    def initialize(orders:, seconds:, stations:, reneged: 0, remakes: 0)
       @orders = orders
       @seconds = seconds
       @stations = stations
+      @reneged = reneged
+      @remakes = remakes
     end
 
     # @return [Hash]
@@ -37,7 +39,15 @@ module Simulator
         # p90 of ready_at − first_ready_at: the melted-first-drink problem, and
         # the direct measure of whether cohesion is working (§10.4, §6.4).
         cohesion_spread_p90: percentile(@orders.map(&:cohesion_spread), 90),
-        max_queue_depth: @orders.map(&:queue_depth_on_arrival).max || 0
+        max_queue_depth: @orders.map(&:queue_depth_on_arrival).max || 0,
+        # §9.6: a drink sitting longer than quality_limit_seconds after it was
+        # finished. Multi-drink orders are the main source, so this is how the
+        # cohesion boost is judged (§10.4).
+        quality_breach_rate: breach_rate,
+        # "Reneging prices the cost of slowness in lost revenue rather than
+        # abstract seconds." (§10.3)
+        reneged: @reneged,
+        remakes: @remakes
       }
     end
 
@@ -77,6 +87,15 @@ module Simulator
       index = ((rank / 100.0) * sorted.size).ceil - 1
 
       sorted[index.clamp(0, sorted.size - 1)].to_f.round(1)
+    end
+
+    QUALITY_LIMIT = 300
+
+    def breach_rate
+      collected = @orders.filter_map(&:sat_seconds)
+      return 0.0 if collected.empty?
+
+      (collected.count { |s| s > QUALITY_LIMIT }.to_f / collected.size).round(3)
     end
 
     def utilisation

@@ -121,23 +121,105 @@ RSpec.describe Simulator do
   # A simulator that silently drops work reports metrics over a subset, and the
   # subset it drops is the slow tail — so the numbers look better than the shop.
   describe "conservation" do
-    it "completes every order it generates" do
-      built = 0
-      described_class.singleton_class.prepend(Module.new do
-        define_method(:build_order) { |*args| built += 1; super(*args) }
-      end)
+    it "accounts for every order that arrives" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 3))
 
-      completed = run(seed: 3).to_h[:orders]
+      expect(world.completed.size + world.reneged).to eq(world.arrived),
+        "#{world.arrived - world.completed.size - world.reneged} orders vanished"
+    end
 
-      expect(completed).to eq(built)
+    it "drains the event queue rather than stopping with work outstanding" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 3))
+
+      expect(world.instance_variable_get(:@pending)).to be_empty
     end
 
     it "finishes every drink of every completed order" do
-      metrics = run(seed: 3)
-      orders = metrics.instance_variable_get(:@orders)
+      orders = described_class.simulate(Simulator::Scenario.new(seed: 3)).completed
 
       expect(orders).to all(satisfy { |o| o.items.all?(&:finished_at) })
       expect(orders).to all(satisfy { |o| o.ready_at >= o.arrived_at })
+    end
+  end
+
+  # The four processes the station-availability loop had nowhere to put. Each is
+  # listed in §10.3 and each was missing until the event queue landed.
+  describe "the processes the event queue enables (§10.2, §10.3)" do
+    it "fails roughly remake_rate of drinks and re-queues them" do
+      h = run(seed: 42).to_h
+
+      expect(h[:remakes]).to be_positive
+      expect(h[:remakes].to_f / h[:drinks]).to be_within(0.015).of(0.02)
+    end
+
+    # A remake is a new drink on the same order (§5.2), which is what gives the
+    # order a pending remake and therefore §6.4's priority floor. Nothing else
+    # in the model reaches that code path.
+    it "puts the remake on the original order rather than a new one" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 42))
+      remade = world.completed.select { |o| o.items.any?(&:remake?) }
+
+      expect(remade).to be_any
+      expect(remade).to all(satisfy { |o| o.items.count > o.items.count(&:remake?) })
+    end
+
+    it "collects every completed order, after a delay" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 42))
+
+      expect(world.completed).to all(satisfy(&:picked_up_at))
+      expect(world.completed).to all(satisfy { |o| o.picked_up_at > o.ready_at })
+    end
+
+    # §9.6's quality timer needs pickup to exist before it can measure anything.
+    it "reports a quality breach rate" do
+      expect(run(seed: 42).to_h[:quality_breach_rate]).to be_between(0, 1)
+    end
+
+    it "generates order-ahead orders, which exercise backward scheduling" do
+      world = described_class.simulate(Simulator::Scenario.new(seed: 42))
+
+      expect(world.completed.count(&:promised_at)).to be_positive
+    end
+
+    # "Reneging prices the cost of slowness in lost revenue rather than abstract
+    # seconds." It must be quiet in a healthy shop and bite in a saturated one —
+    # a renege model that fires at low load would understate every wait.
+    it "does not renege in a shop that is keeping up" do
+      expect(run(seed: 7, demand_multiplier: 1.0).to_h[:reneged]).to eq(0)
+    end
+
+    it "reneges sharply once the shop saturates" do
+      calm = run(seed: 7, demand_multiplier: 1.0).to_h
+      swamped = run(seed: 7, demand_multiplier: 2.5).to_h
+
+      expect(swamped[:station_utilisation]).to be > 0.85
+      expect(swamped[:reneged]).to be > calm[:reneged] + 50
+    end
+  end
+
+  describe "the event queue (§10.2)" do
+    it "pops events in time order" do
+      q = Simulator::EventQueue.new
+      [ 5.0, 1.0, 3.0, 2.0, 4.0 ].each { |t| q.push(t, :order_arrives) }
+
+      expect(Array.new(5) { q.pop.at }).to eq([ 1.0, 2.0, 3.0, 4.0, 5.0 ])
+    end
+
+    # Reproducibility from a seed requires ties to break deterministically;
+    # otherwise heap layout, which depends on insertion history, decides.
+    it "breaks ties on insertion order" do
+      q = Simulator::EventQueue.new
+      %i[first second third].each { |name| q.push(1.0, name) }
+
+      expect(Array.new(3) { q.pop.type }).to eq(%i[first second third])
+    end
+
+    it "is empty when drained" do
+      q = Simulator::EventQueue.new.push(1.0, :pickup)
+
+      expect(q.pop).not_to be_nil
+      expect(q).to be_empty
+      expect(q.pop).to be_nil
     end
   end
 
@@ -164,9 +246,7 @@ RSpec.describe Simulator do
     # Understating utilisation understates how close the shop is to saturation,
     # which is the number §10.4 says staffing decisions are made on.
     it "measures utilisation from time stations were actually occupied" do
-      metrics = run(seed: 1)
-      orders = metrics.instance_variable_get(:@orders)
-      drinks = orders.flat_map(&:items)
+      drinks = described_class.simulate(Simulator::Scenario.new(seed: 1)).completed.flat_map(&:items)
 
       # Skill is U(0.85, 1.20) and fatigue multiplies, so service time differs
       # from raw prep time on essentially every drink.

@@ -25,7 +25,7 @@ module Simulator
 
     attr_reader :seed, :stations, :hours, :arrival_profile, :size_mix,
                 :demand_multiplier, :large_order_rate, :scheduler_config,
-                :menu, :prep_sigma, :remake_rate
+                :menu, :prep_sigma, :remake_rate, :web_share, :order_ahead_share
 
     # @param seed [Integer] the whole run is a function of this
     # @param menu [Array<Hash>] `[{ name:, prep_seconds:, weight: }, ...]`
@@ -34,7 +34,8 @@ module Simulator
     def initialize(seed: 1, stations: 3, hours: DEFAULT_ARRIVAL_PROFILE.size,
                    arrival_profile: DEFAULT_ARRIVAL_PROFILE, size_mix: DEFAULT_SIZE_MIX,
                    demand_multiplier: 1.0, large_order_rate: nil,
-                   scheduler_config: {}, menu: nil, prep_sigma: 0.28, remake_rate: 0.02)
+                   scheduler_config: {}, menu: nil, prep_sigma: 0.28, remake_rate: 0.02,
+                   web_share: 0.35, order_ahead_share: 0.08)
       @seed = seed
       @stations = stations
       @hours = hours
@@ -46,6 +47,10 @@ module Simulator
       @menu = menu || DEFAULT_MENU
       @prep_sigma = prep_sigma
       @remake_rate = remake_rate
+      # Kiosk vs web decides pickup delay (100s vs 180s), whether the customer
+      # can renege, and whether they can order ahead — all web-only (§9.3).
+      @web_share = web_share
+      @order_ahead_share = order_ahead_share
     end
 
     # A spread wide enough that fairness is a real question. "A menu where

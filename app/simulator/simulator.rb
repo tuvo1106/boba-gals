@@ -6,12 +6,11 @@
 # Otherwise you are tuning a model of your system rather than your system, and
 # every conclusion the dashboard draws is about the model.
 #
-# Not tick-based. The clock jumps to the next event, so a 12-hour day completes
-# in well under a second — which is what makes parameter sweeps of thousands of
-# runs practical instead of eyeballing three configurations (§10.2).
+# Event-driven per §10.2: a priority queue over
+# `ORDER_ARRIVES · DRINK_STARTED · DRINK_FINISHED · DRINK_FAILED · ORDER_READY ·
+# PICKUP`, with the clock jumping between events. An eleven-hour day is a few
+# thousand events rather than 40,000 idle ticks.
 module Simulator
-  # A drink. Mirrors what the real `OrderItem` carries into the scheduler, plus
-  # the actual prep time this run sampled for it.
   # `actual_prep_seconds` is what the drink would take on an average station;
   # `service_seconds` is what it actually occupied one for, after that station's
   # skill and any fatigue. Utilisation must be computed from the latter or it
@@ -21,14 +20,20 @@ module Simulator
     def remake? = remake
   end
 
-  # An order, and the timestamps the metrics are computed from.
-  Order = Struct.new(:id, :arrived_at, :items, :queue_depth_on_arrival, :ready_at, :first_ready_at,
+  Order = Struct.new(:id, :arrived_at, :items, :queue_depth_on_arrival, :ready_at,
+                     :first_ready_at, :picked_up_at, :promised_at, :reneged, :web,
                      keyword_init: true) do
     def wait_seconds = ready_at && (ready_at - arrived_at)
+    def reneged? = reneged
 
     # ready_at − first_ready_at: how long the earliest drink sat while the rest
     # were made (§10.4).
     def cohesion_spread = ready_at && first_ready_at ? ready_at - first_ready_at : 0.0
+
+    # §9.6's quality timer: how long the *first* finished drink sat before the
+    # customer collected. Multi-drink orders are the main source, which is
+    # exactly what the cohesion boost exists to reduce.
+    def sat_seconds = picked_up_at && first_ready_at ? picked_up_at - first_ready_at : nil
   end
 
   # Runs one shift.
@@ -36,147 +41,223 @@ module Simulator
   # @param scenario [Simulator::Scenario]
   # @return [Simulator::Metrics]
   def self.run(scenario)
-    rng = Rng.new(scenario.seed)
-    clock = 0.0
+    world = simulate(scenario)
+    Metrics.new(orders: world.completed, seconds: world.clock, stations: scenario.stations,
+                reneged: world.reneged, remakes: world.remakes)
+  end
 
-    pending = []          # orders that have arrived and still have drinks queued
-    completed = []
-    stations = Array.new(scenario.stations) { { free_at: 0.0, skill: rng.between(0.85, 1.20) } }
-    arrivals = generate_arrivals(scenario, rng)
-    next_order_id = 0
+  # The World itself, for specs that need to assert on internals such as
+  # conservation. Production callers want `run`.
+  # @return [Simulator::World]
+  def self.simulate(scenario)
+    World.new(scenario).tap(&:run)
+  end
 
-    # Deficits and the ring pointer live here rather than in Redis (§6.5); the
-    # scheduler cannot tell the difference, which is the point.
-    state = Scheduler::State.new(flows: [], config: scenario.config)
+  # Holds the mutable state of one simulated day. A class rather than a pile of
+  # locals because the event handlers all need the same half-dozen collections,
+  # and threading them through as arguments obscured what each handler does.
+  class World
+    attr_reader :clock, :completed, :reneged, :remakes, :arrived
 
-    until arrivals.empty? && pending.empty?
-      station = stations.min_by { |s| s[:free_at] }
+    QUALITY_LIMIT = 300 # §6.6 default, for the breach metric
 
-      # Jump the clock: either to the next free station, or forward to the next
-      # arrival if the shop has run dry.
-      clock = [ clock, station[:free_at] ].max
-      clock = [ clock, arrivals.first[:at] ].max if pending.empty? && arrivals.any?
+    def initialize(scenario)
+      @scenario = scenario
+      @rng = Rng.new(scenario.seed)
+      @clock = 0.0
+      @events = EventQueue.new
+      @pending = []
+      @completed = []
+      @reneged = 0
+      @arrived = 0
+      @remakes = 0
+      @next_order_id = 0
+      @stations = Array.new(scenario.stations) { { busy_until: nil, skill: @rng.between(0.85, 1.20) } }
+      @state = Scheduler::State.new(flows: [], config: scenario.config)
 
-      while arrivals.any? && arrivals.first[:at] <= clock
-        arrival = arrivals.shift
-        order = build_order(arrival, next_order_id += 1, pending, rng, scenario)
-        pending << order
-      end
-
-      break if pending.empty?
-
-      state = rebuild_state(state, pending, scenario)
-      picked = Scheduler.pick_next(state, clock)
-
-      # Nothing dispatchable yet — every pending order is order-ahead and not
-      # due. Advance to the next arrival rather than spinning.
-      if picked.nil?
-        break if arrivals.empty?
-
-        clock = arrivals.first[:at]
-        next
-      end
-
-      dispatch(picked, station, clock, pending, completed, rng, scenario)
+      schedule_arrivals
     end
 
-    Metrics.new(orders: completed, seconds: clock, stations: scenario.stations)
-  end
+    def run
+      until @events.empty?
+        event = @events.pop
+        @clock = event.at
 
-  # Non-homogeneous Poisson by thinning (§10.3): sample at the peak rate, then
-  # reject in proportion to how far below peak the current hour is. Uniform
-  # arrivals would keep the shop below saturation all day, where every scheduler
-  # looks the same.
-  def self.generate_arrivals(scenario, rng)
-    arrivals = []
-    t = 0.0
-    peak = scenario.peak_rate
+        case event.type
+        when :order_arrives  then on_arrival(event.payload)
+        when :drink_finished then on_finished(event.payload)
+        when :pickup         then on_pickup(event.payload)
+        end
 
-    return arrivals if peak <= 0
-
-    while t < scenario.duration_seconds
-      t += rng.exponential(1.0 / peak)
-      break if t >= scenario.duration_seconds
-
-      hour = (t / 3600).floor
-      arrivals << { at: t, size: sample_size(scenario, rng) } if rng.chance(scenario.arrival_rate_at(hour) / peak)
+        fill_idle_stations
+      end
     end
 
-    arrivals
-  end
+    private
 
-  def self.sample_size(scenario, rng)
-    choice = rng.categorical(scenario.size_mix)
+    # Non-homogeneous Poisson by thinning (§10.3): sample at the peak rate, then
+    # reject in proportion to how far below peak the hour is. Uniform arrivals
+    # keep the shop below saturation all day, where every scheduler looks alike.
+    def schedule_arrivals
+      peak = @scenario.peak_rate
+      return if peak <= 0
 
-    choice.is_a?(Range) ? rng.between(choice.min, choice.max + 1).floor : choice
-  end
+      t = 0.0
+      while t < @scenario.duration_seconds
+        t += @rng.exponential(1.0 / peak)
+        break if t >= @scenario.duration_seconds
 
-  def self.build_order(arrival, id, pending, rng, scenario)
-    weighted = scenario.menu.to_h { |item| [ item, item[:weight] ] }
+        @events.push(t, :order_arrives, size: sample_size) if @rng.chance(@scenario.arrival_rate_at((t / 3600).floor) / peak)
+      end
+    end
 
-    items = Array.new(arrival[:size]) do |i|
-      menu_item = rng.categorical(weighted)
+    def sample_size
+      choice = @rng.categorical(@scenario.size_mix)
+
+      choice.is_a?(Range) ? @rng.between(choice.min, choice.max + 1).floor : choice
+    end
+
+    def on_arrival(payload)
+      @arrived += 1
+      order = build_order(payload[:size])
+
+      # §10.3 reneging: a web customer quoted a long wait leaves rather than
+      # ordering. This is what prices slowness in lost revenue instead of
+      # abstract seconds (§10.4), and it is why a saturated shop's wait
+      # percentiles stop rising — the customers who would have waited longest
+      # are the ones who never join.
+      if order.web && @rng.chance(renege_probability)
+        order.reneged = true
+        @reneged += 1
+        return
+      end
+
+      @pending << order
+    end
+
+    def build_order(size)
+      id = @next_order_id += 1
+      weighted = @scenario.menu.to_h { |item| [ item, item[:weight] ] }
+
+      items = Array.new(size) { |i| build_drink("#{id}-#{i}", weighted) }
+      web = @rng.chance(@scenario.web_share)
+
+      Order.new(
+        id: id, arrived_at: @clock, items: items, web: web, reneged: false,
+        queue_depth_on_arrival: queued_drinks,
+        # §10.3 order-ahead, web only (§9.3). Exercises the scheduler's
+        # backward-scheduling path, which nothing else in the model reaches.
+        promised_at: (web && @rng.chance(@scenario.order_ahead_share)) ? @clock + @rng.between(1800, 7200) : nil
+      )
+    end
+
+    def build_drink(id, weighted, remake: false)
+      menu_item = @rng.categorical(weighted)
 
       Drink.new(
-        id: "#{id}-#{i}",
-        prep_seconds: menu_item[:prep_seconds],
-        # Lognormal around the item's mean, so the tail is on the slow side
-        # only — a drink never takes negative time (§10.3).
-        actual_prep_seconds: rng.lognormal(menu_item[:prep_seconds], scenario.prep_sigma),
-        remake: false
+        id: id, prep_seconds: menu_item[:prep_seconds],
+        # Lognormal around the item's mean, so the tail is on the slow side only
+        # — a drink never takes negative time (§10.3).
+        actual_prep_seconds: @rng.lognormal(menu_item[:prep_seconds], @scenario.prep_sigma),
+        remake: remake
       )
     end
 
-    Order.new(id: id, arrived_at: arrival[:at], items: items,
-              queue_depth_on_arrival: pending.sum { |o| o.items.count { |d| d.started_at.nil? } })
-  end
+    # Estimated wait, for the renege decision. The naive estimate of §12 step 3:
+    # outstanding work over stations. A customer decides on what they are told,
+    # not on what turns out to be true.
+    def renege_probability
+      eta = queued_seconds / [ @scenario.stations, 1 ].max
 
-  # Rebuilt from the pending orders every cycle, exactly as §6.5 requires in
-  # production — no queue table, deficits carried across.
-  def self.rebuild_state(state, pending, scenario)
-    carried = state.flows.to_h { |flow| [ flow.id, flow.deficit ] }
-
-    flows = pending.filter_map do |order|
-      queued = order.items.reject(&:started_at)
-      next if queued.empty?
-
-      Scheduler::Flow.new(
-        id: order.id,
-        arrived_at: order.arrived_at,
-        queue: queued.map { |d| Scheduler::Item.new(id: d.id, prep_seconds: d.prep_seconds, enqueued_at: order.arrived_at, remake: d.remake?) },
-        made_count: order.items.count(&:finished_at),
-        total_items: order.items.size,
-        deficit: carried.fetch(order.id, 0)
-      )
+      ((eta - 480) / 1200.0).clamp(0.0, 0.8)
     end
 
-    Scheduler::State.new(flows: flows, config: scenario.config,
-                         pointer: state.pointer, granted_to: state.granted_to)
-  end
+    def queued_drinks = @pending.sum { |o| o.items.count { |d| d.started_at.nil? } }
+    def queued_seconds = @pending.sum { |o| o.items.reject(&:started_at).sum(&:prep_seconds) }
 
-  def self.dispatch(picked, station, clock, pending, completed, rng, scenario)
-    order = pending.find { |o| o.id == picked[:flow].id }
-    drink = order.items.find { |d| d.id == picked[:item].id }
+    # Every idle station takes work until the scheduler has none to give. This
+    # is the only place drinks start, so DRINK_STARTED is implicit in it.
+    def fill_idle_stations
+      loop do
+        station = @stations.find { |s| s[:busy_until].nil? }
+        break if station.nil?
 
-    # Barista skill is drawn once per station and persists — a fast barista is
-    # fast all shift, which is what makes station utilisation uneven in a way
-    # averaging would hide (§10.3).
-    duration = drink.actual_prep_seconds * station[:skill]
-    duration *= 1.08 if pending.sum { |o| o.items.count { |d| d.started_at.nil? } } > 12  # fatigue
+        rebuild_state
+        picked = Scheduler.pick_next(@state, @clock)
+        break if picked.nil?
 
-    drink.service_seconds = duration
-    drink.started_at = clock
-    drink.finished_at = clock + duration
-    station[:free_at] = drink.finished_at
+        start_drink(picked, station)
+      end
+    end
 
-    order.first_ready_at ||= drink.finished_at
+    # Rebuilt from pending orders every cycle, exactly as §6.5 requires in
+    # production — no queue table, deficits carried across.
+    def rebuild_state
+      carried = @state.flows.to_h { |flow| [ flow.id, flow.deficit ] }
 
-    if order.items.all?(&:finished_at)
-      order.ready_at = order.items.map(&:finished_at).max
-      completed << order
-      pending.delete(order)
+      flows = @pending.filter_map do |order|
+        queued = order.items.reject(&:started_at)
+        next if queued.empty?
+
+        Scheduler::Flow.new(
+          id: order.id, arrived_at: order.arrived_at, promised_at: order.promised_at,
+          queue: queued.map { |d| Scheduler::Item.new(id: d.id, prep_seconds: d.prep_seconds, enqueued_at: order.arrived_at, remake: d.remake?) },
+          made_count: order.items.count(&:finished_at),
+          total_items: order.items.size,
+          deficit: carried.fetch(order.id, 0)
+        )
+      end
+
+      @state = Scheduler::State.new(flows: flows, config: @scenario.config,
+                                    pointer: @state.pointer, granted_to: @state.granted_to)
+    end
+
+    def start_drink(picked, station)
+      order = @pending.find { |o| o.id == picked[:flow].id }
+      drink = order.items.find { |d| d.id == picked[:item].id }
+
+      # Barista skill is drawn once per station and persists — a fast barista is
+      # fast all shift, which makes utilisation uneven in a way averaging hides.
+      duration = drink.actual_prep_seconds * station[:skill]
+      duration *= 1.08 if queued_drinks > 12 # fatigue (§10.3)
+
+      drink.service_seconds = duration
+      drink.started_at = @clock
+      station[:busy_until] = @clock + duration
+
+      @events.push(@clock + duration, :drink_finished, order: order, drink: drink, station: station)
+    end
+
+    def on_finished(payload)
+      order, drink, station = payload.values_at(:order, :drink, :station)
+      station[:busy_until] = nil
+
+      # §10.3: 2% of drinks go wrong. The remake is a *new* drink on the same
+      # order (§5.2), which is what gives the order a pending remake and
+      # therefore §6.4's priority floor — the only path that exercises it.
+      if @rng.chance(@scenario.remake_rate)
+        @remakes += 1
+        order.items << build_drink("#{drink.id}r#{@remakes}", @scenario.menu.to_h { |i| [ i, i[:weight] ] }, remake: true)
+        drink.finished_at = @clock
+        return
+      end
+
+      drink.finished_at = @clock
+      order.first_ready_at ||= @clock
+
+      return unless order.items.all?(&:finished_at)
+
+      order.ready_at = @clock
+      @completed << order
+      @pending.delete(order)
+
+      # §10.3 pickup delay: exponential, and "what exercises the quality timer".
+      mean = order.web ? 180 : 100
+      @events.push(@clock + @rng.exponential(mean), :pickup, order: order)
+    end
+
+    def on_pickup(payload)
+      payload[:order].picked_up_at = @clock
     end
   end
-
-  private_class_method :generate_arrivals, :sample_size, :build_order, :rebuild_state, :dispatch
 end
