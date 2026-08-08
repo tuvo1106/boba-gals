@@ -25,6 +25,43 @@ These are decided. Do not relitigate them in code, comments, or PR discussion:
 If a design decision looks wrong while implementing, say so and stop — don't silently
 deviate. Changing the design means editing `DESIGN.md` in its own PR.
 
+## This repository is public
+
+Everything here is world-readable: the code, **the full git history**, PR bodies, issues,
+and Actions logs. Write accordingly.
+
+**Never commit a secret.** Not a key, token, password, connection string, or customer
+record — not "temporarily", not in a branch you plan to squash. The `no-secrets` lefthook
+guard matches known *filenames*; it does not read values, and it will not save you.
+
+Where real secrets actually live:
+
+| Secret | Home |
+|---|---|
+| `DATABASE_URL`, `REDIS_URL`, `RAILS_MASTER_KEY`, `SEED_ADMIN_PASSWORD`, later `TWILIO_*` | k8s Secret, created out of band (§14.6) |
+| Anything encrypted | `config/credentials.yml.enc` — safe only because `config/master.key` has never been committed and must never be |
+| Local overrides | `.env`, gitignored |
+
+Credential-shaped strings **are** committed in a few places, deliberately, and every one of
+them says so in its own value: `dev-only-not-a-real-password`, `SECRET_KEY_BASE=dev000…dev`,
+`changeme-in-any-real-deploy`, barista PIN `1234`. All are scoped to a kind cluster that
+gets deleted. Keep that convention — a fake credential should be unmistakable from the value
+alone, without reading the surrounding comment.
+
+**If a secret does land in a commit, rotate it first.** Deleting it in a later commit
+achieves nothing: the blob stays reachable by SHA, GitHub caches it, and forks and clones
+keep it forever. Rotate, then rewrite history, in that order. Treat it as compromised the
+moment it is pushed.
+
+Two consequences that are easy to forget:
+
+- **Actions logs are public.** Don't `echo` environment variables or paste real data into a
+  workflow step. Diagnostic steps that dump `kubectl describe` output are fine; ones that
+  dump a Secret are not.
+- **PR bodies are public.** The "Verified by hand" transcripts this project asks for must
+  never contain a real `customer_phone` (§13.5) or any other customer data. Seeded demo
+  values only.
+
 ## Working agreements
 
 ### Every major feature ships as a PR
@@ -80,8 +117,9 @@ Full conventions: `docs/testing.md`. The short version:
   pending specs (`skip "not yet implemented"`) so RSpec reports the gaps on every run, and
   every case must be a real named example before DRR merges.
 - **Mutation testing** (`mutant`) covers `app/scheduler/**` only. 100% coverage on a pure
-  function proves nothing on its own — a surviving mutant is the real signal. Deferred
-  while the repo is private (ADR-0002).
+  function proves nothing on its own — a surviving mutant is the real signal. ADR-0002
+  deferred this until the repo went public *or* the scheduler landed; both are now true, so
+  it ships with build step 5. Nothing left to defer it behind.
 - **Golden tests** (fixed seed → byte-identical dispatch sequence) live in
   `spec/scheduler/golden/`. Regenerate them deliberately, never casually — a changed
   golden file must be explained in the PR body.
