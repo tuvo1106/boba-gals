@@ -227,12 +227,27 @@ def pick_next(state, now)
     guard += 1
     raise "scheduler livelock" if guard > 10_000
 
-    state.pointer = 0 if state.pointer >= state.flows.size
-    flow = state.flows[state.pointer]
+    # Priority order, not arrival order (ADR-0009). A quantum multiplier decides
+    # how much service a flow gets per round; it cannot decide who is asked
+    # first. Walking in arrival order makes §6.4's "remakes outrank same-age
+    # normal work" untrue no matter how large the multiplier.
+    ring = priority_ring(state, now)
+    state.pointer = 0 if state.pointer >= ring.size
+    flow = ring[state.pointer]
 
-    if flow.nil? || flow.queue.empty? || !eligible?(flow, now, state.config)
-      state.pointer += 1
+    if flow.queue.empty? || !eligible?(flow, now, state.config)
+      state.advance!            # advance the pointer AND end this flow's visit
       next
+    end
+
+    # One quantum per flow per round — the definition of the algorithm. Without
+    # tracking the grant, a flow whose quantum covers its next drink dispatches,
+    # keeps the pointer, and tops itself up again indefinitely: at the default
+    # 120s quantum against 60s drinks the first order drains completely before
+    # any other is touched.
+    unless state.granted?(flow)
+      flow.deficit += quantum_for(flow, now, state.config)
+      state.grant!(flow)
     end
 
     head = flow.queue.first
@@ -242,9 +257,18 @@ def pick_next(state, now)
       return { flow: flow, item: flow.queue.shift }
     end
 
-    flow.deficit += quantum_for(flow, now, state.config)
-    state.pointer += 1 if flow.deficit < head.prep_seconds
+    state.advance!              # this visit's quantum is spent; remainder carries
   end
+end
+
+# The order flows are visited in. Fairness is unaffected — it lives in the
+# deficit accounting, and every flow still draws one quantum per round.
+def priority_ring(state, now)
+  state.flows.each_with_index.sort_by do |flow, index|
+    [ flow.has_pending_remake ? 0 : 1,        # the floor (§6.4) — a tier, not a number
+      -quantum_for(flow, now, state.config),  # aging and cohesion
+      index ]                                 # stable, so ties are deterministic
+  end.map(&:first)
 end
 
 def quantum_for(flow, now, config)
@@ -263,8 +287,8 @@ def quantum_for(flow, now, config)
     multiplier += config.cohesion_boost                   # default 1.0
   end
 
-  # Remake: a priority floor, not a fixed bump. Jumps the queue but still
-  # ages fairly against other remakes.
+  # Remake: extra throughput once its turn comes. The *ordering* guarantee lives
+  # in priority_ring — a number added here is a rate, not a rank (§6.4).
   multiplier += config.remake_multiplier if flow.has_pending_remake   # default 4.0
 
   config.quantum * multiplier
@@ -285,7 +309,11 @@ Keep `policy: :fifo` implemented permanently — strict `ORDER BY queued_at, id`
 
 ### 6.4 Why a priority *floor* for remakes
 
-A fixed additive bump gets swamped in a busy queue: after 20 minutes of aging, a normal order's multiplier exceeds a fresh remake's. Making the remake a large multiplier on the quantum means remakes always outrank same-age normal work, but two remakes still compete with each other by age. The customer whose drink was dropped ten minutes ago beats the one whose drink was dropped one minute ago.
+A fixed additive bump gets swamped in a busy queue: after 20 minutes of aging, a normal order's multiplier exceeds a fresh remake's.
+
+**So the floor is a tier, not a number** (ADR-0009). `priority_ring` sorts flows with a pending remake ahead of every flow without one, and orders *within* each tier by quantum — which preserves the other half of the requirement: two remakes still compete with each other by age, so the customer whose drink was dropped ten minutes ago beats the one whose drink was dropped one minute ago.
+
+A large multiplier is not sufficient, and cannot be made sufficient. Any number added to a multiplier is exceeded by a competitor aged long enough — `remake_multiplier: 4.0` against `aging_rate: 0.15` is overtaken at roughly 27 minutes, which is the same failure this section opens by describing. The multiplier still earns its place: it is what lets a remade order *clear* faster once its turn arrives, rather than merely starting sooner.
 
 ### 6.5 Do not materialize a queue table
 
