@@ -244,4 +244,54 @@ RSpec.describe ProjectEta do
       expect(described_class.for_open_orders(store)[walk_up.id]).to eq(60)
     end
   end
+
+  # §7.3: the seeded base_prep_seconds are guesses, and the projection is only
+  # as good as the durations it assumes. "This is the difference between a board
+  # customers trust and one they learn to ignore."
+  describe "learned prep times (§7.3)" do
+    def learn(item, seconds:, samples:)
+      create(:prep_time_stat, menu_item: item, ewma_seconds: seconds, sample_count: samples)
+    end
+
+    it "projects from the learned duration once there is enough evidence" do
+      learn(menu_item, seconds: 120, samples: PrepTimeStat::MINIMUM_SAMPLES)
+      order = create(:order, store: store)
+      queue(order, 1, prep: 60)
+
+      expect(described_class.for_open_orders(store)[order.id]).to eq(120)
+    end
+
+    # An EWMA over three drinks is one unlucky Tuesday. Below the bar the seeded
+    # guess still wins, which is what MINIMUM_SAMPLES is for.
+    it "keeps using the seeded guess below the evidence bar" do
+      learn(menu_item, seconds: 120, samples: PrepTimeStat::MINIMUM_SAMPLES - 1)
+      order = create(:order, store: store)
+      queue(order, 1, prep: 60)
+
+      expect(described_class.for_open_orders(store)[order.id]).to eq(60)
+    end
+
+    it "applies the learned duration to a drink already being made" do
+      learn(menu_item, seconds: 200, samples: PrepTimeStat::MINIMUM_SAMPLES)
+      order = create(:order, store: store)
+      item = queue(order, 1, prep: 60).first
+      item.update!(status: "in_progress", station_id: store.active_stations.first.id,
+                   started_at: Time.current)
+
+      expect(described_class.for_open_orders(store)[order.id]).to be_within(2).of(200)
+    end
+
+    # Keyed per menu item, so learning that Brown Sugar Pearls run long does not
+    # slow down the estimate for a Thai Tea.
+    it "learns per menu item rather than store-wide" do
+      slow = create(:menu_item, store: store, base_prep_seconds: 60)
+      learn(slow, seconds: 300, samples: PrepTimeStat::MINIMUM_SAMPLES)
+
+      quick_order = create(:order, store: store)
+      create(:order_item, order: quick_order, menu_item: menu_item, prep_seconds: 60,
+                          queued_at: 1.minute.ago, sequence: 1)
+
+      expect(described_class.for_open_orders(store)[quick_order.id]).to eq(60)
+    end
+  end
 end

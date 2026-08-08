@@ -21,6 +21,11 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- The shop learns how long its drinks actually take. Every finished drink updates a running
+  average per menu item, and once there are ten of them the board quotes from what the shop
+  really does rather than from the seeded guess (§7.3). Durations wildly out of line with the
+  recent average — a barista who forgot to tap "finish" — are discarded rather than learned
+  from. Progress is visible at `/api/v1/admin/prep_time_stats`.
 - A drink-cost penalty on the dashboard: how much longer a small order queues when it
   ordered slow drinks rather than quick ones. It is the only figure that separates the
   scheduling policies at the shop's normal demand — SJF reads 8.5× where every wait

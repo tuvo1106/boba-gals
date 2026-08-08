@@ -25,13 +25,38 @@ RSpec.describe "finishing and undoing drinks" do
       expect(described_class.new.call(item)).not_to be_success
     end
 
-    it "records the observed duration, which the EWMA will need at step 7 (§7.3)" do
+    it "records the observed duration on the event" do
       item = working_drink(started_at: 90.seconds.ago)
 
       described_class.new.call(item)
 
       event = SchedulerEvent.find_by(event_type: "item_finished", order_item: item)
       expect(event.payload["observed_seconds"]).to be_within(2).of(90)
+    end
+
+    # §7.3 learns from `finished_at - started_at`, and this is the only moment
+    # that observation exists. Without a guard here the EWMA could be silently
+    # disconnected and every prep-time spec would still pass, because they all
+    # drive `RecordPrepTime` directly.
+    describe "feeding the EWMA (§7.3)" do
+      it "learns the drink's duration" do
+        item = working_drink(started_at: 90.seconds.ago)
+
+        expect { described_class.new.call(item) }.to change(PrepTimeStat, :count).by(1)
+        expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).ewma_seconds)
+          .to be_within(2).of(90)
+      end
+
+      # A data problem must never fail the transition the barista did make.
+      it "still finishes the drink when the observation is rejected as an outlier" do
+        item = working_drink(started_at: 40.minutes.ago)
+        create(:prep_time_stat, menu_item_id: item.menu_item_id, ewma_seconds: 60,
+                                sample_count: PrepTimeStat::MINIMUM_SAMPLES)
+
+        expect(described_class.new.call(item)).to be_success
+        expect(item.reload.status).to eq("finished")
+        expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).ewma_seconds).to eq(60)
+      end
     end
 
     describe "order rollup (§5.1)" do
