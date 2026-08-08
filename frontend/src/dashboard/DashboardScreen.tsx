@@ -235,6 +235,15 @@ export function DashboardScreen() {
 
       {run && (
         <>
+          {run.metrics.station_utilisation < 0.6 && (
+            <p className="mb-3 border-l-2 border-neutral-700 pl-3 font-mono text-xs text-neutral-500">
+              At {pct(run.metrics.station_utilisation)} utilisation there is rarely a queue, so
+              every policy dispatches almost the same order and the waits above are within noise
+              of each other. Raise demand or drop a station before comparing arms — §10.3:
+              “flat arrivals will make everything look fine”.
+            </p>
+          )}
+
           <Verdict run={run} policy={policy} previous={previous} />
 
           <LaneRibbon
@@ -251,11 +260,16 @@ export function DashboardScreen() {
           <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-3 font-mono text-xs sm:grid-cols-2 lg:grid-cols-4">
             <Figure
               label="small-order p90" value={`${run.metrics.by_size_class['1-2'].p90}s`} accent
-              hint="9 of 10 orders of 1–2 drinks were ready within this. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4)."
+              hint={`9 of 10 orders of 1–2 drinks were ready within this, over ${run.metrics.by_size_class['1-2'].orders} of them. The headline number — if it stays flat as large orders arrive, fair queuing is working (§10.4).`}
             />
             <Figure
               label="7+ p90" value={`${run.metrics.by_size_class['7+'].p90}s`}
-              hint="The same for catering orders. Expected to be higher — they are more drinks. The claim is that it rises while the line above does not."
+              state={run.metrics.by_size_class['7+'].p90_meaningful ? undefined : 'warn'}
+              hint={
+                run.metrics.by_size_class['7+'].p90_meaningful
+                  ? `The same for catering orders, over ${run.metrics.by_size_class['7+'].orders} of them. Expected to be higher — they are more drinks. The claim is that it rises while the line above does not.`
+                  : `Only ${run.metrics.by_size_class['7+'].orders} catering orders in this run, so this is their slowest one rather than a percentile. Raise demand to get enough of them to compare policies on.`
+              }
             />
             <Figure
               label="utilisation" value={pct(run.metrics.station_utilisation)}
@@ -280,9 +294,12 @@ export function DashboardScreen() {
               state={run.metrics.quality_breach_rate_multi > 0.25 ? 'warn' : 'good'}
               hint={`Drinks in multi-drink orders that waited over 5 minutes on the counter — ice melts, and this is what cohesion exists to reduce (§9.6). Across all orders it is ${pct(run.metrics.quality_breach_rate)}, but a lone drink's wait is just the customer walking over, which no schedule can improve.`}
             />
+            {/* Discriminates where p90 cannot: at default demand every policy
+                has the same p90, but SJF already spreads this 5.6x. */}
             <Figure
-              label="seed" value={String(run.seed)}
-              hint="Type this seed above to replay this exact day. Every run is a pure function of it (§10.2)."
+              label="ordered-a-slow-drink penalty" value={`${run.metrics.wait_by_drink_cost.ratio.toFixed(2)}×`}
+              state={run.metrics.wait_by_drink_cost.ratio > 5 ? 'bad' : run.metrics.wait_by_drink_cost.ratio > 3 ? 'warn' : 'good'}
+              hint={`How much longer a small order queues before its drinks are started when it ordered slow ones (≥90s, n=${run.metrics.wait_by_drink_cost.dear.orders}) rather than quick ones (≤50s, n=${run.metrics.wait_by_drink_cost.cheap.orders}). Queueing only — a 95s drink takes 95s under any policy. Compare arms at the same demand rather than reading the number alone: the achievable floor falls as the shop fills.`}
             />
           </dl>
         </>
