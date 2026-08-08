@@ -224,6 +224,19 @@ jobs:
           kubectl -n boba-gals rollout status statefulset/redis --timeout=120s
           kubectl -n boba-gals wait --for=condition=Ready pod -l app=web --timeout=120s
 
+          # Pods being Ready is not the same as the ingress serving them.
+          # ingress-nginx re-syncs its upstream list on its own schedule, so
+          # there is a window where every pod is Ready and requests still get a
+          # 503 from an empty backend. Wait for the observable condition rather
+          # than a proxy for it.
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/board)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          echo "ingress serving again: HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::ingress never recovered after the Redis outage"; exit 1; }
+
       # A placed order has to reach the board. This exercises the full path —
       # ingress, Rails, Postgres, the ETA, and the serializer — end to end.
       - name: An order reaches the board
