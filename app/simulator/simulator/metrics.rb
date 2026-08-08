@@ -80,7 +80,9 @@ module Simulator
     end
 
     def utilisation
-      busy = @orders.sum { |o| o.items.sum(&:actual_prep_seconds) }
+      # service_seconds, not actual_prep_seconds: a station is occupied for the
+      # drink's time scaled by that barista's skill and any fatigue.
+      busy = @orders.sum { |o| o.items.sum(&:service_seconds) }
       capacity = @seconds * @stations
 
       return 0.0 if capacity.zero?

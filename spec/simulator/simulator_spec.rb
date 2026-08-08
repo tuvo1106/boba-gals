@@ -118,6 +118,29 @@ RSpec.describe Simulator do
     end
   end
 
+  # A simulator that silently drops work reports metrics over a subset, and the
+  # subset it drops is the slow tail — so the numbers look better than the shop.
+  describe "conservation" do
+    it "completes every order it generates" do
+      built = 0
+      described_class.singleton_class.prepend(Module.new do
+        define_method(:build_order) { |*args| built += 1; super(*args) }
+      end)
+
+      completed = run(seed: 3).to_h[:orders]
+
+      expect(completed).to eq(built)
+    end
+
+    it "finishes every drink of every completed order" do
+      metrics = run(seed: 3)
+      orders = metrics.instance_variable_get(:@orders)
+
+      expect(orders).to all(satisfy { |o| o.items.all?(&:finished_at) })
+      expect(orders).to all(satisfy { |o| o.ready_at >= o.arrived_at })
+    end
+  end
+
   describe "metrics (§10.4)" do
     it "reports percentiles, never a mean" do
       expect(run(seed: 1).to_h[:wait_seconds].keys).to eq(%i[p50 p90 p99])
@@ -136,6 +159,19 @@ RSpec.describe Simulator do
 
     it "reports utilisation, which is where staffing decisions get made" do
       expect(run(seed: 1).to_h[:station_utilisation]).to be_between(0, 1)
+    end
+
+    # Understating utilisation understates how close the shop is to saturation,
+    # which is the number §10.4 says staffing decisions are made on.
+    it "measures utilisation from time stations were actually occupied" do
+      metrics = run(seed: 1)
+      orders = metrics.instance_variable_get(:@orders)
+      drinks = orders.flat_map(&:items)
+
+      # Skill is U(0.85, 1.20) and fatigue multiplies, so service time differs
+      # from raw prep time on essentially every drink.
+      expect(drinks.count { |d| d.service_seconds != d.actual_prep_seconds }).to eq(drinks.size)
+      expect(drinks).to all(satisfy { |d| (d.finished_at - d.started_at - d.service_seconds).abs < 0.001 })
     end
 
     it "reports cohesion spread, the melted-first-drink measure" do

@@ -12,8 +12,12 @@
 module Simulator
   # A drink. Mirrors what the real `OrderItem` carries into the scheduler, plus
   # the actual prep time this run sampled for it.
-  Drink = Struct.new(:id, :prep_seconds, :actual_prep_seconds, :remake, :started_at, :finished_at,
-                     keyword_init: true) do
+  # `actual_prep_seconds` is what the drink would take on an average station;
+  # `service_seconds` is what it actually occupied one for, after that station's
+  # skill and any fatigue. Utilisation must be computed from the latter or it
+  # understates how busy the shop was — and §10.4 makes staffing decisions on it.
+  Drink = Struct.new(:id, :prep_seconds, :actual_prep_seconds, :service_seconds, :remake,
+                     :started_at, :finished_at, keyword_init: true) do
     def remake? = remake
   end
 
@@ -160,6 +164,7 @@ module Simulator
     duration = drink.actual_prep_seconds * station[:skill]
     duration *= 1.08 if pending.sum { |o| o.items.count { |d| d.started_at.nil? } } > 12  # fatigue
 
+    drink.service_seconds = duration
     drink.started_at = clock
     drink.finished_at = clock + duration
     station[:free_at] = drink.finished_at
