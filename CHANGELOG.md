@@ -20,6 +20,14 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Security
+- **The cluster is served over TLS, and only over TLS** (§14.5). The admin sign-in cookie is
+  marked secure, which means a browser refuses to store it from a plain-http address — so
+  signing in to the admin screens worked when scripted and silently did nothing in a real
+  browser. The shop now answers at `https://boba.localtest.me:8443`; plain http is not
+  served at all rather than served and quietly broken. Certificates are issued and renewed
+  by the cluster itself.
+
 ### Added
 - **Web customers get one text when their order is ready** (§9.7). Exactly one, whatever
   happens afterwards — a barista who taps Done, undoes it, and taps Done again does not text

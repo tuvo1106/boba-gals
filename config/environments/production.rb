@@ -18,21 +18,36 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  config.assume_ssl = true
+  # Deliberately *not* `assume_ssl` (§14.5). Assuming makes Rails treat every
+  # request as secure whether or not it was, which is how the cluster spent its
+  # first weeks handing browsers a `Secure` session cookie over plain http: the
+  # cookie was silently dropped, admin sign-in worked under curl and could not
+  # work in a browser, and nothing anywhere reported it. Reading
+  # `X-Forwarded-Proto` from the ingress instead means an unterminated request
+  # is redirected rather than served, so the failure is visible.
+  config.assume_ssl = false
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   config.force_ssl = true
 
-  # Skip http-to-https redirect for the default health check endpoint.
-  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+  # The probes are the exception, and they are not cosmetic. The kubelet reaches
+  # the pod directly on :3000 with no `X-Forwarded-Proto`, so without this both
+  # would be redirected — and a redirect counts as a *passing* probe, because
+  # the kubelet treats any 2xx or 3xx as success. `/readyz` would then report
+  # healthy while the database was down, which is precisely what ADR-0008 splits
+  # the two probes to prevent. Excluding them keeps them answering with their
+  # own status.
+  config.ssl_options = {
+    redirect: { exclude: ->(request) { request.path.in?(%w[/up /readyz]) } }
+  }
 
   # ActionCable's origin check defaults to same-origin *over https*, derived
-  # from the request host. The cluster runs plain http until cert-manager
-  # arrives at build step 10 (§14.5), so every websocket upgrade is rejected
-  # with "Request origin not allowed" — and the board and KDS fall back to a
-  # static first paint that never updates. That is §14.4's failure mode reached
-  # by a different route, and it is silent from the client's side.
+  # from the request host. That default is now satisfiable — the cluster serves
+  # https (§14.5) — but it is still named explicitly, because the derivation
+  # runs behind a terminating proxy and a wrong answer costs a websocket that
+  # never connects, with the board and KDS falling back to a static first paint
+  # that never updates. That is §14.4's failure mode reached by a different
+  # route, and it is silent from the client's side.
   #
   # Comma-separated, and left at Rails' strict default when unset, so
   # forgetting it fails closed rather than open.
