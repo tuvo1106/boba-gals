@@ -21,6 +21,13 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The kiosk refuses orders when it can't reach the shop** (§9.3, locked in §3). It checks
+  every ten seconds and, after two failures in a row, shows a full-screen "Ordering is
+  paused — please order at the counter" instead of letting someone build an order that
+  cannot be placed. One dropped request is ignored, because shop wifi drops one request. The
+  cart is kept, so a brief blip does not cost a customer their order, and the screen clears
+  the moment the shop answers again. It also appears when the shop is reachable but has
+  ordering switched off — with wording that says so, rather than blaming the network.
 - **Baristas can remake a drink that went wrong** (§5.2, §9.4). A "Problem" button on each
   drink card asks why — spilled, wrong drink, not right — and queues a fresh one straight
   away. The replacement jumps ahead of ordinary work of the same age, so the customer whose

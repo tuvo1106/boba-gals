@@ -1,9 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderingApp } from './OrderingApp'
 import { server } from '../test/server'
+import { FAILURES_BEFORE_PAUSED, POLL_INTERVAL_MS } from './useHealth'
 import type { Menu, PlacedOrder } from '../api/types'
 
 // jsdom has no ActionCable server. The status screen's live updates are covered
@@ -71,6 +72,11 @@ function placedOrder(overrides: Partial<PlacedOrder> = {}): PlacedOrder {
 function serveMenu(menu: Menu = MENU) {
   posted = []
   server.use(
+    // The kiosk polls this every 10s (§9.3), and `onUnhandledRequest: 'error'`
+    // means an unserved probe fails the example rather than being ignored.
+    http.get('/api/v1/health', () =>
+      HttpResponse.json({ accepting_orders: true, store_name: 'Boba Gals' }),
+    ),
     http.get('/api/v1/menu', () => HttpResponse.json(menu)),
     http.post('/api/v1/orders', async ({ request }) => {
       posted.push(await request.json())
@@ -81,7 +87,7 @@ function serveMenu(menu: Menu = MENU) {
 }
 
 async function openMenu(mode: 'kiosk' | 'web' = 'web') {
-  const user = userEvent.setup()
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
   serveMenu()
   render(<OrderingApp mode={mode} />)
   await screen.findByRole('button', { name: /Classic Milk Tea/ })
@@ -97,6 +103,80 @@ async function addAMilkTea(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   posted = []
+  // The kiosk's 10s poll needs a controllable clock; `shouldAdvanceTime` keeps
+  // MSW and userEvent working around it (same pattern as KdsScreen.test.tsx).
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+// §9.3, locked in §3: "the kiosk polls /api/v1/health every 10s. Two
+// consecutive failures → full-screen state."
+describe('the kiosk when it cannot reach the shop (§9.3)', () => {
+  function unreachable() {
+    server.use(http.get('/api/v1/health', () => HttpResponse.error()))
+  }
+
+  it('says the shop is closed rather than blaming the network', async () => {
+    serveMenu()
+    server.use(
+      http.get('/api/v1/health', () =>
+        HttpResponse.json({ accepting_orders: false, store_name: 'Boba Gals' }),
+      ),
+    )
+    render(<OrderingApp mode="kiosk" />)
+
+    const refusal = await screen.findByRole('alert')
+    expect(refusal).toHaveTextContent(/isn.t taking orders right now/i)
+    expect(refusal).not.toHaveTextContent(/can.t reach/i)
+  })
+
+  it('refuses orders and says where to go instead', async () => {
+    serveMenu()
+    unreachable()
+    render(<OrderingApp mode="kiosk" />)
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * FAILURES_BEFORE_PAUSED)
+
+    const refusal = await screen.findByRole('alert')
+    expect(refusal).toHaveTextContent(/ordering is paused/i)
+    expect(refusal).toHaveTextContent(/order at the counter/i)
+  })
+
+  // §9.3: "The cart is preserved in memory so a brief blip doesn't lose an
+  // in-progress order." Losing it would punish the customer for the shop's
+  // wifi.
+  it('keeps the cart through the outage', async () => {
+    const user = await openMenu('kiosk')
+    await addAMilkTea(user)
+    expect(screen.getByRole('button', { name: /review/i })).toHaveTextContent('$5.50')
+
+    unreachable()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * FAILURES_BEFORE_PAUSED)
+    await screen.findByRole('alert')
+
+    server.use(
+      http.get('/api/v1/health', () =>
+        HttpResponse.json({ accepting_orders: true, store_name: 'Boba Gals' }),
+      ),
+    )
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+
+    expect(await screen.findByRole('button', { name: /review/i })).toHaveTextContent('$5.50')
+  })
+
+  // The web flow is a phone, which shows its own connectivity.
+  it('never shows the refusal on the web', async () => {
+    serveMenu()
+    unreachable()
+    render(<OrderingApp mode="web" />)
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * FAILURES_BEFORE_PAUSED)
+
+    expect(screen.queryByText(/ordering is paused/i)).not.toBeInTheDocument()
+  })
 })
 
 describe('OrderingApp (§9.3)', () => {
