@@ -15,7 +15,7 @@ class Store < ApplicationRecord
   # design later doesn't read as nil for stores configured before it existed.
   SCHEDULER_DEFAULTS = {
     "policy" => "drr",
-    "quantum" => 120,
+    "quantum" => 60,
     "aging_enabled" => true,
     "aging_rate" => 0.15,
     "cohesion_enabled" => false,

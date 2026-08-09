@@ -1,0 +1,6 @@
+t=00000 station=0 remake-fresh item=20    prep= 45 remake
+t=00045 station=0 aged-30min item=10    prep= 45
+t=00090 station=0 aged-30min item=11    prep= 45
+t=00135 station=0 ordinary item=30    prep= 70
+t=00205 station=0 ordinary item=31    prep= 70
+t=00275 station=0 ordinary item=32    prep= 70

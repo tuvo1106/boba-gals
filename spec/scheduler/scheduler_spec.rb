@@ -102,7 +102,7 @@ RSpec.describe Scheduler do
       pair = flow(id: :pair, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0))
       config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
 
-      expect(described_class.quantum_for(pair, at(0), config)).to eq(240.0)
+      expect(described_class.quantum_for(pair, at(0), config)).to eq(config.quantum * 2)
     end
 
     # Every other cohesion example sits exactly on the threshold, which lets an
@@ -112,7 +112,7 @@ RSpec.describe Scheduler do
       mostly = flow(id: :mostly, drinks: 1, total_items: 4, made_count: 3, arrived_at: at(0))
       config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
 
-      expect(described_class.quantum_for(mostly, at(0), config)).to eq(240.0)
+      expect(described_class.quantum_for(mostly, at(0), config)).to eq(config.quantum * 2)
     end
 
     # Kills the `made_count / total_items` → `made_count` mutant: a raw count of
@@ -121,7 +121,7 @@ RSpec.describe Scheduler do
       quarter = flow(id: :quarter, drinks: 3, total_items: 4, made_count: 1, arrived_at: at(0))
       config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
 
-      expect(described_class.quantum_for(quarter, at(0), config)).to eq(120.0)
+      expect(described_class.quantum_for(quarter, at(0), config)).to eq(config.quantum)
     end
 
     it "puts an order past half made ahead of an equal-age order at zero" do
@@ -135,15 +135,16 @@ RSpec.describe Scheduler do
     it "does not boost a single-drink order, which cannot have a melting first drink" do
       single = flow(id: :single, drinks: 1, total_items: 1, made_count: 1, arrived_at: at(0))
 
-      expect(described_class.quantum_for(single, at(0), Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)))
-        .to eq(120.0)
+      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
+
+      expect(described_class.quantum_for(single, at(0), config)).to eq(config.quantum)
     end
 
     it "can be switched off" do
       half_made = flow(id: :half_made, drinks: 2, total_items: 4, made_count: 2, arrived_at: at(0))
       config = Scheduler::Config.new(cohesion_enabled: false, aging_enabled: false)
 
-      expect(described_class.quantum_for(half_made, at(0), config)).to eq(120.0)
+      expect(described_class.quantum_for(half_made, at(0), config)).to eq(config.quantum)
     end
   end
 
@@ -152,15 +153,15 @@ RSpec.describe Scheduler do
       waited = flow(id: :waited, arrived_at: at(0))
       config = Scheduler::Config.new(cohesion_enabled: false)
 
-      # 10 minutes × 0.15/min = +1.5 → 2.5 × 120
-      expect(described_class.quantum_for(waited, at(600), config)).to eq(300.0)
+      # 10 minutes × 0.15/min = +1.5 → 2.5 quanta
+      expect(described_class.quantum_for(waited, at(600), config)).to eq(config.quantum * 2.5)
     end
 
     it "can be switched off" do
       waited = flow(id: :waited, arrived_at: at(0))
       config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: false)
 
-      expect(described_class.quantum_for(waited, at(600), config)).to eq(120.0)
+      expect(described_class.quantum_for(waited, at(600), config)).to eq(config.quantum)
     end
   end
 
@@ -297,7 +298,9 @@ RSpec.describe Scheduler do
 
     it "draws the deficit down by exactly the drink's prep time" do
       f = flow(id: :f, drinks: 1, prep_seconds: 60, deficit: 200, arrived_at: at(0))
-      s = state([ f ], aging_enabled: false, cohesion_enabled: false)
+      # Quantum pinned rather than taken from the default: this example is about
+      # the arithmetic, and it should not move when §10.5 retunes the default.
+      s = state([ f ], quantum: 120, aging_enabled: false, cohesion_enabled: false)
 
       described_class.pick_next(s, at(0))
 
@@ -310,7 +313,7 @@ RSpec.describe Scheduler do
     it "dispatches when the deficit exactly equals the prep time" do
       # One granted quantum lands exactly on the drink's cost.
       f = flow(id: :f, drinks: 1, prep_seconds: 120, deficit: 0, arrived_at: at(0))
-      s = state([ f ], aging_enabled: false, cohesion_enabled: false)
+      s = state([ f ], quantum: 120, aging_enabled: false, cohesion_enabled: false)
 
       picked = described_class.pick_next(s, at(0))
 
@@ -323,7 +326,7 @@ RSpec.describe Scheduler do
       other = flow(id: :other, drinks: 1, arrived_at: at(0))
       s = state([ f, other ], aging_enabled: false, cohesion_enabled: false)
 
-      # One 120s quantum covers a 60s drink, so :f dispatches on its own turn.
+      # One quantum covers a 60s drink, so :f dispatches on its own turn.
       expect(dispatch_all(s, now: at(0)).first).to eq(:f)
     end
 
@@ -388,7 +391,7 @@ RSpec.describe Scheduler do
       it "divides the shop the same way as DRR whatever the quantum buys" do
         rr = dispatch_all(state([ flow(id: :a, drinks: 6, prep_seconds: 60), flow(id: :b, drinks: 6, prep_seconds: 60) ], policy: :rr))
         drr = dispatch_all(state([ flow(id: :a, drinks: 6, prep_seconds: 60), flow(id: :b, drinks: 6, prep_seconds: 60) ],
-                                 policy: :drr, aging_enabled: false, cohesion_enabled: false))
+                                 policy: :drr, quantum: 120, aging_enabled: false, cohesion_enabled: false))
 
         expect(rr.tally).to eq(drr.tally)
         expect(rr).not_to eq(drr), "a 120s quantum buys two 60s drinks a visit, so DRR is coarser"

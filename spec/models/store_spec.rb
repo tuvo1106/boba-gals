@@ -7,7 +7,7 @@ RSpec.describe Store do
   describe "#effective_scheduler_config" do
     it "supplies the §6.6 defaults for an unconfigured store" do
       expect(create(:store).effective_scheduler_config).to include(
-        "policy" => "drr", "quantum" => 120, "aging_rate" => 0.15, "remake_multiplier" => 4.0
+        "policy" => "drr", "quantum" => 60, "aging_rate" => 0.15, "remake_multiplier" => 4.0
       )
     end
 

@@ -1,0 +1,30 @@
+t=00090 station=0 order-01 item=100   prep= 40
+t=00160 station=0 order-02 item=200   prep= 45 remake
+t=00180 station=1 order-03 item=300   prep= 95
+t=00265 station=0 order-04 item=400   prep= 45
+t=00330 station=2 order-05 item=500   prep= 45
+t=00335 station=1 order-06 item=600   prep= 45
+t=00340 station=0 order-06 item=601   prep= 95
+t=00405 station=2 order-07 item=700   prep= 95
+t=00465 station=0 order-08 item=800   prep= 45 remake
+t=00470 station=1 order-08 item=801   prep= 40 remake
+t=00530 station=2 order-09 item=900   prep= 40
+t=00540 station=0 order-09 item=901   prep= 70
+t=00540 station=1 order-09 item=902   prep= 70
+t=00570 station=2 order-10 item=1000  prep= 95
+t=00610 station=0 order-11 item=1100  prep= 45
+t=00665 station=2 order-12 item=1200  prep= 45 remake
+t=00740 station=2 order-13 item=1300  prep= 45
+t=00805 station=0 order-14 item=1400  prep= 45 remake
+t=00815 station=2 order-14 item=1401  prep= 70 remake
+t=00820 station=1 order-14 item=1402  prep= 40 remake
+t=00850 station=0 order-14 item=1403  prep= 40 remake
+t=00860 station=1 order-14 item=1404  prep= 40 remake
+t=00885 station=2 order-15 item=1500  prep= 40
+t=00890 station=0 order-16 item=1600  prep= 40
+t=00900 station=1 order-17 item=1700  prep= 45
+t=00925 station=2 order-17 item=1701  prep= 70
+t=00930 station=0 order-18 item=1800  prep= 45
+t=00945 station=1 order-18 item=1801  prep= 40
+t=00975 station=0 order-20 item=2000  prep= 45 remake
+t=00985 station=1 order-19 item=1900  prep= 45

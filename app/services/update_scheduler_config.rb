@@ -60,9 +60,18 @@ class UpdateSchedulerConfig
 
     return Result.new(success?: false, errors: errors) if errors.any?
 
-    # Merged, not replaced: a PATCH that names one key must not silently reset
-    # the other nine to their defaults.
-    store.update!(scheduler_config: store.effective_scheduler_config.merge(coerced))
+    # Merged into the *stored* config, not the effective one.
+    #
+    # A PATCH that names one key must not silently reset the other nine — but
+    # merging into `effective_scheduler_config` over-corrects, because it
+    # materialises all ten. A store that has ever been PATCHed is then pinned to
+    # whatever the defaults happened to be that day, and no later change to
+    # `SCHEDULER_DEFAULTS` can ever reach it. That is how the §10.5 quantum
+    # change would have silently missed every store an admin had touched.
+    #
+    # Storing only what was actually set keeps unset keys following the default,
+    # which is what "default" has to mean for it to be worth having.
+    store.update!(scheduler_config: (store.scheduler_config || {}).merge(coerced))
 
     Result.new(success?: true, store: store, errors: [])
   end
