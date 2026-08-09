@@ -1,4 +1,4 @@
-import { formatEta, formatReadySince } from './format'
+import { formatEta, formatReadySince, summariseDrinks } from './format'
 import { useBoard } from './useBoard'
 import type { MakingRow, ReadyRow } from '../api/types'
 
@@ -66,15 +66,28 @@ function Column({
   )
 }
 
+/**
+ * The code is `shrink-0` and the name is `min-w-0 truncate`, which is what puts
+ * every code in the same column down the card stack.
+ *
+ * Without it a long first name pushed the code out past the card's right edge
+ * entirely — flex items refuse to shrink below their content width by default,
+ * so `justify-between` had nothing left to distribute. "Bartholomew" was enough
+ * to do it. A code that moves with the length of the name above it also cannot
+ * be scanned, which is the only thing it is there for: §9.5 disambiguates two
+ * `Sarah`s by code and explicitly never by a surname initial.
+ */
 function MakingCard({ row }: { row: MakingRow }) {
   return (
     <li className="rounded-xl bg-neutral-900 px-6 py-5">
       <div className="flex items-baseline justify-between gap-6">
-        <span className="text-5xl font-semibold">{row.first_name ?? 'Guest'}</span>
-        <span className="text-4xl font-mono text-neutral-400 tabular-nums">{row.pickup_code}</span>
+        <span className="min-w-0 truncate text-5xl font-semibold">{row.first_name ?? 'Guest'}</span>
+        <span className="shrink-0 text-4xl font-mono text-neutral-400 tabular-nums">
+          {row.pickup_code}
+        </span>
       </div>
 
-      <p className="mt-2 text-2xl text-neutral-500 truncate">{row.items.join(' · ')}</p>
+      <p className="mt-2 truncate text-2xl text-neutral-500">{summariseDrinks(row.items)}</p>
       <p className="mt-1 text-3xl text-neutral-300">{formatEta(row.eta_seconds)}</p>
     </li>
   )
@@ -89,8 +102,8 @@ function ReadyCard({ row }: { row: ReadyRow }) {
   return (
     <li className="rounded-xl bg-emerald-500 px-6 py-5 text-neutral-950">
       <div className="flex items-baseline justify-between gap-6">
-        <span className="text-6xl font-bold">{row.first_name ?? 'Guest'}</span>
-        <span className="text-5xl font-mono font-bold tabular-nums">{row.pickup_code}</span>
+        <span className="min-w-0 truncate text-6xl font-bold">{row.first_name ?? 'Guest'}</span>
+        <span className="shrink-0 text-5xl font-mono font-bold tabular-nums">{row.pickup_code}</span>
       </div>
 
       <p className="mt-2 text-2xl font-medium text-emerald-900">

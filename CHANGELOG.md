@@ -21,6 +21,13 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Fixed
+- Pickup codes on the board line up in a column again instead of drifting with the length of
+  the name beside them — a long enough first name pushed the code off the card entirely. The
+  code is what tells two Sarahs apart (§9.5, locked), so it has to be scannable.
+- The drink line on the board is legible for an order of more than one drink. It showed each
+  drink's full build string, so a single drink with toppings filled the line and everything
+  after it was cut off. It now names the drinks, counts repeats, and summarises a long order:
+  `Classic Milk Tea ×6`, or `Thai Tea ×2 · Taro Milk Tea ×2 +11 more` (§9.5).
 - Refreshing the kitchen display no longer signs the barista out. The shift now survives a
   reload — a browser restart, an OS update, a tablet that reloads a backgrounded tab — and
   still ends when the tab is closed or "sign out" is tapped, so a shared tablet never hands
