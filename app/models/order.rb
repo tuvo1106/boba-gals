@@ -27,6 +27,17 @@ class Order < ApplicationRecord
 
   scope :open, -> { where.not(status: TERMINAL_STATUSES) }
 
+  # The pickup code *is* the capability token (§13.1), and it is unique per
+  # store per *day* — so a lookup that ignores the date hands yesterday's code
+  # a read of today's order.
+  #
+  # Both doors go through here: `GET /orders/:pickup_code` (§9.1) and
+  # `OrderChannel` (§9.2). A channel that scoped this differently from the REST
+  # endpoint would be a second, weaker lock on the same room.
+  scope :for_pickup_code, ->(code, on: Date.current) {
+    where(pickup_code: code.to_s.upcase).where("placed_at::date = ?", on)
+  }
+
   # @return [Boolean] whether this order is order-ahead rather than ASAP (§6.2)
   def promised?
     promised_at.present?

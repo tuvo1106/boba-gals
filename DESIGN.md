@@ -1128,3 +1128,16 @@ at §7.3's `α = 0.2` the most recent sample counts for 20%, the one before it 1
 mean over a thousand drinks barely moves for the next one — a new barista or a changed recipe
 would take a month to appear — and over "the last N samples" because it is a single number per
 menu item rather than a stored window (§7.3).
+
+**Leading-edge throttle / trailing flush** — a rate limit that publishes the *first* event in
+each window immediately, then, if more arrive during that window, publishes once more when it
+closes. The leading edge is what keeps the display responsive; the trailing flush is what
+stops the *last* event in a burst from being dropped, which is the one that says a drink is
+ready (§9.2, §7.2). Distinct from a plain throttle, which drops everything after the first,
+and from a debounce, which waits for quiet and so publishes nothing at all under sustained
+load.
+
+**Fanout** — how many recipients one event has to be delivered to. `BoardChannel` and
+`KitchenChannel` are one stream per store, so a transition is one publish; `OrderChannel` is
+one stream per order and every transition changes every order's `eta_seconds`, so its fanout
+is the number of open orders (ADR-0016).
