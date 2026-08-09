@@ -37,7 +37,9 @@ Categories, in this order:
   correctly without a code change. Payment is at the counter, as designed; there is no card
   field. Placing an order lands on a screen showing the pickup code and every drink's
   progress, reachable again later at `/order/<code>` with nothing but the code from the
-  receipt.
+  receipt. Sweetness and ice come preselected and there is a quantity control, so the
+  common order is a couple of taps rather than a dozen — six drinks for the office is one
+  pass, not six.
 - A customer can follow their own order live (§9.2). Anyone holding a pickup code can watch
   their drinks move from waiting to being made to ready, one line per drink, with the wait
   estimate updating as the kitchen works — no refreshing, and no seeing anybody else's order.

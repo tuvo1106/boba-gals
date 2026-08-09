@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { formatPrice } from './money'
 import { tapTarget, type OrderingMode } from './mode'
+import { Stepper } from './Stepper'
 import type { CartLine } from './useCart'
 
 export interface CheckoutDetails {
@@ -27,6 +28,7 @@ export function CheckoutForm({
   error,
   onPlace,
   onBack,
+  onQuantityChange,
 }: {
   lines: CartLine[]
   totalCents: number
@@ -35,6 +37,7 @@ export function CheckoutForm({
   error: string | null
   onPlace: (details: CheckoutDetails) => void
   onBack: () => void
+  onQuantityChange: (key: number, quantity: number) => void
 }) {
   const [firstName, setFirstName] = useState('')
   const [phone, setPhone] = useState('')
@@ -62,8 +65,8 @@ export function CheckoutForm({
 
         <ul className="flex flex-col divide-y divide-neutral-800">
           {lines.map((line) => (
-            <li key={line.key} className="flex items-baseline gap-4 py-3">
-              <span>
+            <li key={line.key} className="flex items-center gap-4 py-3">
+              <span className="min-w-0">
                 {line.item.name}
                 {line.options.length > 0 && (
                   <span className="ml-2 text-sm text-neutral-500">
@@ -71,8 +74,21 @@ export function CheckoutForm({
                   </span>
                 )}
               </span>
-              <span className="ml-auto font-mono tabular-nums text-neutral-400">
-                {formatPrice(line.priceCents)}
+
+              {/* `min={0}` — here, unlike in the customizer, stepping below one
+                  removes the line. This is the last screen before the order is
+                  placed, so it has to be possible to take something off it. */}
+              <Stepper
+                quantity={line.quantity}
+                mode={mode}
+                min={0}
+                label={`Quantity of ${line.item.name}`}
+                onChange={(quantity) => onQuantityChange(line.key, quantity)}
+                className="ml-auto shrink-0"
+              />
+
+              <span className="w-20 shrink-0 text-right font-mono tabular-nums text-neutral-400">
+                {formatPrice(line.unitPriceCents * line.quantity)}
               </span>
             </li>
           ))}

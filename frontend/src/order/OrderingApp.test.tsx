@@ -39,6 +39,22 @@ const MENU: Menu = {
       id: 2, name: 'Taro Slush', category: 'slush',
       price_cents: 650, base_prep_seconds: 90, option_groups: [],
     },
+    // A required group that takes more than one, so "choose something" stays
+    // reachable now that pick-exactly-one groups are defaulted.
+    {
+      id: 4, name: 'Tea Flight', category: 'specialty',
+      price_cents: 900, base_prep_seconds: 120,
+      option_groups: [
+        {
+          id: 4, name: 'Teas', min_select: 2, max_select: 3,
+          options: [
+            { id: 20, name: 'Jasmine', price_cents: 0, prep_seconds_delta: 0 },
+            { id: 21, name: 'Oolong', price_cents: 0, prep_seconds_delta: 0 },
+            { id: 22, name: 'Assam', price_cents: 0, prep_seconds_delta: 0 },
+          ],
+        },
+      ],
+    },
   ],
 }
 
@@ -149,12 +165,34 @@ describe('OrderingApp (§9.3)', () => {
       expect(screen.getByRole('checkbox', { name: /Pudding/ })).not.toBeChecked()
     })
 
+    // Sweetness and ice are three taps on every order in the shop. Defaulting
+    // the pick-exactly-one groups to the menu's first option makes the common
+    // drink one tap (§9.3 — a kiosk is used standing up).
+    it('preselects the first choice in a pick-one group', async () => {
+      const user = await openMenu()
+
+      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+
+      expect(screen.getByRole('radio', { name: /100%/ })).toBeChecked()
+      expect(screen.getByRole('button', { name: /add to order/i })).toBeEnabled()
+    })
+
+    // Guessing at a real choice is worse than asking, so a required group that
+    // takes more than one gets no default.
+    it('does not guess at a required group that takes several', async () => {
+      const user = await openMenu()
+
+      await user.click(screen.getByRole('button', { name: /Tea Flight/ }))
+
+      expect(screen.getByRole('checkbox', { name: /Jasmine/ })).not.toBeChecked()
+    })
+
     // The server validates this too (`CreateOrder`); this copy exists so the
     // customer is told before they tap, not after.
     it('will not add a drink with a required choice missing', async () => {
       const user = await openMenu()
 
-      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+      await user.click(screen.getByRole('button', { name: /Tea Flight/ }))
 
       expect(screen.getByRole('button', { name: /add to order/i })).toBeDisabled()
     })
@@ -195,14 +233,40 @@ describe('OrderingApp (§9.3)', () => {
       expect(screen.getByRole('button', { name: /review/i })).toHaveTextContent('$11.00')
     })
 
-    it('removes the last drink added', async () => {
+    it('adds several of one drink in a single pass', async () => {
+      const user = await openMenu()
+
+      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+      await user.click(screen.getByRole('button', { name: /one more quantity of Classic Milk Tea/i }))
+      await user.click(screen.getByRole('button', { name: /one more quantity of Classic Milk Tea/i }))
+      await user.click(screen.getByRole('button', { name: /add 3 to order/i }))
+
+      expect(screen.getByText('3 drinks')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /review/i })).toHaveTextContent('$16.50')
+    })
+
+    it('changes a quantity at checkout', async () => {
       const user = await openMenu()
       await addAMilkTea(user)
+      await user.click(screen.getByRole('button', { name: /review/i }))
+
+      await user.click(screen.getByRole('button', { name: /one more quantity of Classic Milk Tea/i }))
+
+      expect(screen.getByRole('status', { name: /quantity of Classic Milk Tea/i })).toHaveTextContent('2')
+      // The line and the grand total, which for a single line are the same
+      // number arrived at two ways.
+      expect(screen.getAllByText('$11.00')).toHaveLength(2)
+    })
+
+    // A row in the cart that is not in the order would be worse than gone.
+    it('drops a line stepped below one at checkout', async () => {
+      const user = await openMenu()
       await addAMilkTea(user)
+      await user.click(screen.getByRole('button', { name: /review/i }))
 
-      await user.click(screen.getByRole('button', { name: /remove last/i }))
+      await user.click(screen.getByRole('button', { name: /one fewer quantity of Classic Milk Tea/i }))
 
-      expect(screen.getByText('1 drink')).toBeInTheDocument()
+      expect(screen.queryByText('Classic Milk Tea')).not.toBeInTheDocument()
     })
   })
 

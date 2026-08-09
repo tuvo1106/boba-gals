@@ -85,6 +85,7 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
         error={placeError}
         onPlace={place}
         onBack={() => setCheckingOut(false)}
+        onQuantityChange={cart.setQuantity}
       />
     )
   }
@@ -138,8 +139,8 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
           item={customizing}
           mode={mode}
           onCancel={() => setCustomizing(null)}
-          onAdd={(options: MenuOption[]) => {
-            cart.add(customizing, options)
+          onAdd={(options: MenuOption[], quantity: number) => {
+            cart.add(customizing, options, quantity)
             setCustomizing(null)
           }}
         />
@@ -152,20 +153,17 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
         <footer className="fixed inset-x-0 bottom-0 border-t border-neutral-800 bg-neutral-900 px-6 py-4">
           <div className="mx-auto flex max-w-3xl items-center gap-4">
             <div className="min-w-0">
+              {/* Counts drinks, not lines. A line of three is three cups the
+                  kitchen has to make, and three rows on the KDS (§2). */}
               <p className="font-mono text-xs tracking-widest text-neutral-500 uppercase">
-                {cart.lines.length} {cart.lines.length === 1 ? 'drink' : 'drinks'}
+                {cart.drinkCount} {cart.drinkCount === 1 ? 'drink' : 'drinks'}
               </p>
               <p className="truncate text-sm text-neutral-400">
-                {cart.lines.map((line) => line.item.name).join(', ')}
+                {cart.lines
+                  .map((line) => (line.quantity > 1 ? `${line.quantity} × ` : '') + line.item.name)
+                  .join(', ')}
               </p>
             </div>
-
-            <button
-              onClick={() => cart.remove(cart.lines[cart.lines.length - 1].key)}
-              className={`rounded-lg border border-neutral-700 px-4 text-sm text-neutral-400 hover:border-neutral-500 ${tapTarget(mode)}`}
-            >
-              Remove last
-            </button>
 
             <button
               onClick={() => setCheckingOut(true)}

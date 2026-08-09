@@ -3,6 +3,7 @@ import { formatPrice, formatPriceDelta } from './money'
 import type { MenuItem, MenuOption, OptionGroup } from '../api/types'
 import type { OrderingMode } from './mode'
 import { tapTarget } from './mode'
+import { Stepper } from './Stepper'
 
 /**
  * Choosing the options on one drink (§9.3).
@@ -23,10 +24,11 @@ export function DrinkCustomizer({
 }: {
   item: MenuItem
   mode: OrderingMode
-  onAdd: (options: MenuOption[]) => void
+  onAdd: (options: MenuOption[], quantity: number) => void
   onCancel: () => void
 }) {
-  const [chosen, setChosen] = useState<Record<number, number[]>>({})
+  const [chosen, setChosen] = useState<Record<number, number[]>>(() => defaults(item))
+  const [quantity, setQuantity] = useState(1)
 
   const selectedIn = (group: OptionGroup) => chosen[group.id] ?? []
   const unmet = item.option_groups.filter((group) => selectedIn(group).length < group.min_select)
@@ -129,16 +131,50 @@ export function DrinkCustomizer({
           </p>
         )}
 
+        <Stepper
+          quantity={quantity}
+          mode={mode}
+          label={`Quantity of ${item.name}`}
+          onChange={setQuantity}
+          className="ml-auto"
+        />
+
         <button
-          onClick={() => onAdd(options)}
+          onClick={() => onAdd(options, quantity)}
           disabled={unmet.length > 0}
-          className={`ml-auto rounded-lg bg-amber-600 px-8 text-lg font-semibold text-neutral-950 disabled:opacity-40 hover:bg-amber-500 ${tapTarget(mode)}`}
+          className={`rounded-lg bg-amber-600 px-8 text-lg font-semibold text-neutral-950 disabled:opacity-40 hover:bg-amber-500 ${tapTarget(mode)}`}
         >
-          Add to order
+          Add {quantity > 1 && `${quantity} `}to order
         </button>
       </footer>
     </div>
   )
+}
+
+/**
+ * Preselects the first choice in every pick-exactly-one group, so the common
+ * order is one tap rather than three (§9.3 — the kiosk is used standing up, by
+ * someone with a queue behind them).
+ *
+ * "First" is the shop's own ordering: `MenuSerializer` returns options in menu
+ * order, which puts 100% sweetness and Regular ice at the front. That coupling
+ * is deliberate but implicit — reordering the menu changes the defaults. A
+ * `default` flag on `options` would make it explicit, and is worth adding if
+ * the two ever need to differ (§4.1).
+ *
+ * Only exactly-one groups get a default. A required group that takes two or
+ * more is a real choice, and guessing at it is worse than asking.
+ */
+function defaults(item: MenuItem): Record<number, number[]> {
+  const chosen: Record<number, number[]> = {}
+
+  for (const group of item.option_groups) {
+    if (group.min_select === 1 && group.max_select === 1 && group.options.length > 0) {
+      chosen[group.id] = [ group.options[0].id ]
+    }
+  }
+
+  return chosen
 }
 
 function describe(group: OptionGroup): string {
