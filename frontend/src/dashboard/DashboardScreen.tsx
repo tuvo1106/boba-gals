@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { AdminSignIn } from './AdminSignIn'
+import { AblationBars } from './AblationBars'
 import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
-import type { AdminUser, Policy, SimulationRun } from '../api/types'
+import type { Ablation, AdminUser, Policy, SimulationRun } from '../api/types'
 
 /** §6.3's arms, in the order the ablation reads: least fair to most. */
 const POLICIES: { id: Policy; title: string }[] = [
@@ -82,6 +83,38 @@ function Dashboard({
   // Off by default. Every figure carrying three lines of explanation turned the
   // panel into a wall of prose you read once and then scroll past forever.
   const [explain, setExplain] = useState(false)
+  // §10.6 re-runs on every config change because a run is fast. The ablation is
+  // four runs per day and is asked for explicitly instead — and because it is a
+  // comparison, not a view of the current settings, it should not silently
+  // change underneath the reading someone is taking from it.
+  const [ablation, setAblation] = useState<Ablation | null>(null)
+  const [ablationDays, setAblationDays] = useState(1)
+  const [comparing, setComparing] = useState(false)
+
+  async function compare(days = ablationDays) {
+    setComparing(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/v1/admin/ablations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          seed, stations, demand_multiplier: demand, seeds: days,
+        }),
+      })
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      if (!response.ok) throw new Error(`Comparison failed (${response.status})`)
+      setAblation((await response.json()) as Ablation)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Comparison failed')
+    } finally {
+      setComparing(false)
+    }
+  }
 
   async function go(
     nextSeed = seed, nextPolicy = policy, nextSpan = span, nextFrom = from,
@@ -381,6 +414,40 @@ function Dashboard({
           </dl>
         </>
       )}
+
+      {/* §10.5's ablation, below the single run rather than beside it: the run
+          above answers "what happened today", this answers "is the scheduler
+          the reason". */}
+      <section className="mt-10 border-t border-neutral-800 pt-4">
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <button
+            onClick={() => compare()} disabled={comparing}
+            className="border border-neutral-700 px-3 py-1 uppercase hover:border-amber-500 disabled:opacity-40"
+          >
+            {comparing ? 'Comparing…' : 'Compare arms'}
+          </button>
+
+          <label className="text-neutral-500">
+            over{' '}
+            <select
+              value={ablationDays} aria-label="days per arm"
+              onChange={(e) => setAblationDays(Number(e.target.value))}
+              className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
+            >
+              <option value={1}>1 day</option>
+              <option value={5}>5 days</option>
+              <option value={12}>12 days</option>
+              <option value={25}>25 days</option>
+            </select>
+          </label>
+
+          <span className="text-neutral-600">
+            runs the same day under each of §6.3's arms, at the seed and demand above
+          </span>
+        </div>
+
+        {ablation && <AblationBars ablation={ablation} />}
+      </section>
     </main>
   )
 }
