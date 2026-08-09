@@ -65,9 +65,14 @@ The shop comes up at **https://boba.localtest.me:8443** — board at `/board`.
 `localtest.me` resolves to 127.0.0.1, so that is a real hostname with a real
 certificate and no `/etc/hosts` entry. Plain http is not served at all (§14.5).
 
-The certificate is signed by a CA the cluster mints itself, so browsers warn
-until it is trusted once. `bin/k8s-up` writes it to `tmp/boba-ca.crt` and prints
-the two commands for trusting it — one for the system keychain, one for `curl`.
+The certificate is signed by a CA the cluster mints itself, so browsers warn.
+**Trusting it is optional** — clicking through the warning leaves you on an
+`https` origin, so the admin cookie and the websocket both work either way.
+`bin/k8s-up` writes the CA to `tmp/boba-ca.crt` and prints the command for your
+platform, plus the `curl --cacert` form for scripts, which needs no `sudo`.
+
+None of this applies to `docker compose` above, which is the shorter path to a
+running shop and stays on plain http at `localhost:5173`.
 
 `bin/k8s-up` is idempotent: re-run it to redeploy after a code change. Both
 teardown modes destroy the dev database; the migrate Job re-seeds on the next
