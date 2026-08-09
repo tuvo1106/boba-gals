@@ -62,6 +62,23 @@ export async function apiPost<T>(
   return (await response.json()) as T
 }
 
+/**
+ * DELETE, for signing out of the admin session (§13.4).
+ *
+ * No token argument: admin is the cookie surface, and the cookie rides on a
+ * same-origin request without anything being threaded through.
+ */
+export async function apiDelete(path: string): Promise<void> {
+  const response = await fetch(`/api/v1${path}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  })
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `DELETE ${path} failed with ${response.status}`)
+  }
+}
+
 /** GET carrying a station token, for the KDS queue snapshot. */
 export async function apiGetWithToken<T>(path: string, token: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {

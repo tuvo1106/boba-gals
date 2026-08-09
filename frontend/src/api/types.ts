@@ -200,3 +200,14 @@ export interface OrderUpdate {
   eta_seconds: number
   items: { id: number; label: string; status: DrinkStatus }[]
 }
+
+/**
+ * The one admin user (§13.4). No roles, no signup — created by seed or console.
+ *
+ * Carries the email and nothing else, matching what the server serializes. A
+ * dashboard that knew more about the admin than it displays would be a payload
+ * with no reason to exist.
+ */
+export interface AdminUser {
+  email: string
+}

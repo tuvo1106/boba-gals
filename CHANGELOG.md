@@ -29,6 +29,12 @@ Categories, in this order:
   by the cluster itself.
 
 ### Added
+- **The simulation dashboard has a sign-in** (§13.4). It could only be reached by someone
+  willing to authenticate with a command-line tool first — the screen said "sign in as admin
+  first" and offered nothing to sign in with. It now asks for an email and password, shows
+  who is signed in, and has a way out, so a back-office machine is not left sitting on a
+  screen that can retune the live kitchen. Signed out, the panel is not shown at all rather
+  than shown with every control dead.
 - **Web customers get one text when their order is ready** (§9.7). Exactly one, whatever
   happens afterwards — a barista who taps Done, undoes it, and taps Done again does not text
   the customer twice. Kiosk orders are not texted, because there is nobody to text. Until
