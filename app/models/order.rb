@@ -10,6 +10,25 @@ class Order < ApplicationRecord
   # Terminal, and excluded from the open-orders index and the board.
   TERMINAL_STATUSES = %w[picked_up abandoned cancelled].freeze
 
+  # **The lifecycle stops at `ready` today** (ADR-0017).
+  #
+  # `RollUpOrderStatus` is the only writer of `status`, and it produces exactly
+  # `placed`, `in_progress`, `partially_ready`, `ready`. Nothing reaches the
+  # three terminal states: `picked_up` is deliberately unobserved (ADR-0005),
+  # `abandoned` needs §5.1's sweep, and there is no cancellation path at all.
+  #
+  # So `open` currently means "ever placed" and grows by one row per order sold,
+  # forever. Do not read it as "still being worked on" — use `live` for that.
+  # Measured, this costs nothing: the callers that matter filter on *item*
+  # status, which is bounded by real work.
+  #
+  # How long a customer's own screen keeps receiving pushes after their order is
+  # ready. Matches `BoardView::READY_BOARD_TTL` deliberately — the same event
+  # seen from two sides of the counter. Generous rather than tight, because
+  # `ready` is the last transition there will ever be: once it has been
+  # delivered there is nothing further to push.
+  LIVE_AFTER_READY = 5.minutes
+
   SOURCES = %w[kiosk web].freeze
 
   belongs_to :store
@@ -26,6 +45,19 @@ class Order < ApplicationRecord
   }, if: -> { source == "kiosk" }
 
   scope :open, -> { where.not(status: TERMINAL_STATUSES) }
+
+  # Orders a customer could still be watching (§9.2).
+  #
+  # Bounded in SQL rather than by a background job marking orders closed. The
+  # job version needs a terminal state nothing can honestly set — stamping
+  # `abandoned` on drinks people happily collected — and it leaves the set
+  # unbounded again whenever the worker is behind, which #40 shows it is.
+  # `BoardView` already settled this shape for the board (ADR-0005): the view
+  # clears itself on a timer, in the query.
+  scope :live, ->(now = Time.current) {
+    where(status: %w[placed in_progress partially_ready])
+      .or(where(status: "ready").where(ready_at: (now - LIVE_AFTER_READY)..))
+  }
 
   # The pickup code *is* the capability token (§13.1), and it is unique per
   # store per *day* — so a lookup that ignores the date hands yesterday's code
