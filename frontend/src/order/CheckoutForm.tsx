@@ -132,8 +132,13 @@ export function CheckoutForm({
             </label>
           )}
 
+          {/* No timing claimed. §9.3 says "settle at the register" and does not
+              say when — "when you collect" was invented here, and it is the
+              unusual reading: it would mean queueing at the register anyway,
+              after using the kiosk to avoid exactly that. When payment is
+              actually taken is a §16 question, not this component's to answer. */}
           <p className="rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-400">
-            Pay at the counter when you collect.
+            Pay at the counter.
           </p>
 
           {error && (

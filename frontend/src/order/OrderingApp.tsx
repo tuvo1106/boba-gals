@@ -6,6 +6,8 @@ import { toOrderItems, useCart } from './useCart'
 import { DrinkCustomizer } from './DrinkCustomizer'
 import { CheckoutForm, type CheckoutDetails } from './CheckoutForm'
 import { OrderStatusScreen } from './OrderStatusScreen'
+import { blocksOrdering, useHealth } from './useHealth'
+import type { HealthState } from './useHealth'
 import type { Menu, MenuItem, MenuOption, PlacedOrder } from '../api/types'
 
 /**
@@ -18,6 +20,9 @@ import type { Menu, MenuItem, MenuOption, PlacedOrder } from '../api/types'
  */
 export function OrderingApp({ mode }: { mode: OrderingMode }) {
   const cart = useCart()
+  // Kiosk only (§9.3). The web flow is a phone, which shows its own
+  // connectivity and has no attract screen to fall back to.
+  const health = useHealth(mode === 'kiosk')
   const [menu, setMenu] = useState<Menu | null>(null)
   const [menuError, setMenuError] = useState<string | null>(null)
   const [customizing, setCustomizing] = useState<MenuItem | null>(null)
@@ -63,6 +68,14 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
     setPlaced(null)
     setCheckingOut(false)
   }
+
+  // Above everything, including the confirmation screen — a kiosk that cannot
+  // reach the shop cannot be trusted to be showing a live order either.
+  //
+  // Rendered as an overlay rather than by clearing state, because §9.3 is
+  // explicit that the cart survives: "The cart is preserved in memory so a
+  // brief blip doesn't lose an in-progress order."
+  if (blocksOrdering(health)) return <Paused mode={mode} state={health} />
 
   if (placed) {
     return (
@@ -174,6 +187,36 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
           </div>
         </footer>
       )}
+    </main>
+  )
+}
+
+/**
+ * §9.3, locked in §3. The wording is the design's, verbatim.
+ *
+ * No local queue and no optimistic accept, and this screen is why: "a queued
+ * order that fails to sync produces a customer holding a receipt for a drink
+ * the kitchen never saw — strictly worse than a clear refusal."
+ *
+ * Sized for someone standing at a kiosk reading it from a step away, and
+ * deliberately says what to do next rather than only what is wrong.
+ */
+function Paused({ mode, state }: { mode: OrderingMode; state: HealthState }) {
+  return (
+    <main
+      role="alert"
+      className="grid min-h-screen place-items-center bg-neutral-950 px-8 text-neutral-100"
+    >
+      <div className={`text-center ${mode === 'kiosk' ? 'max-w-2xl' : 'max-w-md'}`}>
+        <p className="font-mono text-sm tracking-widest text-amber-500 uppercase">Boba Gals</p>
+        <h1 className="mt-4 text-5xl font-semibold tracking-tight">Ordering is paused</h1>
+        <p className="mt-6 text-2xl text-neutral-400">
+          {state === 'unreachable'
+            ? 'The kiosk can\u2019t reach the store system.'
+            : 'The shop isn\u2019t taking orders right now.'}
+        </p>
+        <p className="mt-2 text-2xl text-neutral-300">Please order at the counter.</p>
+      </div>
     </main>
   )
 }
