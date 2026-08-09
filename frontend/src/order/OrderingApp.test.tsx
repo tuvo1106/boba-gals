@@ -390,6 +390,66 @@ describe('OrderingApp (§9.3)', () => {
       expect(screen.queryByLabelText('phone')).not.toBeInTheDocument()
     })
 
+    // A number with a typo is worse than no number: the order goes through, the
+    // drinks get made, and the ready text (§9.7) goes nowhere. The server
+    // validates too — this is so the customer hears about it while they can
+    // still fix it.
+    it('refuses to place the order when the phone could not receive a text', async () => {
+      const user = await openMenu('web')
+      await addAMilkTea(user)
+
+      await user.click(screen.getByRole('button', { name: /review/i }))
+      await user.type(screen.getByLabelText('first name'), 'Tu')
+      await user.type(screen.getByLabelText('phone'), '555')
+      await user.click(screen.getByRole('button', { name: /place order/i }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/does not look like a number/i)
+      expect(posted).toHaveLength(0)
+    })
+
+    it('accepts the formatting people actually type', async () => {
+      const user = await openMenu('web')
+      await addAMilkTea(user)
+
+      await user.click(screen.getByRole('button', { name: /review/i }))
+      await user.type(screen.getByLabelText('first name'), 'Tu')
+      await user.type(screen.getByLabelText('phone'), '(555) 555-0123')
+      await user.click(screen.getByRole('button', { name: /place order/i }))
+
+      await waitFor(() => expect(posted).toHaveLength(1))
+      expect(posted[0]).toMatchObject({ order: { customer_phone: '(555) 555-0123' } })
+    })
+
+    // Leaving the error up while someone is correcting the field reads as
+    // "still wrong", so it clears on the first keystroke.
+    it('clears the complaint as soon as they start fixing it', async () => {
+      const user = await openMenu('web')
+      await addAMilkTea(user)
+
+      await user.click(screen.getByRole('button', { name: /review/i }))
+      await user.type(screen.getByLabelText('first name'), 'Tu')
+      await user.type(screen.getByLabelText('phone'), '555')
+      await user.click(screen.getByRole('button', { name: /place order/i }))
+      await screen.findByRole('alert')
+
+      await user.type(screen.getByLabelText('phone'), '5550123')
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    // The phone stays optional. Most web customers just wait.
+    it('places a web order with no phone at all', async () => {
+      const user = await openMenu('web')
+      await addAMilkTea(user)
+
+      await user.click(screen.getByRole('button', { name: /review/i }))
+      await user.type(screen.getByLabelText('first name'), 'Tu')
+      await user.click(screen.getByRole('button', { name: /place order/i }))
+
+      await waitFor(() => expect(posted).toHaveLength(1))
+      expect(JSON.stringify(posted[0])).not.toContain('customer_phone')
+    })
+
     it('places a kiosk order as a kiosk order', async () => {
       const user = await openMenu('kiosk')
       await addAMilkTea(user)

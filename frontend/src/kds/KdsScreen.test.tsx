@@ -35,7 +35,7 @@ vi.mock('../api/cable', () => ({
 function drink(overrides: Partial<KdsItem> = {}): KdsItem {
   return {
     id: 1, label: 'Classic Milk Tea, 50%, LESS ICE', status: 'queued', prep_seconds: 45,
-    pickup_code: 'A1B2', sequence: 1, order_size: 1, remake: false,
+    pickup_code: 'A1B2', position: 1, order_size: 1, remake: false,
     station_id: null, started_at: null, ...overrides,
   }
 }
@@ -308,13 +308,13 @@ describe('KdsScreen', () => {
     // How a barista knows the drink in their hand belongs to a larger order the
     // scheduler is interleaving, rather than one they are making out of order.
     it('shows the position within a multi-drink order', async () => {
-      await open(queueUpdate({ in_progress: [ drink({ status: 'in_progress', sequence: 2, order_size: 5 }) ] }))
+      await open(queueUpdate({ in_progress: [ drink({ status: 'in_progress', position: 2, order_size: 5 }) ] }))
 
       expect(screen.getByText('2 of 5')).toBeInTheDocument()
     })
 
     it('does not clutter a single-drink order with a position', async () => {
-      await open(queueUpdate({ in_progress: [ drink({ status: 'in_progress', sequence: 1, order_size: 1 }) ] }))
+      await open(queueUpdate({ in_progress: [ drink({ status: 'in_progress', position: 1, order_size: 1 }) ] }))
 
       expect(screen.queryByText('1 of 1')).not.toBeInTheDocument()
     })

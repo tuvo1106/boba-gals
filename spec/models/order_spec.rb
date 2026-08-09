@@ -44,6 +44,46 @@ RSpec.describe Order do
     it "is allowed on web orders, for the single ready SMS (§9.7)" do
       expect(build(:order, :web)).to be_valid
     end
+
+    it "is still optional — most web customers just wait" do
+      expect(build(:order, :web, customer_phone: nil)).to be_valid
+      expect(build(:order, :web, customer_phone: "")).to be_valid
+    end
+
+    # A number that cannot receive a text is worse than no number: the order is
+    # placed, the drinks are made, and the ready SMS (§9.7) goes nowhere with
+    # nothing to say it did.
+    it "rejects something that could never receive a text" do
+      [ "555", "not a phone", "12345", "+", "5551234567890123456" ].each do |bad|
+        order = build(:order, :web, customer_phone: bad)
+
+        expect(order).not_to be_valid, "expected #{bad.inspect} to be rejected"
+        expect(order.errors[:customer_phone]).to be_present
+      end
+    end
+
+    # "(555) 555-0123" is a phone number. Refusing it because of the brackets
+    # teaches people to distrust the field, so the formatting is stripped and
+    # the digits are what get counted and stored.
+    it "accepts the formatting people actually type, and stores what would be dialled" do
+      order = create(:order, :web, customer_phone: "(555) 555-0123")
+
+      expect(order.customer_phone).to eq("5555550123")
+    end
+
+    it "keeps a country code when one is given" do
+      expect(create(:order, :web, customer_phone: "+1 555 555 0123").customer_phone)
+        .to eq("+15555550123")
+    end
+
+    # Deliberate: this shop has no country on record, and turning a bare
+    # 10-digit number into `+1…` would send the ready text to a stranger in the
+    # wrong country. Normalising to E.164 belongs with the Twilio integration,
+    # which will know where the store is (§16).
+    it "does not invent a country code" do
+      expect(create(:order, :web, customer_phone: "5555550123").customer_phone)
+        .not_to start_with("+")
+    end
   end
 
   describe "#promised?" do

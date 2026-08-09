@@ -165,7 +165,12 @@ export function OrderingApp({ mode }: { mode: OrderingMode }) {
       {cart.lines.length > 0 && (
         <footer className="fixed inset-x-0 bottom-0 border-t border-neutral-800 bg-neutral-900 px-6 py-4">
           <div className="mx-auto flex max-w-3xl items-center gap-4">
-            <div className="min-w-0">
+            {/* flex-1 so the summary takes the slack and the button is pinned
+                to the right edge of the bar. Without it the button sits
+                wherever the drink list happens to end — halfway across on a
+                one-line cart, which reads as a stray control rather than the
+                bar's action. `min-w-0` keeps the truncate working inside it. */}
+            <div className="min-w-0 flex-1">
               {/* Counts drinks, not lines. A line of three is three cups the
                   kitchen has to make, and three rows on the KDS (§2). */}
               <p className="font-mono text-xs tracking-widest text-neutral-500 uppercase">

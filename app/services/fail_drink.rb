@@ -75,9 +75,12 @@ class FailDrink
       prep_seconds: item.prep_seconds,
       status: "queued",
       queued_at: Time.current,
-      # After every existing drink in the order. `sequence` is what the KDS
-      # renders as "2 of 5", so a remake appends rather than displacing the
-      # position of a drink already in a barista's hand.
+      # After every existing drink in the order, so the replacement is made
+      # last rather than displacing a drink already in a barista's hand.
+      #
+      # What the KDS *renders* is position within `countable_items`, not this
+      # column — appending here with a gap left by the failed row is exactly why
+      # the raw column could not be displayed (§9.4).
       sequence: (item.order.order_items.maximum(:sequence) || 0) + 1,
       remake_of: item,
       remake_reason: reason

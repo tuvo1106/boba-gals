@@ -10,6 +10,19 @@ export interface CheckoutDetails {
 }
 
 /**
+ * Whether a number could receive the ready text (§9.7).
+ *
+ * Mirrors `Order::PHONE_FORMAT` deliberately — 10 to 15 digits, E.164's ceiling
+ * at the top and the shortest reachable mobile at the bottom, with the
+ * formatting people actually type stripped rather than rejected. The server
+ * validates independently; this exists so the customer hears about a typo while
+ * they can still fix it, not after the order is placed.
+ */
+function isReachable(phone: string): boolean {
+  return /^\+?\d{10,15}$/.test(phone.trim().replace(/[\s().-]/g, ''))
+}
+
+/**
  * Name, optional phone, and pay at the counter (§9.3).
  *
  * **Payment is locked for v1**: record `total_cents`, settle at the register.
@@ -41,10 +54,21 @@ export function CheckoutForm({
 }) {
   const [firstName, setFirstName] = useState('')
   const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState<string | null>(null)
 
   function submit(event: React.FormEvent) {
     event.preventDefault()
 
+    // Checked here as well as on the server, because the server's answer costs
+    // a round trip and arrives as a generic failure — and the number is the one
+    // field where a typo is silent: the order is placed, the drinks are made,
+    // and the text goes nowhere.
+    if (phone.trim() && !isReachable(phone)) {
+      setPhoneError('That does not look like a number we can text. Leave it blank to skip the text.')
+      return
+    }
+
+    setPhoneError(null)
     onPlace({
       customer_first_name: firstName.trim(),
       // Omitted rather than sent empty: `""` would be a value, and `Order`
@@ -121,14 +145,28 @@ export function CheckoutForm({
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  setPhone(e.target.value)
+                  // Clears as soon as they start fixing it. Leaving the error up
+                  // while the field is being corrected reads as "still wrong".
+                  if (phoneError) setPhoneError(null)
+                }}
                 aria-label="phone"
                 autoComplete="tel"
-                className={`rounded-lg border border-neutral-700 bg-transparent px-4 text-lg normal-case text-neutral-100 focus:border-amber-500 focus:outline-none ${tapTarget(mode)}`}
+                inputMode="tel"
+                aria-invalid={phoneError ? true : undefined}
+                aria-describedby={phoneError ? 'phone-error' : undefined}
+                className={`rounded-lg border bg-transparent px-4 text-lg normal-case text-neutral-100 focus:outline-none ${phoneError ? 'border-rose-500' : 'border-neutral-700 focus:border-amber-500'} ${tapTarget(mode)}`}
               />
-              <span className="text-[10px] normal-case tracking-normal text-neutral-600">
-                One text when it is ready. Never shown on the board.
-              </span>
+              {phoneError ? (
+                <span id="phone-error" role="alert" className="text-[10px] normal-case tracking-normal text-rose-400">
+                  {phoneError}
+                </span>
+              ) : (
+                <span className="text-[10px] normal-case tracking-normal text-neutral-600">
+                  One text when it is ready. Never shown on the board.
+                </span>
+              )}
             </label>
           )}
 

@@ -83,8 +83,16 @@ export interface KdsItem {
   status: 'queued' | 'in_progress' | 'finished'
   prep_seconds: number
   pickup_code: string
-  /** Position within its order — rendered "2 of 5" so a barista can see it is part of a larger order. */
-  sequence: number
+  /**
+   * Position within its order — rendered "2 of 5" so a barista can see it is
+   * part of a larger order.
+   *
+   * Not the `sequence` column: a remake is appended after every existing drink
+   * (§5.2), so the column counts drinks that failed and renders a spilled
+   * two-drink order as "2 of 3". Both numbers here count only the drinks the
+   * order is still for.
+   */
+  position: number
   order_size: number
   remake: boolean
   station_id: number | null

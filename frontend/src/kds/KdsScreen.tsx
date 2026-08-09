@@ -170,7 +170,7 @@ function DrinkCard({
           <p className={`font-mono tabular-nums text-neutral-300 ${lead ? 'text-2xl' : 'text-lg'}`}>{item.pickup_code}</p>
           {item.order_size > 1 && (
             <p className="font-mono text-sm text-neutral-500">
-              {item.sequence} of {item.order_size}
+              {item.position} of {item.order_size}
             </p>
           )}
         </div>
