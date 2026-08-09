@@ -21,6 +21,11 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **Web customers get one text when their order is ready** (§9.7). Exactly one, whatever
+  happens afterwards — a barista who taps Done, undoes it, and taps Done again does not text
+  the customer twice. Kiosk orders are not texted, because there is nobody to text. Until
+  Twilio credentials exist the message is written to the log instead of sent, and the log
+  never contains the phone number (§13.5). A failed send never holds up the order.
 - **The kiosk refuses orders when it can't reach the shop** (§9.3, locked in §3). It checks
   every ten seconds and, after two failures in a row, shows a full-screen "Ordering is
   paused — please order at the counter" instead of letting someone build an order that

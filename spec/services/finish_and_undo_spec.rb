@@ -154,4 +154,56 @@ RSpec.describe "finishing and undoing drinks" do
       expect(order.reload).to have_attributes(status: "partially_ready", ready_at: nil)
     end
   end
+
+  # §9.7: exactly one message, when the order transitions to ready.
+  describe "the ready SMS (§9.7)" do
+    # `perform_enqueued_jobs` — the undo/re-finish example needs the job to
+    # actually run, because the whole question is what happens on the second
+    # enqueue.
+    include ActiveJob::TestHelper
+
+    let(:phone) { "+15555550123" } # seeded demo value, never a real number
+    let(:sender) { instance_double(LogSender) }
+
+    before do
+      allow(NotificationSender).to receive(:current).and_return(sender)
+      allow(sender).to receive(:deliver).and_return(NotificationSender::Result.new(success?: true))
+    end
+
+    def web_order_with_one_drink
+      web = create(:order, :web, store: store, status: "in_progress", customer_phone: phone)
+      [ web, create(:order_item, :in_progress, order: web, sequence: 1) ]
+    end
+
+    it "enqueues one message when the last drink is finished" do
+      _web, item = web_order_with_one_drink
+
+      expect { FinishDrink.new.call(item) }.to have_enqueued_job(SendReadySmsJob)
+    end
+
+    it "does not enqueue while the order is only part made" do
+      web = create(:order, :web, store: store, status: "in_progress", customer_phone: phone)
+      first = create(:order_item, :in_progress, order: web, sequence: 1)
+      create(:order_item, order: web, sequence: 2)
+
+      expect { FinishDrink.new.call(first) }.not_to have_enqueued_job(SendReadySmsJob)
+    end
+
+    # This is why `ready_at` cannot be the guard and a column can. Undo moves the
+    # order back out of ready (§5.2) and re-finishing re-enters it, so the job is
+    # enqueued twice — and exactly one message goes out.
+    it "sends exactly one message across an undo and a re-finish" do
+      web, item = web_order_with_one_drink
+
+      perform_enqueued_jobs do
+        FinishDrink.new.call(item)
+        UndoLastAction.new.call(item.reload)
+        FinishDrink.new.call(item.reload)
+      end
+
+      expect(web.reload.status).to eq("ready")
+      expect(SchedulerEvent.where(event_type: "order_ready").count).to eq(2)
+      expect(sender).to have_received(:deliver).once
+    end
+  end
 end
