@@ -42,10 +42,32 @@ export interface TimelineDrink {
   order_size: number
 }
 
-/** The response from POST /api/v1/admin/simulations (§9.1). */
 /** §6.3. `rr` and `sjf` are simulator-only comparison arms. */
 export type Policy = 'drr' | 'fifo' | 'rr' | 'sjf'
 
+/** What a run reports (§10.4). Shared by a single run and by each ablation arm. */
+export interface SimulationMetrics {
+  orders: number
+  drinks: number
+  station_utilisation: number
+  reneged: number
+  remakes: number
+  /** "Does your wait depend on what you ordered?" — 1.0 means no (§6.1). */
+  wait_by_drink_cost: {
+    cheap: { orders: number; p90: number }
+    dear: { orders: number; p90: number }
+    /** False when either side is too small to support the comparison. */
+    comparable: boolean
+    ratio: number
+  }
+  quality_breach_rate: number
+  /** The same, over multi-drink orders only — where cohesion is judged (§6.4, §9.6). */
+  quality_breach_rate_multi: number
+  wait_seconds: { p50: number; p90: number; p99: number }
+  by_size_class: Record<string, { orders: number; p90_meaningful: boolean; p50: number; p90: number; p99: number }>
+}
+
+/** The response from POST /api/v1/admin/simulations (§9.1). */
 export interface SimulationRun {
   seed: number
   stations: number
@@ -53,26 +75,7 @@ export interface SimulationRun {
   timeline: TimelineDrink[]
   /** `[order_id, first_start, last_finish, size]` for every order made, by start time. */
   order_spans: [number, number, number, number][]
-  metrics: {
-    orders: number
-    drinks: number
-    station_utilisation: number
-    reneged: number
-    remakes: number
-    /** "Does your wait depend on what you ordered?" — 1.0 means no (§6.1). */
-    wait_by_drink_cost: {
-      cheap: { orders: number; p90: number }
-      dear: { orders: number; p90: number }
-      /** False when either side is too small to support the comparison. */
-      comparable: boolean
-      ratio: number
-    }
-    quality_breach_rate: number
-    /** The same, over multi-drink orders only — where cohesion is judged (§6.4, §9.6). */
-    quality_breach_rate_multi: number
-    wait_seconds: { p50: number; p90: number; p99: number }
-    by_size_class: Record<string, { orders: number; p90_meaningful: boolean; p50: number; p90: number; p99: number }>
-  }
+  metrics: SimulationMetrics
 }
 
 
@@ -210,4 +213,39 @@ export interface OrderUpdate {
  */
 export interface AdminUser {
   email: string
+}
+
+/** One arm of the ablation — the same day with one more mechanism turned on. */
+export interface AblationArm {
+  id: string
+  /**
+   * Which of the three things this row is (§6.3): the `control` everything is
+   * measured against, a `rung` on the ladder, or a `bound` — SJF, which is a
+   * benchmark and never a policy. The chart draws bounds apart from the ladder
+   * because reading SJF as "the best row" is the specific misreading §6.3 warns
+   * about, and on the size-class axis it genuinely is the best row.
+   */
+  kind: 'control' | 'rung' | 'bound'
+  label: string
+  blurb: string
+  /**
+   * Customers who walked in. Identical across arms by construction (ADR-0011),
+   * which is what makes the comparison an experiment — while `metrics.orders`
+   * may legitimately differ, because a slower arm drives more people away
+   * before they order (§10.3).
+   */
+  arrived: number
+  metrics: SimulationMetrics
+}
+
+/** The response from POST /api/v1/admin/ablations (§10.5). */
+export interface Ablation {
+  seed: number
+  /** Days pooled per arm. One is §10.5's fixed seed; more is how you tell a
+   *  real difference from one unlucky Tuesday. */
+  seeds: number
+  stations: number
+  demand_multiplier: number
+  quantum: number | null
+  arms: AblationArm[]
 }

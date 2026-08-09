@@ -55,6 +55,12 @@ Rails.application.routes.draw do
         # Runs a scenario server-side and returns metrics plus the per-drink
         # timeline the lane ribbon renders (§9.1, §10.1, §10.6).
         post "simulations", to: "simulations#create"
+
+        # §10.5's ablation: the same day scheduled four ways, so the effect of
+        # each mechanism is the difference between two adjacent bars. Its own
+        # endpoint rather than a parameter on `simulations`, because it returns
+        # four metric sets and no timeline — a different shape, not a variant.
+        post "ablations", to: "ablations#create"
       end
     end
   end

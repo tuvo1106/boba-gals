@@ -20,6 +20,19 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Added
+- **The dashboard can run the same day six ways and chart the difference** (§10.5, §6.3).
+  One click compares first-come-first-served against round robin, the deficit, aging and
+  cohesion — every arm serving the identical stream of customers, so a gap between two bars
+  is the mechanism and not a luckier Tuesday. Shortest-job-first is charted alongside them
+  as a benchmark, set apart because it is not something the shop can be switched to.
+- The comparison can be read two ways: **by order size** ("does a catering order block the
+  person behind it?") and **by drink cost** ("does your wait depend on what you ordered?",
+  §6.1). Shortest-job-first looks like the best row on the first and is far and away the
+  worst on the second, which is the whole reason both are offered (ADR-0013).
+- The comparison pools up to 25 days. One day cannot tell a real improvement from noise, so
+  the chart says so until the day count is raised.
+
 ### Security
 - **The cluster is served over TLS, and only over TLS** (§14.5). The admin sign-in cookie is
   marked secure, which means a browser refuses to store it from a plain-http address — so
