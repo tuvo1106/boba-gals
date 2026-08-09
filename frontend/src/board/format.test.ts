@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatEta, formatReadySince } from './format'
+import { formatEta, formatReadySince, summariseDrinks } from './format'
 
 describe('formatEta', () => {
   // §9.5: "ETA in minutes (never seconds; false precision reads as a lie)."
@@ -34,5 +34,44 @@ describe('formatReadySince', () => {
     expect(formatReadySince(60)).toBe('1 min ago')
     expect(formatReadySince(119)).toBe('1 min ago')
     expect(formatReadySince(240)).toBe('4 min ago')
+  })
+})
+
+describe('summariseDrinks (§9.5)', () => {
+  it('drops the options, which are the barista\'s business and not the customer\'s', () => {
+    expect(summariseDrinks([ 'Classic Milk Tea, 50%, Less ice, Boba pearls' ]))
+      .toBe('Classic Milk Tea')
+  })
+
+  it('lists two different drinks', () => {
+    expect(summariseDrinks([ 'Taro Slush', 'Thai Tea, 100%' ])).toBe('Taro Slush · Thai Tea')
+  })
+
+  // The ordering app has a quantity control, so six of one drink is a normal
+  // order now. Listing it six times tells nobody anything.
+  it('counts repeats rather than repeating them', () => {
+    expect(summariseDrinks([ 'Classic Milk Tea', 'Classic Milk Tea', 'Classic Milk Tea' ]))
+      .toBe('Classic Milk Tea ×3')
+  })
+
+  it('counts repeats that differ only by their options', () => {
+    expect(summariseDrinks([ 'Thai Tea, 100%', 'Thai Tea, 50%, No ice' ])).toBe('Thai Tea ×2')
+  })
+
+  // §2 exists for the fifteen-drink catering order, and the board has one line
+  // for it. Overflowing is what it did before.
+  it('summarises an order too long to list', () => {
+    expect(summariseDrinks([ 'Taro Slush', 'Thai Tea', 'Matcha Latte', 'Mango Slush' ]))
+      .toBe('Taro Slush · Thai Tea +2 more')
+  })
+
+  it('counts the drinks left over, not the kinds', () => {
+    const items = [ 'Taro Slush', 'Thai Tea', 'Matcha Latte', 'Matcha Latte', 'Matcha Latte' ]
+
+    expect(summariseDrinks(items)).toBe('Taro Slush · Thai Tea +3 more')
+  })
+
+  it('handles an order with nothing in it', () => {
+    expect(summariseDrinks([])).toBe('')
   })
 })

@@ -69,12 +69,15 @@ describe('BoardScreen', () => {
     expect(within(making).getByText('4 min')).toBeInTheDocument()
   })
 
-  it('lists the drinks in an order', async () => {
+  // Names only. The options are in the label because the KDS needs them
+  // (§9.4); a customer reading the board from fifteen feet does not, and one
+  // drink with toppings filled the whole line on its own.
+  it('lists the drinks in an order without their options', async () => {
     serveBoard(boardPayload({ making: [sarah] }))
 
     render(<BoardScreen />)
 
-    expect(await screen.findByText('Thai Tea, 50% · Taro Slush')).toBeInTheDocument()
+    expect(await screen.findByText('Thai Tea · Taro Slush')).toBeInTheDocument()
   })
 
   it('renders ready orders in their own column', async () => {
