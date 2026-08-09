@@ -20,6 +20,14 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Changed
+- The order status screen leads with how many drinks are made rather than with a countdown,
+  and quotes the wait as a range. The estimate really does move — the kitchen shares capacity
+  between orders, so drinks ordered after yours can push yours out — and a single number that
+  jumps upward reads as a broken promise. A count of finished drinks only ever goes forward,
+  which gives a customer one thing to trust while the estimate does what it honestly must
+  (§7.3, §9.3).
+
 ### Fixed
 - Pickup codes on the board line up in a column again instead of drifting with the length of
   the name beside them — a long enough first name pushed the code off the card entirely. The

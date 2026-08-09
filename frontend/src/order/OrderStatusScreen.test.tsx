@@ -77,11 +77,38 @@ describe('OrderStatusScreen (§9.2, §9.3)', () => {
     expect(screen.getByText('Taro Slush')).toBeInTheDocument()
   })
 
-  it('quotes the wait in whole minutes', async () => {
+  // A range rather than a point: the estimate genuinely moves, because §6.1
+  // shares capacity with orders arriving behind this one.
+  it('quotes the wait as a range', async () => {
     serve()
     render(<OrderStatusScreen pickupCode="R55Z" mode="web" />)
 
-    expect(await screen.findByText('about 4 minutes')).toBeInTheDocument()
+    expect(await screen.findByText('4–6 min')).toBeInTheDocument()
+  })
+
+  // The one number on the screen that cannot go backwards, and the reason a
+  // moving estimate beside it is tolerable.
+  it('leads with how many drinks are made', async () => {
+    serve()
+    render(<OrderStatusScreen pickupCode="R55Z" mode="web" />)
+
+    expect(await screen.findByText('0 of 2 made')).toBeInTheDocument()
+  })
+
+  it('counts a drink as made as soon as the kitchen says so', async () => {
+    serve()
+    render(<OrderStatusScreen pickupCode="R55Z" mode="web" />)
+    await screen.findByText('0 of 2 made')
+
+    broadcast(update({
+      status: 'partially_ready',
+      items: [
+        { id: 1, label: 'Classic Milk Tea, 50%', status: 'finished' },
+        { id: 2, label: 'Taro Slush', status: 'in_progress' },
+      ],
+    }))
+
+    expect(await screen.findByText('1 of 2 made')).toBeInTheDocument()
   })
 
   // The code is the whole credential (§13.1) — there is no token, and
@@ -130,16 +157,25 @@ describe('OrderStatusScreen (§9.2, §9.3)', () => {
     expect(await screen.findByText(/come and collect it/i)).toBeInTheDocument()
   })
 
-  // A countdown next to "Ready" is worse than no countdown.
-  it('drops the estimate once the order is ready', async () => {
+  // A countdown next to "Ready" is worse than no countdown, and so is a
+  // progress line that has nothing left to report.
+  it('drops the estimate and the progress line once the order is ready', async () => {
     serve()
     render(<OrderStatusScreen pickupCode="R55Z" mode="web" />)
-    await screen.findByText('about 4 minutes')
+    await screen.findByText('4–6 min')
 
-    broadcast(update({ status: 'ready', eta_seconds: 0, items: [] }))
+    broadcast(update({
+      status: 'ready',
+      eta_seconds: 0,
+      items: [
+        { id: 1, label: 'Classic Milk Tea, 50%', status: 'finished' },
+        { id: 2, label: 'Taro Slush', status: 'finished' },
+      ],
+    }))
 
     expect(await screen.findByText(/come and collect it/i)).toBeInTheDocument()
-    expect(screen.queryByText(/about a minute/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/min$/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/made$/)).not.toBeInTheDocument()
   })
 
   // Whole snapshots, never deltas (§9.2): a client that misses a message
