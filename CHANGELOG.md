@@ -21,6 +21,12 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Changed
+- The kitchen interleaves orders more finely: a barista is handed roughly one drink per turn
+  rather than one or two. Measured across 24 simulated days, this does not change how long
+  anyone waits — it changes who absorbs the delay. Before, a few customers were badly
+  delayed when a busy patch hit; now more customers are slightly delayed and almost nobody
+  is badly delayed. The worst case at peak falls from over four minutes to under a minute
+  and a half (§6.1, §10.5).
 - The order status screen leads with how many drinks are made rather than with a countdown,
   and quotes the wait as a range. The estimate really does move — the kitchen shares capacity
   between orders, so drinks ordered after yours can push yours out — and a single number that

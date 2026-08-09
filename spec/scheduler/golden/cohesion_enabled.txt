@@ -1,0 +1,8 @@
+t=00000 station=0 half-made item=40    prep= 70
+t=00070 station=0 half-made item=41    prep= 70
+t=00140 station=0 pair item=70    prep= 45
+t=00185 station=0 untouched item=50    prep= 70
+t=00255 station=0 untouched item=51    prep= 70
+t=00325 station=0 untouched item=52    prep= 70
+t=00395 station=0 untouched item=53    prep= 70
+t=00465 station=0 solo item=60    prep= 45

@@ -126,6 +126,21 @@ Fixed seeds producing byte-identical dispatch sequences. They live in
 - They exist so the scheduler can be refactored without fear.
 - A diff in a golden file is a **behavior change** and must be justified in the PR body.
   Never regenerate them to make a red build green.
+- Regenerate deliberately, and read the diff before committing it:
+
+  ```bash
+  REGENERATE_GOLDEN=1 bin/rspec spec/scheduler/golden_spec.rb
+  ```
+
+- **A fixture that cannot differ from another fixture is pinning nothing.** Both of these
+  shipped vacuous on the first attempt and were caught by deliberately breaking the
+  behaviour they claimed to cover: `cohesion_enabled` came out byte-identical to
+  `mixed_day`, because every generated flow starts at `made_count: 0` and cohesion can never
+  fire; and the `remakes` fixture survived deleting §6.4's priority floor entirely, because
+  those flows already sort first on the 4x remake multiplier. Each scenario needs the thing
+  it names to be the thing that decides the order.
+- Prove a new fixture is armed the same way any other guard is: break the rule it covers,
+  confirm *that* fixture fails, restore.
 - If the simulator is ever implemented client-side (§10.1 option B), 20 golden scenarios
   asserting Ruby and TypeScript agree become mandatory.
 

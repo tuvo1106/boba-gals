@@ -19,7 +19,7 @@ module Scheduler
 
     DEFAULTS = {
       policy: :drr,
-      quantum: 120,
+      quantum: 60,
       aging_enabled: true,
       aging_rate: 0.15,
       cohesion_enabled: false,

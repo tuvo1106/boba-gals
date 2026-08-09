@@ -1,6 +1,47 @@
 require "rails_helper"
 
 RSpec.describe UpdateSchedulerConfig do
+  # A store that has been PATCHed must still follow future default changes.
+  #
+  # Merging into `effective_scheduler_config` materialised all ten keys, so one
+  # admin touching one setting pinned the store to that day's defaults forever —
+  # which is how §10.5's quantum change would have reached no store anyone had
+  # ever configured.
+  describe "what actually gets stored (§6.6)" do
+    let(:store) { create(:store) }
+
+    it "stores only the keys that were set" do
+      described_class.new.call(store: store, changes: { "quantum" => 90 })
+
+      expect(store.reload.scheduler_config).to eq("quantum" => 90)
+    end
+
+    it "leaves every other key following the default" do
+      described_class.new.call(store: store, changes: { "quantum" => 90 })
+
+      expect(store.reload.effective_scheduler_config)
+        .to include("aging_rate" => Store::SCHEDULER_DEFAULTS["aging_rate"])
+    end
+
+    # The reason the merge exists at all: a PATCH naming one key must not reset
+    # the others that were genuinely set earlier.
+    it "keeps an earlier explicit setting when a later PATCH names something else" do
+      described_class.new.call(store: store, changes: { "quantum" => 90 })
+      described_class.new.call(store: store, changes: { "aging_rate" => 0.5 })
+
+      expect(store.reload.scheduler_config).to eq("quantum" => 90, "aging_rate" => 0.5)
+    end
+
+    it "picks up a later change to the defaults for a key nobody set" do
+      described_class.new.call(store: store, changes: { "quantum" => 90 })
+
+      stub_const("Store::SCHEDULER_DEFAULTS",
+                 Store::SCHEDULER_DEFAULTS.merge("promise_buffer" => 999))
+
+      expect(store.reload.effective_scheduler_config["promise_buffer"]).to eq(999)
+    end
+  end
+
   let(:store) { create(:store) }
 
   def apply(changes)
@@ -116,12 +157,16 @@ RSpec.describe UpdateSchedulerConfig do
     expect(store.reload.scheduler_config).to include("quantum" => 150, "aging_rate" => 0.3)
   end
 
-  # The merge is over the *effective* config, so a store configured before a key
-  # existed does not have that key silently written as nil.
-  it "fills in §6.6 defaults for keys the store never set" do
+  # Asserted on the *effective* config rather than the stored column. Storing
+  # the defaults was how this used to be achieved, and it is exactly what pinned
+  # a configured store to the defaults of the day it was configured — see "what
+  # actually gets stored" above. What matters is that every key resolves, not
+  # where it resolves from.
+  it "resolves §6.6 defaults for keys the store never set" do
     apply("quantum" => 150)
 
-    expect(store.reload.scheduler_config).to include(Store::SCHEDULER_DEFAULTS.except("quantum"))
+    expect(store.reload.effective_scheduler_config)
+      .to include(Store::SCHEDULER_DEFAULTS.except("quantum"))
   end
 
   it "accepts symbol keys" do

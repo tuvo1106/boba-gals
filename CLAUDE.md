@@ -141,6 +141,35 @@ The loops also outlived their cleanup — backgrounded processes reparent to PID
 Any background process must be cleaned up by explicit PID, and the cleanup verified rather
 than assumed.
 
+### Killing a command does not kill what it started
+
+**Interrupting `docker compose exec` kills the client, not the process in the container.**
+The exec session goes away; whatever it launched keeps running, detached, with nothing
+attached to notice. Same for anything that forks workers — `mutant` is the one that has
+actually bitten here.
+
+It happened on 2026-08-09: an interrupted `mutant run` left `mutant-ruby` plus eleven
+`mutant-worker-process-*` alive, holding the `api` container at **359% CPU** until the
+laptop's fans gave it away. Nothing on the host's process list showed it, because the
+processes were inside the container.
+
+So:
+
+- **Never start `mutant` from a session.** It runs the whole suite once per mutant, forks a
+  worker per core, and takes tens of minutes. It is a CI-shaped job. If a mutation score is
+  needed, ask for it to be run deliberately, or read the last recorded figure.
+- After interrupting *any* long container command, check before moving on:
+
+  ```bash
+  docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}'
+  docker compose exec api ps -eo pid,pcpu,args     # then kill -TERM by explicit PID
+  ```
+
+  An idle stack sits near 0%. Anything sustained above ~50% with no command attached is an
+  orphan, and `docker compose restart <service>` is the blunt fix.
+- Prefer a bounded run over an open-ended one: `timeout N docker compose exec …` puts a
+  ceiling on the damage a forgotten command can do.
+
 Run:
 
 ```bash
