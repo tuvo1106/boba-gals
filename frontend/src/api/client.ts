@@ -28,3 +28,50 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 
   return (await response.json()) as T
 }
+
+/**
+ * POST with an optional station token (§13.3). The KDS is the only surface that
+ * carries a bearer token — the board is public and admin uses a cookie session
+ * — so the header is threaded through here rather than living in a global.
+ */
+export async function apiPost<T>(
+  path: string,
+  body: unknown = {},
+  { token, signal }: { token?: string; signal?: AbortSignal } = {},
+): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal,
+  })
+
+  if (!response.ok) {
+    const message = await response
+      .json()
+      .then((payload: { error?: string }) => payload.error)
+      .catch(() => undefined)
+
+    throw new ApiError(response.status, message ?? `POST ${path} failed with ${response.status}`)
+  }
+
+  return (await response.json()) as T
+}
+
+/** GET carrying a station token, for the KDS queue snapshot. */
+export async function apiGetWithToken<T>(path: string, token: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    signal,
+  })
+
+  if (!response.ok) {
+    throw new ApiError(response.status, `GET ${path} failed with ${response.status}`)
+  }
+
+  return (await response.json()) as T
+}

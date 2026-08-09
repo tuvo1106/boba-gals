@@ -22,6 +22,20 @@ RSpec.describe "Api::V1::Kds", type: :request do
       expect(KdsToken.verify(body["token"])).to have_attributes(barista_id: barista.id, store_id: store.id)
     end
 
+    # KitchenChannel refuses a subscription whose store_id does not match the
+    # token (§13.3), so a client that is not told the store id can only guess —
+    # and guessing the station id happens to work for station 1 of store 1 and
+    # for nothing else. Every other station sits at "connecting" forever, with
+    # no error, because a refused subscription is silent.
+    it "tells the client which store it is in, so it can subscribe" do
+      post "/api/v1/kds/session", params: { barista_pin: "1234", station_id: station.id }, as: :json
+
+      body = response.parsed_body
+      expect(body["store"]).to include("id" => store.id)
+      expect(body["store"]["id"]).not_to eq(body["station"]["id"]),
+        "this example is worthless unless the two ids actually differ"
+    end
+
     it "rejects a wrong PIN" do
       post "/api/v1/kds/session", params: { barista_pin: "9999", station_id: station.id }, as: :json
 

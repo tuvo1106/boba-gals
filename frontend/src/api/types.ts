@@ -75,3 +75,36 @@ export interface SimulationRun {
   }
 }
 
+
+/** One drink on the kitchen display (§9.4). Mirrors `KitchenQueue.serialize`. */
+export interface KdsItem {
+  id: number
+  label: string
+  status: 'queued' | 'in_progress' | 'finished'
+  prep_seconds: number
+  pickup_code: string
+  /** Position within its order — rendered "2 of 5" so a barista can see it is part of a larger order. */
+  sequence: number
+  order_size: number
+  remake: boolean
+  station_id: number | null
+  started_at: string | null
+}
+
+/** The `queue_update` payload (§9.2, §9.4). A whole snapshot, never a delta. */
+export interface QueueUpdate {
+  type: 'queue_update'
+  in_progress: KdsItem[]
+  next_up: KdsItem[]
+  depth: number
+  oldest_waiting_seconds: number
+}
+
+export interface KdsSession {
+  token: string
+  expires_in: number
+  barista: { id: number; name: string }
+  station: { id: number; name: string }
+  /** Needed to subscribe — KitchenChannel rejects a store_id that does not match the token. */
+  store: { id: number; name: string }
+}
