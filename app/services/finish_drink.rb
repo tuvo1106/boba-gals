@@ -35,8 +35,13 @@ class FinishDrink
     if order.status == "ready"
       SchedulerEvent.record!(store: order.store, event_type: "order_ready",
                              payload: { order_id: order.id })
-      # The single ready SMS (§9.7) is enqueued from here at build step 8. It
-      # must never block or fail the transition.
+
+      # §9.7's single message. Enqueued, never sent inline: it must never block
+      # or fail the transition, and this method is the transition. The job
+      # re-checks eligibility and claims the send atomically, because `ready` is
+      # reachable more than once — the KDS undo (§5.2) can move an order back
+      # out of it and a re-finish re-enters it.
+      SendReadySmsJob.perform_later(order.id)
     end
 
     BroadcastStoreViews.call(order.store)

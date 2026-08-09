@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_140210) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -85,7 +85,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_140210) do
     t.index ["menu_item_id"], name: "index_order_items_on_menu_item_id"
     t.index ["order_id"], name: "index_order_items_on_order_id"
     t.index ["remake_of_id"], name: "index_order_items_on_remake_of_id"
-    t.index ["station_id", "status"], name: "idx_items_active", where: "((status)::text = ANY ((ARRAY['queued'::character varying, 'in_progress'::character varying])::text[]))"
+    t.index ["station_id", "status"], name: "idx_items_active", where: "((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('in_progress'::character varying)::text]))"
     t.index ["station_id"], name: "index_order_items_on_station_id"
     t.index ["status", "queued_at"], name: "idx_items_dispatchable", where: "((status)::text = 'queued'::text)"
   end
@@ -101,13 +101,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_140210) do
     t.datetime "promised_at"
     t.integer "quoted_wait_seconds"
     t.datetime "ready_at"
+    t.datetime "ready_sms_sent_at"
     t.string "source", null: false
     t.string "status", null: false
     t.bigint "store_id", null: false
     t.integer "total_cents"
     t.datetime "updated_at", null: false
     t.index "store_id, pickup_code, ((placed_at)::date)", name: "idx_pickup_code_daily", unique: true
-    t.index ["store_id", "status"], name: "idx_orders_open", where: "((status)::text <> ALL ((ARRAY['picked_up'::character varying, 'cancelled'::character varying])::text[]))"
+    t.index ["store_id", "status"], name: "idx_orders_open", where: "((status)::text <> ALL (ARRAY[('picked_up'::character varying)::text, ('cancelled'::character varying)::text]))"
     t.index ["store_id"], name: "index_orders_on_store_id"
   end
 
