@@ -21,6 +21,11 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- A customer can follow their own order live (§9.2). Anyone holding a pickup code can watch
+  their drinks move from waiting to being made to ready, one line per drink, with the wait
+  estimate updating as the kitchen works — no refreshing, and no seeing anybody else's order.
+  A five-drink order shows three done and two still going instead of one bar that sits at
+  "in progress" for eight minutes.
 - The kitchen display exists (§9.4). Baristas sign in with a station and PIN and get a single
   lane of drink cards — drink name, options as bold tokens, pickup code, and position within a
   multi-drink order so it is obvious when the scheduler is interleaving one. One tap starts a

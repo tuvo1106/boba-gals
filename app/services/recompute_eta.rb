@@ -31,17 +31,7 @@ class RecomputeEta
       schedule_flush(store)
     end
 
-    # Always, outside the window check. The projection is debounced at 2s and
-    # the board at 1s (§9.2) — different rates, so gating the board on the ETA's
-    # window subordinates one to the other, and a transition landing inside the
-    # ETA window produced no board update at all.
-    #
-    # It is also what keeps the board alive when Sidekiq is not: the trailing
-    # recompute and the 30s idle tick both run on the worker, so if the board
-    # only moved when they did, a dead worker would freeze it silently. This
-    # path is inline, and the worst case is a board showing an ETA up to two
-    # seconds old — which no customer can perceive and no barista depends on.
-    BoardBroadcast.call(store)
+    publish(store)
   end
 
   # The trailing edge, called only by `RecomputeEtaJob` — it recomputes
@@ -54,7 +44,28 @@ class RecomputeEta
     BobaGals::REDIS.with { |redis| redis.del(pending_key(store)) }
     open_window?(store)
     reproject(store)
+    publish(store)
+  end
+
+  # The customer-facing views that read the ETA cache: the board above the
+  # counter and each customer's own order screen (§9.2).
+  #
+  # Always, outside the window check. The projection is debounced at 2s and both
+  # of these at 1s (§9.2) — different rates, so gating them on the ETA's window
+  # subordinates one to the other, and a transition landing inside the ETA
+  # window produced no board update at all.
+  #
+  # It is also what keeps them alive when Sidekiq is not: the trailing recompute
+  # and the 30s idle tick both run on the worker, so if the board only moved
+  # when they did, a dead worker would freeze it silently. This path is inline,
+  # and the worst case is an ETA up to two seconds old — which no customer can
+  # perceive and no barista depends on.
+  #
+  # @param store [Store]
+  # @return [void]
+  def self.publish(store)
     BoardBroadcast.call(store)
+    OrderBroadcast.call(store)
   end
 
   # The expensive half: run the projection and cache it. Publishing is the

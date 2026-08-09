@@ -22,10 +22,7 @@ module Api
       # low-value, and throttled at 60/min per IP. Scoped to today so yesterday's
       # code cannot read today's order.
       def show
-        order = current_store.orders
-                             .where(pickup_code: params[:pickup_code].to_s.upcase)
-                             .where("placed_at::date = ?", Date.current)
-                             .first!
+        order = current_store.orders.for_pickup_code(params[:pickup_code]).first!
 
         render json: OrderSerializer.call(order)
       end
