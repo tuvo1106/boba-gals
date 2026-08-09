@@ -105,4 +105,6 @@ export interface KdsSession {
   expires_in: number
   barista: { id: number; name: string }
   station: { id: number; name: string }
+  /** Needed to subscribe — KitchenChannel rejects a store_id that does not match the token. */
+  store: { id: number; name: string }
 }

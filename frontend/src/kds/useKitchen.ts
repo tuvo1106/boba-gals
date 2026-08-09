@@ -66,7 +66,10 @@ export function useKitchen(session: KdsSession | null): Kitchen {
 
     const unsubscribe = subscribe<QueueUpdate>({
       channel: 'KitchenChannel',
-      params: { token: session.token, store_id: session.station.id },
+      // The *store* id, not the station id. KitchenChannel rejects a mismatch
+      // (§13.3), and passing the station id silently worked only for station 1
+      // of store 1 — every other station sat at "connecting" forever.
+      params: { token: session.token, store_id: session.store.id },
       onReceived: (payload) => {
         if (!cancelled) setQueue(payload)
       },

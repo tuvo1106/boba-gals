@@ -27,6 +27,8 @@ Categories, in this order:
   drink, one tap finishes it, no confirmation dialogs, and a 60-second undo is the escape
   hatch. A "Next up" section always shows the next three so cups and toppings can be
   pre-staged. The header carries queue depth and the oldest wait, and nothing else.
+- The KDS sign-in response says which store the station belongs to, which the display needs
+  in order to subscribe to live updates (§13.3).
 - The shop learns how long its drinks actually take. Every finished drink updates a running
   average per menu item, and once there are ten of them the board quotes from what the shop
   really does rather than from the seeded guess (§7.3). Durations wildly out of line with the

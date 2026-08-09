@@ -9,16 +9,24 @@ import type { KdsItem, QueueUpdate } from '../api/types'
 // jsdom has no ActionCable server. What matters is that a broadcast reaches the
 // screen, so the subscription is replaced with a handle the test can push through.
 let broadcast: (update: QueueUpdate) => void = () => {}
+// Captured and asserted on: KitchenChannel rejects a subscription whose
+// store_id does not match the token (§13.3), and a mock that ignores the params
+// cannot tell a correct subscription from one that will be refused. Passing the
+// station id worked for station 1 of store 1 and no other station.
+let subscribedWith: Record<string, unknown> | undefined
 
 vi.mock('../api/cable', () => ({
   subscribe: ({
     onReceived,
     onConnected,
+    params,
   }: {
     onReceived: (data: QueueUpdate) => void
     onConnected?: () => void
+    params?: Record<string, unknown>
   }) => {
     broadcast = onReceived
+    subscribedWith = params
     onConnected?.()
     return () => {}
   },
@@ -44,7 +52,9 @@ function serveKds(snapshot: QueueUpdate) {
     http.post('/api/v1/kds/session', () =>
       HttpResponse.json({
         token: 'tok', expires_in: 3600,
-        barista: { id: 1, name: 'Mei' }, station: { id: 2, name: 'Bar 2' },
+        barista: { id: 1, name: 'Mei' },
+        station: { id: 2, name: 'Bar 2' },
+        store: { id: 1, name: 'Boba Gals' },
       }),
     ),
     http.get('/api/v1/kds/queue', () => HttpResponse.json(snapshot)),
@@ -83,6 +93,7 @@ async function open(snapshot: QueueUpdate) {
 
 beforeEach(() => {
   broadcast = () => {}
+  subscribedWith = undefined
 })
 
 describe('KdsScreen', () => {
@@ -181,6 +192,16 @@ describe('KdsScreen', () => {
       await user.click(screen.getByRole('button', { name: 'Done' }))
 
       await waitFor(() => expect(posted).toEqual([ 'finish:42' ]))
+    })
+
+    // The station id and the store id are different numbers for every station
+    // but the first, and sending the wrong one leaves the screen at
+    // "connecting" with no error — the subscription is simply refused.
+    it('subscribes with the store id, not the station id', async () => {
+      await open(queueUpdate({ depth: 1 }))
+
+      expect(subscribedWith).toMatchObject({ store_id: 1, token: 'tok' })
+      expect(subscribedWith?.store_id).not.toBe(2)
     })
 
     it('renders a broadcast snapshot without reconciling against the old one', async () => {
