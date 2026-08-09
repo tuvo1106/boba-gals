@@ -113,7 +113,7 @@ RSpec.describe "Api::V1::Kds", type: :request do
 
       get "/api/v1/kds/queue", headers: auth
 
-      expect(response.parsed_body["next_up"].first).to include("sequence" => 1, "order_size" => 2)
+      expect(response.parsed_body["next_up"].first).to include("position" => 1, "order_size" => 2)
     end
 
     it "never exposes customer_phone (§13.5)" do

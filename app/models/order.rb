@@ -79,4 +79,28 @@ class Order < ApplicationRecord
   def terminal?
     TERMINAL_STATUSES.include?(status)
   end
+
+  # The drinks this order is actually for, in order (§5.2).
+  #
+  # A failed drink has already produced a remake row that stands in its place,
+  # and a cancelled one was never going to be made — so neither is a drink the
+  # customer is waiting for or the shop still owes. Counting them makes a
+  # two-drink order look like a three-drink order the moment anything goes
+  # wrong, on every surface that counts drinks.
+  #
+  # This is deliberately one method rather than the same `select` written in
+  # each view. It was written twice before, and the second copy was missed:
+  # `OrderView` excluded failed rows while the KDS did not, so a barista and
+  # their customer read different numbers off the same order.
+  #
+  # Sorted by `sequence` — the column is the scheduler's ordering key and stays
+  # gap-free-agnostic, so position in this list is what a surface should render,
+  # never the raw column (§9.4).
+  #
+  # @return [Array<OrderItem>]
+  def countable_items
+    order_items
+      .select { |item| RollUpOrderStatus::COUNTED_STATUSES.include?(item.status) }
+      .sort_by(&:sequence)
+  end
 end

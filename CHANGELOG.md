@@ -50,6 +50,10 @@ Categories, in this order:
   drink that failed, not both.
 
 ### Fixed
+- **A remade drink no longer makes an order look bigger than it is.** After a barista
+  spilled one drink of a two-drink order, the kitchen display counted the spilled drink and
+  showed the remaining cards as "2 of 3" and "3 of 3" — while the customer's own screen still
+  said two drinks. Both now count only the drinks the order is still for (§9.4).
 - Live order updates no longer get slower as the shop sells more. Every order the shop had
   ever taken was still counted as in progress, so the once-a-second push to customers'
   screens walked the whole history — 371ms at 2000 orders and growing, against 15ms now.
