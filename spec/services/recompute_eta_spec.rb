@@ -93,6 +93,36 @@ RSpec.describe RecomputeEta do
     end
   end
 
+  # The projection is debounced at 2s and the board at 1s (§9.2). Gating the
+  # board on the ETA's window subordinates one rate to the other, and a
+  # transition landing inside the ETA window then produced no board update at
+  # all — the drink a customer is watching went quiet for two seconds.
+  describe "the board keeps its own rate (§9.2)" do
+    it "publishes the board even when the projection is debounced" do
+      queue
+      described_class.call(store)
+
+      expect(BoardBroadcast).to receive(:call).with(store)
+      expect(ProjectEta).not_to receive(:for_open_orders)
+
+      described_class.call(store)
+    end
+
+    # Everything that recovers a missed update runs on Sidekiq: the trailing
+    # recompute, the board's own trailing flush, and §7.2's 30s idle tick. If
+    # the board only moved when those did, a dead worker would freeze it with
+    # nothing on screen to say so. `perform_enqueued_jobs` is deliberately not
+    # used here — this is the worker being down.
+    it "still moves the board when no job ever runs" do
+      queue
+
+      expect(BoardBroadcast).to receive(:call).with(store).twice
+
+      described_class.call(store)
+      described_class.call(store)
+    end
+  end
+
   describe "what a recompute produces" do
     it "caches the projection so the board reads rather than recomputes" do
       order = queue(3)
