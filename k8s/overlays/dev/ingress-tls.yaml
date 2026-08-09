@@ -1,0 +1,23 @@
+# Serve the dev cluster over TLS (§14.5).
+#
+# A JSON patch that adds two things and restates nothing. The routing table —
+# which prefix goes to `web` and which to `frontend` — stays in the base
+# Ingress, where it is the same everywhere; copying it here to attach a hostname
+# is how an overlay's copy silently stops matching the original.
+#
+# The host is a property of *this* cluster: `boba.localtest.me` is a public DNS
+# name resolving to 127.0.0.1, which is what makes a laptop reachable over a
+# real hostname with a real certificate. A deploy anywhere else patches its own
+# host the same way.
+- op: add
+  path: /spec/rules/0/host
+  value: boba.localtest.me
+- op: add
+  path: /spec/tls
+  value:
+    - hosts:
+        - boba.localtest.me
+      # Filled in by cert-manager from the Certificate in tls.yaml. The Ingress
+      # names a Secret, never an issuer, which is why swapping the self-signed
+      # CA for ACME later touches no file but that one.
+      secretName: boba-tls

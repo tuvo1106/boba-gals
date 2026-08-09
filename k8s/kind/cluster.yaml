@@ -17,9 +17,16 @@ nodes:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
     extraPortMappings:
-      # Publishes the ingress on the host so http://localhost works the same way
-      # http://localhost:5173 did under compose — same-origin, which the admin
+      # Publishes the ingress on the host so the shop is reachable the same way
+      # http://localhost:5173 was under compose — same-origin, which the admin
       # session cookie requires (ADR-0006).
-      - containerPort: 80
-        hostPort: 8080
+      #
+      # 443 only. Port 80 is deliberately *not* published (§14.5): a plain-http
+      # surface that appeared to work is exactly what let the Secure admin
+      # cookie be dropped with nothing reporting it, and a redirect from :8080
+      # would have to point at :8443 — a port-rewriting redirect that exists
+      # nowhere in a real deploy. Refusing the connection is unmistakable;
+      # serving http quietly is not.
+      - containerPort: 443
+        hostPort: 8443
         protocol: TCP

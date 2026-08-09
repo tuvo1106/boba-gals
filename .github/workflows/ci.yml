@@ -138,6 +138,15 @@ jobs:
     if: needs.detect.outputs.rails == 'true'
     timeout-minutes: 25
 
+    env:
+      # The cluster serves https only (§14.5); port 80 is not published at all.
+      SHOP: https://boba.localtest.me:8443
+      # Every curl below validates against the CA cert-manager minted, without
+      # a flag on each call and without `-k` anywhere. `-k` would make this job
+      # pass against the fake certificate ingress-nginx serves when the real one
+      # failed to issue, which is the one thing these steps exist to catch.
+      CURL_CA_BUNDLE: tmp/boba-ca.crt
+
     steps:
       - uses: actions/checkout@v4
 
@@ -177,12 +186,23 @@ jobs:
           echo "readyReplicas=$ready"
           [ "$ready" = "2" ]
 
-      - name: Frontend and API answer through the ingress
+      - name: Frontend and API answer through the ingress over TLS
         run: |
-          curl -fsS -o /dev/null http://localhost:8080/
-          curl -fsS -o /dev/null http://localhost:8080/board
-          curl -fsS http://localhost:8080/api/v1/board | tee /dev/stderr | grep -q '"type":"board_update"'
-          curl -fsS -o /dev/null http://localhost:8080/api/v1/health
+          curl -fsS -o /dev/null "$SHOP/"
+          curl -fsS -o /dev/null "$SHOP/board"
+          curl -fsS "$SHOP/api/v1/board" | tee /dev/stderr | grep -q '"type":"board_update"'
+          curl -fsS -o /dev/null "$SHOP/api/v1/health"
+
+      # The reason TLS could not wait for step 10 (§14.5). Over plain http Rails
+      # still issued this cookie and the browser dropped it, so admin sign-in
+      # worked under curl and silently did not work in a browser — and the
+      # step 9 dashboard is the first browser surface behind it.
+      - name: The admin session cookie is Secure and now has an origin that can keep it
+        run: |
+          curl -fsS -i -X POST "$SHOP/api/v1/admin/session" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@bobagals.test","password":"dev-admin"}' \
+            | grep -i '^set-cookie' | grep -qi 'secure'
 
       # §14.3, ADR-0008. /up is liveness and must stay green without the
       # database; /readyz is readiness and must not.
@@ -190,6 +210,34 @@ jobs:
         run: |
           kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/readyz | grep -q '"database":true'
           kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/readyz | grep -q '"redis":true'
+
+      # force_ssl (§14.5) redirects plain http, and the kubelet reaches the pod
+      # directly with no X-Forwarded-Proto — so without the exclusion in
+      # config/environments/production.rb both probes would answer 301. The
+      # kubelet counts a 3xx as success, which would leave /readyz reporting
+      # healthy with the database down and quietly undo ADR-0008. Asserting the
+      # status code, because a redirect is exactly what a passing probe would
+      # look like.
+      - name: The probes are excluded from the https redirect
+        run: |
+          for path in up readyz; do
+            code=$(kubectl -n boba-gals exec deploy/web -- \
+              curl -s -o /dev/null -w '%{http_code}' "localhost:3000/$path")
+            echo "/$path over plain http: $code"
+            [ "$code" = "200" ] || { echo "::error::/$path answered $code, not 200 — redirected probes pass while failing"; exit 1; }
+          done
+
+      # Everything else must be redirected, or the exclusion is a hole rather
+      # than an exception.
+      - name: Everything else over plain http is redirected
+        run: |
+          code=$(kubectl -n boba-gals exec deploy/web -- \
+            curl -s -o /dev/null -w '%{http_code}' localhost:3000/api/v1/health)
+          echo "/api/v1/health over plain http: $code"
+          case "$code" in
+            30*) ;;
+            *) echo "::error::plain http was served ($code) instead of redirected"; exit 1 ;;
+          esac
 
       # The property the whole probe split exists for: losing a dependency must
       # pull pods from the Service *without* restarting them.
@@ -236,7 +284,7 @@ jobs:
           # 503 from an empty backend. Wait for the observable condition rather
           # than a proxy for it.
           for _ in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/board)
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$SHOP/api/v1/board")
             [ "$code" = "200" ] && break
             sleep 2
           done
@@ -247,18 +295,18 @@ jobs:
       # ingress, Rails, Postgres, the ETA, and the serializer — end to end.
       - name: An order reaches the board
         run: |
-          curl -fsS -X POST http://localhost:8080/api/v1/orders \
+          curl -fsS -X POST "$SHOP/api/v1/orders" \
             -H 'Content-Type: application/json' \
             -d '{"order":{"source":"kiosk","customer_first_name":"Smoke","items":[{"menu_item_id":1,"option_ids":[1,6]}]}}' \
             | grep -q '"pickup_code"'
-          curl -fsS http://localhost:8080/api/v1/board | tee /dev/stderr | grep -q '"first_name":"Smoke"'
+          curl -fsS "$SHOP/api/v1/board" | tee /dev/stderr | grep -q '"first_name":"Smoke"'
 
       # §13.5, and the one most worth holding on a public endpoint.
       # `if`, not `grep ... && { exit 1; } || true` — the trailing `|| true`
       # swallows the very exit it is guarding, so that form can never fail.
       - name: customer_phone never appears on the board
         run: |
-          curl -fsS http://localhost:8080/api/v1/board > /tmp/board.json
+          curl -fsS "$SHOP/api/v1/board" > /tmp/board.json
           if grep -q "customer_phone" /tmp/board.json; then
             echo "::error::customer_phone reached a public payload (§13.5)"; exit 1
           fi

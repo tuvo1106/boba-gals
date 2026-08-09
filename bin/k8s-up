@@ -9,6 +9,9 @@ CLUSTER=boba-gals
 NAMESPACE=boba-gals
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TAG=dev
+HOST=boba.localtest.me
+PORT=8443
+CERT_MANAGER_VERSION=v1.16.2
 
 cd "$ROOT"
 
@@ -31,11 +34,28 @@ if ! kubectl get namespace ingress-nginx >/dev/null 2>&1; then
   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/kind/deploy.yaml
 fi
 
+# cert-manager, on the same terms as ingress-nginx: third-party, pinned, applied
+# from its released manifest. It owns the Certificate in
+# k8s/overlays/dev/tls.yaml and writes the `boba-tls` Secret the Ingress reads.
+if ! kubectl get namespace cert-manager >/dev/null 2>&1; then
+  step "Installing cert-manager"
+  kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
+fi
+
 # `rollout status`, not `wait --for=condition=Ready pod`: the pod does not exist
 # for a moment after apply, and `wait` fails outright on an empty selector
 # rather than waiting for something to match it.
 step "Waiting for ingress-nginx"
 kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+
+# All three, not just the controller. The webhook is the one that matters here:
+# it validates every Certificate and Issuer, and applying the manifests while it
+# is still coming up fails with "connection refused" on the admission call
+# rather than anything mentioning certificates.
+step "Waiting for cert-manager"
+for d in cert-manager cert-manager-webhook cert-manager-cainjector; do
+  kubectl -n cert-manager rollout status "deployment/$d" --timeout=300s
+done
 
 step "Building images"
 docker build -t "boba-api:$TAG" --target production .
@@ -49,6 +69,13 @@ kind load docker-image "boba-api:$TAG" "boba-frontend:$TAG" --name "$CLUSTER"
 
 step "Applying manifests"
 kubectl apply -k k8s/overlays/dev
+
+# The Ingress mounts the `boba-tls` Secret, and nginx serves its built-in
+# "Kubernetes Ingress Controller Fake Certificate" until that Secret exists.
+# Waiting on Ready means a failure here reads as "the certificate did not
+# issue", not as an unexplained TLS warning ten minutes later.
+step "Waiting for the certificate to issue"
+kubectl -n "$NAMESPACE" wait --for=condition=Ready certificate/boba-tls --timeout=180s
 
 # Migrations belong to the Job, never to container boot (§14.2). Waiting here
 # means `web` is not serving traffic against a schema that has not been applied.
@@ -64,4 +91,14 @@ kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=300s
 
 step "Ready"
 kubectl -n "$NAMESPACE" get pods
-printf '\nThe shop is at \033[1mhttp://localhost:8080\033[0m — board at /board\n'
+
+# The CA is self-signed, so a browser will warn until it is trusted once. Write
+# it out rather than describing it — the alternative is clicking through a
+# warning every time, which trains exactly the habit TLS is here to remove.
+kubectl -n "$NAMESPACE" get secret boba-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > "$ROOT/tmp/boba-ca.crt"
+
+printf '\nThe shop is at \033[1mhttps://%s:%s\033[0m — board at /board\n' "$HOST" "$PORT"
+printf 'The CA is at \033[1mtmp/boba-ca.crt\033[0m. Trust it once and the warning goes away:\n'
+printf '  \033[2msudo security add-trusted-cert -d -r trustRoot \\\n'
+printf '    -k /Library/Keychains/System.keychain tmp/boba-ca.crt\033[0m\n'
+printf '  \033[2mcurl --cacert tmp/boba-ca.crt https://%s:%s/api/v1/health\033[0m\n' "$HOST" "$PORT"

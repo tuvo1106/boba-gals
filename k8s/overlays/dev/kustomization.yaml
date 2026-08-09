@@ -6,6 +6,10 @@ namespace: boba-gals
 
 resources:
   - ../../base
+  # cert-manager's issuer chain and the serving certificate (§14.5). Overlay-
+  # local because a real deploy swaps the self-signed CA for ACME and touches
+  # nothing else.
+  - tls.yaml
 
 # Throwaway values for a cluster that lives on a laptop and is deleted with
 # `kind delete cluster`. They are committed on purpose so `bin/k8s-up` works
@@ -37,14 +41,18 @@ secretGenerator:
 generatorOptions:
   disableNameSuffixHash: true
 
-# kind publishes the ingress on http://localhost:8080 (k8s/kind/cluster.yaml).
-# Without this ActionCable rejects the upgrade — the origin is plain http and
-# its production default is same-origin over https only.
+# kind publishes the ingress on https://boba.localtest.me:8443
+# (k8s/kind/cluster.yaml). Still named explicitly rather than relying on Rails'
+# strict same-origin default: that default compares the Origin header against a
+# scheme Rails infers behind a terminating proxy, and being wrong about it costs
+# a websocket that never connects with nothing in the UI to say so (§14.5).
+# Explicit fails closed on a hostname change; the default fails silently on a
+# proxy-header change.
 configMapGenerator:
   - name: boba-config
     behavior: merge
     literals:
-      - ACTIONCABLE_ALLOWED_ORIGINS=http://localhost:8080
+      - ACTIONCABLE_ALLOWED_ORIGINS=https://boba.localtest.me:8443
 
 images:
   - name: boba-api
@@ -54,6 +62,10 @@ images:
 
 patches:
   - path: resources.yaml
+  - path: ingress-tls.yaml
+    target:
+      kind: Ingress
+      name: boba
   # Images are side-loaded with `kind load docker-image`, not pulled — there is
   # no registry. Without this the kubelet tries to pull `boba-api:dev` from
   # Docker Hub and the pods sit in ErrImagePull.

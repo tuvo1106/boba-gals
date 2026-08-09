@@ -1,0 +1,69 @@
+# TLS for the local kind cluster (§14.5).
+#
+# cert-manager's standard bootstrap, in three objects: a self-signed Issuer that
+# exists only to sign one CA certificate, that CA certificate, and a CA Issuer
+# that signs everything else. The indirection buys the one thing a bare
+# self-signed leaf cannot — a single certificate to trust, after which every
+# certificate the cluster issues is trusted, including reissues.
+#
+# This chain is deliberately overlay-local. A real deploy replaces exactly these
+# objects with an ACME (Let's Encrypt) ClusterIssuer and changes nothing else:
+# the Ingress refers to the issuer by name and to the certificate by Secret, and
+# neither reference cares which kind of issuer filled it in.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+# The CA. Long-lived on purpose: this is the certificate a developer trusts once
+# in their browser and their OS keychain, and rotating it means doing that again.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: boba-ca
+spec:
+  isCA: true
+  commonName: boba-gals-dev-ca
+  secretName: boba-ca
+  duration: 8760h # 1 year
+  renewBefore: 720h # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: boba-ca
+spec:
+  ca:
+    secretName: boba-ca
+---
+# The serving certificate. `localtest.me` and everything under it resolve to
+# 127.0.0.1 from a public DNS record, so this is a real hostname with a real
+# certificate and no /etc/hosts entry — which matters because the browser
+# behaviour being fixed here (Secure cookies, ActionCable's origin check) keys
+# off the origin, and an origin that only exists on one laptop proves less.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: boba-tls
+spec:
+  secretName: boba-tls
+  dnsNames:
+    - boba.localtest.me
+  duration: 2160h # 90 days, matching what ACME would issue
+  renewBefore: 360h # 15 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: boba-ca
+    kind: Issuer
+    group: cert-manager.io
