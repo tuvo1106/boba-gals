@@ -35,6 +35,7 @@ Rails.application.routes.draw do
         # lets the scheduler replace FIFO at step 5 without touching the client.
         post "items/start", to: "items#start"
         post "items/:id/finish", to: "items#finish"
+        post "items/:id/fail", to: "items#fail"
         post "items/:id/undo", to: "items#undo"
       end
 

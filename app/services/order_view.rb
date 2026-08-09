@@ -22,9 +22,25 @@ class OrderView
       pickup_code: order.pickup_code,
       status: order.status,
       eta_seconds: eta_seconds,
-      items: order.order_items.sort_by(&:sequence).map do |item|
+      # Failed and cancelled drinks are omitted, not shown as "remaking".
+      #
+      # A remade drink already has a replacement row (§5.2), so leaving the
+      # failed one in shows a customer three rows for a two-drink order and
+      # explains neither. What they ordered is two drinks; what they should see
+      # is two lines. `RollUpOrderStatus::COUNTED_STATUSES` is the same rule the
+      # order's own status is derived from, so the list and the headline cannot
+      # disagree.
+      items: countable(order).map do |item|
         { id: item.id, label: item.label, status: item.status }
       end
     }
   end
+
+  def self.countable(order)
+    order.order_items
+         .select { |item| RollUpOrderStatus::COUNTED_STATUSES.include?(item.status) }
+         .sort_by(&:sequence)
+  end
+
+  private_class_method :countable
 end

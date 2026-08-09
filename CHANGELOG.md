@@ -20,6 +20,15 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Added
+- **Baristas can remake a drink that went wrong** (§5.2, §9.4). A "Problem" button on each
+  drink card asks why — spilled, wrong drink, not right — and queues a fresh one straight
+  away. The replacement jumps ahead of ordinary work of the same age, so the customer whose
+  drink was dropped is not sent to the back of the line (§6.4). The original is kept as a
+  record rather than erased, which is what keeps the shop's prep-time learning honest: a
+  spill is not how long a drink takes. The customer sees the replacement in place of the
+  drink that failed, not both.
+
 ### Fixed
 - Live order updates no longer get slower as the shop sells more. Every order the shop had
   ever taken was still counted as in progress, so the once-a-second push to customers'

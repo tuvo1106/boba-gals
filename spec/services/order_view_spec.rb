@@ -48,6 +48,30 @@ RSpec.describe OrderView do
     expect(described_class.call(order).to_json).not_to include("5555550123")
   end
 
+  # A remade drink already has a replacement row (§5.2). Leaving the failed one
+  # in shows three lines for a two-drink order and explains neither.
+  it "omits a drink that failed, because its replacement is already listed" do
+    order = create(:order, store: store)
+    failed = create(:order_item, order: order, menu_item: menu_item, label: "Thai Tea",
+                                 status: "failed", sequence: 1)
+    create(:order_item, order: order, menu_item: menu_item, label: "Taro Slush", sequence: 2)
+    create(:order_item, order: order, menu_item: menu_item, label: "Thai Tea", sequence: 3,
+                        remake_of: failed, remake_reason: "spill")
+
+    payload = described_class.call(order)
+
+    expect(payload[:items].map { |i| i[:label] }).to eq([ "Taro Slush", "Thai Tea" ])
+    expect(payload[:items].map { |i| i[:id] }).not_to include(failed.id)
+  end
+
+  it "omits a cancelled drink for the same reason" do
+    order = create(:order, store: store)
+    create(:order_item, order: order, menu_item: menu_item, status: "cancelled", sequence: 1)
+    create(:order_item, order: order, menu_item: menu_item, label: "Taro Slush", sequence: 2)
+
+    expect(described_class.call(order)[:items].map { |i| i[:label] }).to eq([ "Taro Slush" ])
+  end
+
   # A customer's own screen has no business knowing who else is in the queue.
   it "carries nothing about anybody else's order" do
     order = create(:order, store: store, customer_first_name: "Sam")

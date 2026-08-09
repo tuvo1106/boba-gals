@@ -18,7 +18,11 @@ module OrderSerializer
       ready_at: order.ready_at,
       total_cents: order.total_cents,
       quoted_wait_seconds: order.quoted_wait_seconds,
-      items: order.order_items.order(:sequence).map { |item| serialize_item(item) }
+      # Only the drinks the customer is owed. A failed drink already has a
+      # replacement row (§5.2), so including it shows three lines for a
+      # two-drink order — same rule as `OrderView` and as the status rollup.
+      items: order.order_items.where(status: RollUpOrderStatus::COUNTED_STATUSES)
+                  .order(:sequence).map { |item| serialize_item(item) }
     }
   end
 

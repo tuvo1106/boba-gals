@@ -66,6 +66,11 @@ function serveKds(snapshot: QueueUpdate) {
       posted.push(`finish:${params.id}`)
       return HttpResponse.json(drink({ id: Number(params.id), status: 'finished' }))
     }),
+    http.post('/api/v1/kds/items/:id/fail', async ({ params, request }) => {
+      const body = (await request.json()) as { reason?: string }
+      posted.push(`fail:${params.id}:${body.reason}`)
+      return HttpResponse.json(drink({ id: 99, status: 'queued', remake: true }))
+    }),
     http.post('/api/v1/kds/items/:id/undo', ({ params }) => {
       posted.push(`undo:${params.id}`)
       return HttpResponse.json(drink({ id: Number(params.id), status: 'queued' }))
@@ -388,6 +393,66 @@ describe('KdsScreen', () => {
       await open(queueUpdate({ depth: 0 }))
 
       expect(screen.getByRole('region', { name: /next up/i })).toBeInTheDocument()
+    })
+  })
+
+  // §9.4: "Fail/remake requires a reason tap (spill, wrong order, quality) —
+  // one screen, four large buttons."
+  describe('remaking a drink that went wrong (§5.2, §9.4)', () => {
+    async function openReasons(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: /report a problem/i }))
+    }
+
+    it('asks why before doing anything', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+
+      await openReasons(user)
+
+      expect(screen.getByRole('dialog', { name: /why is this drink being remade/i })).toBeInTheDocument()
+      expect(posted).toEqual([])
+    })
+
+    it('offers §9.4\'s three reasons and a way out', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+
+      await openReasons(user)
+
+      expect(screen.getByRole('button', { name: /spilled/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /wrong drink/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /not right/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument()
+    })
+
+    it('sends the reason the barista tapped', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+      await openReasons(user)
+
+      await user.click(screen.getByRole('button', { name: /wrong drink/i }))
+
+      await waitFor(() => expect(posted).toEqual([ 'fail:42:wrong_order' ]))
+    })
+
+    it('backs out without touching the drink', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+      await openReasons(user)
+
+      await user.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(posted).toEqual([])
+    })
+
+    // A remake records that a real drink was really made wrong (§5.2). Undoing
+    // it would delete the evidence and leave the customer with no drink — a
+    // barista who taps it by accident fails the remake in turn.
+    it('offers no undo, unlike every other action', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+      await openReasons(user)
+
+      await user.click(screen.getByRole('button', { name: /spilled/i }))
+
+      await waitFor(() => expect(posted).toHaveLength(1))
+      expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument()
     })
   })
 

@@ -3,7 +3,7 @@ import { apiPost } from '../api/client'
 import { useKitchen, type LastAction } from './useKitchen'
 import { formatWait } from './format'
 import { clearSession, readSession, writeSession } from './session'
-import type { KdsItem, KdsSession } from '../api/types'
+import type { FailReason, KdsItem, KdsSession } from '../api/types'
 
 /**
  * The kitchen display (DESIGN.md §9.4).
@@ -39,8 +39,11 @@ export function KdsScreen() {
 }
 
 function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: () => void }) {
-  const { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, undo } =
+  const { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, fail, undo } =
     useKitchen(session, onSignedOut)
+  // Which drink is having its reason picked. §9.4 wants "one screen, four large
+  // buttons" rather than a dropdown — the barista has one wet hand free.
+  const [failing, setFailing] = useState<KdsItem | null>(null)
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -73,7 +76,13 @@ function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: (
           {queue?.in_progress.length ? (
             <ul className="flex flex-col gap-3">
               {queue.in_progress.map((item, index) => (
-                <DrinkCard key={item.id} item={item} lead={index === 0} onFinish={() => finish(item)} />
+                <DrinkCard
+                  key={item.id}
+                  item={item}
+                  lead={index === 0}
+                  onFinish={() => finish(item)}
+                  onProblem={() => setFailing(item)}
+                />
               ))}
             </ul>
           ) : (
@@ -107,6 +116,17 @@ function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: (
         </section>
       </div>
 
+      {failing && (
+        <ReasonScreen
+          item={failing}
+          onCancel={() => setFailing(null)}
+          onPick={(reason) => {
+            void fail(failing, reason)
+            setFailing(null)
+          }}
+        />
+      )}
+
       {lastAction && <UndoBar action={lastAction} onUndo={undo} />}
     </main>
   )
@@ -120,7 +140,17 @@ function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: (
  * in their hand belongs to a larger order being interleaved by the scheduler,
  * rather than a single order they are somehow making out of sequence.
  */
-function DrinkCard({ item, lead, onFinish }: { item: KdsItem; lead: boolean; onFinish: () => void }) {
+function DrinkCard({
+  item,
+  lead,
+  onFinish,
+  onProblem,
+}: {
+  item: KdsItem
+  lead: boolean
+  onFinish: () => void
+  onProblem: () => void
+}) {
   return (
     <li
       className={`rounded-lg border-2 ${lead ? 'p-6' : 'p-4 opacity-90'} ${item.remake ? 'border-amber-500 bg-amber-950/30' : 'border-neutral-700 bg-neutral-900'}`}
@@ -146,13 +176,26 @@ function DrinkCard({ item, lead, onFinish }: { item: KdsItem; lead: boolean; onF
         </div>
       </div>
 
-      {/* One tap. No confirmation dialog (§9.4). */}
-      <button
-        onClick={onFinish}
-        className={`mt-4 w-full rounded bg-emerald-600 font-semibold text-neutral-950 hover:bg-emerald-500 ${lead ? 'py-5 text-2xl' : 'py-3 text-lg'}`}
-      >
-        Done
-      </button>
+      <div className="mt-4 flex gap-3">
+        {/* One tap. No confirmation dialog (§9.4). */}
+        <button
+          onClick={onFinish}
+          className={`flex-1 rounded bg-emerald-600 font-semibold text-neutral-950 hover:bg-emerald-500 ${lead ? 'py-5 text-2xl' : 'py-3 text-lg'}`}
+        >
+          Done
+        </button>
+
+        {/* Deliberately quiet next to Done: spills are rare, and the two must
+            not look like a pair of equal choices when one is tapped hundreds of
+            times a shift and the other twice. */}
+        <button
+          onClick={onProblem}
+          aria-label={`Report a problem with ${item.label}`}
+          className={`shrink-0 rounded border border-neutral-600 px-5 text-neutral-400 hover:border-amber-500 hover:text-amber-500 ${lead ? 'py-5 text-xl' : 'py-3 text-base'}`}
+        >
+          Problem
+        </button>
+      </div>
     </li>
   )
 }
@@ -180,6 +223,65 @@ function Tokens({ item, muted = false, lead = true }: { item: KdsItem; muted?: b
           {option}
         </span>
       ))}
+    </div>
+  )
+}
+
+/**
+ * §9.4: "Fail/remake requires a reason tap (spill, wrong order, quality) — one
+ * screen, four large buttons."
+ *
+ * A full screen rather than a menu on the card. The barista is holding a ruined
+ * drink and needs one unambiguous target, and this is the one place in the KDS
+ * where a mistap cannot be undone — a remake is a real record of a real
+ * failure, so Cancel is the fourth button rather than an X in a corner.
+ */
+function ReasonScreen({
+  item,
+  onPick,
+  onCancel,
+}: {
+  item: KdsItem
+  onPick: (reason: FailReason) => void
+  onCancel: () => void
+}) {
+  const reasons: { reason: FailReason; label: string; hint: string }[] = [
+    { reason: 'spill', label: 'Spilled', hint: 'Dropped or knocked over' },
+    { reason: 'wrong_order', label: 'Wrong drink', hint: 'Made the wrong thing' },
+    { reason: 'quality', label: 'Not right', hint: 'Came out badly' },
+  ]
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Why is this drink being remade?"
+      className="fixed inset-0 z-20 flex flex-col bg-neutral-950 px-6 py-6 text-neutral-100"
+    >
+      <h2 className="text-2xl font-semibold tracking-tight">Remake this drink?</h2>
+      <p className="mt-1 text-lg text-neutral-400">{item.label}</p>
+      <p className="mt-1 font-mono text-sm text-neutral-600">
+        A fresh one is queued straight away and jumps the line.
+      </p>
+
+      <div className="mt-6 flex flex-1 flex-col gap-3">
+        {reasons.map(({ reason, label, hint }) => (
+          <button
+            key={reason}
+            onClick={() => onPick(reason)}
+            className="flex min-h-20 flex-col justify-center rounded-lg border-2 border-neutral-700 px-6 text-left hover:border-amber-500"
+          >
+            <span className="text-2xl font-semibold">{label}</span>
+            <span className="text-sm text-neutral-500">{hint}</span>
+          </button>
+        ))}
+
+        <button
+          onClick={onCancel}
+          className="min-h-20 rounded-lg border-2 border-neutral-800 px-6 text-xl text-neutral-400 hover:border-neutral-600"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   )
 }
