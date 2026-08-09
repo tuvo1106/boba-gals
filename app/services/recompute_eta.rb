@@ -26,10 +26,22 @@ class RecomputeEta
   # @return [void]
   def self.call(store)
     if open_window?(store)
-      recompute(store)
+      reproject(store)
     else
       schedule_flush(store)
     end
+
+    # Always, outside the window check. The projection is debounced at 2s and
+    # the board at 1s (§9.2) — different rates, so gating the board on the ETA's
+    # window subordinates one to the other, and a transition landing inside the
+    # ETA window produced no board update at all.
+    #
+    # It is also what keeps the board alive when Sidekiq is not: the trailing
+    # recompute and the 30s idle tick both run on the worker, so if the board
+    # only moved when they did, a dead worker would freeze it silently. This
+    # path is inline, and the worst case is a board showing an ETA up to two
+    # seconds old — which no customer can perceive and no barista depends on.
+    BoardBroadcast.call(store)
   end
 
   # The trailing edge, called only by `RecomputeEtaJob` — it recomputes
@@ -41,17 +53,17 @@ class RecomputeEta
   def self.flush(store)
     BobaGals::REDIS.with { |redis| redis.del(pending_key(store)) }
     open_window?(store)
-    recompute(store)
+    reproject(store)
+    BoardBroadcast.call(store)
   end
 
-  # Projects, caches, and pushes the board. The board broadcast has its own
-  # 1/sec throttle (§9.2) and is left to apply it.
+  # The expensive half: run the projection and cache it. Publishing is the
+  # caller's business, because the board runs on its own schedule.
   #
   # @param store [Store]
   # @return [void]
-  def self.recompute(store)
+  def self.reproject(store)
     EtaCache.write(store, ProjectEta.for_open_orders(store))
-    BoardBroadcast.call(store)
   end
 
   # `SET NX PX` is atomic across pods — exactly one caller in any 2-second

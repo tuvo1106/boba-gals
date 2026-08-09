@@ -114,6 +114,11 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Fixed
+- The customer board keeps updating when the background worker is down. Wait times are
+  recomputed at most every 2 seconds and the board refreshes up to once a second (§7.2, §9.2)
+  — but the board had been gated on the slower of the two, so a drink finishing shortly after
+  another produced no update at all, and a stopped worker froze the board with nothing on
+  screen to say so.
 - Wait percentiles are reported by the number of drinks the customer *ordered*. A remake adds
   a drink to the order (§5.2), which moved remade 2-drink orders out of the "1–2" class — and
   since remade orders are slow ones, that made the headline small-order figure look about 2%
