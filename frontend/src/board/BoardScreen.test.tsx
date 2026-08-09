@@ -118,6 +118,12 @@ describe('BoardScreen', () => {
 
     render(<BoardScreen />)
     await screen.findByText('Sarah')
+    // "Sarah" on screen does not mean the subscription exists. The store id
+    // comes from the REST snapshot, so `subscribe` runs in a passive effect
+    // *after* the render that puts her there — and broadcasting before that
+    // captures nothing but the initial no-op, silently. This is the wait the
+    // `subscribed` flag exists for.
+    await waitFor(() => expect(subscribed).toBe(true))
 
     act(() =>
       broadcast(
