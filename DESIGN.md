@@ -262,24 +262,48 @@ That is the sense in which DRR is fair, and it is a stronger statement than "eve
 
 #### Choosing the quantum
 
-**Quantum default: 120 prep-seconds** — roughly 1–2 drinks per round.
+**Quantum default: 60 prep-seconds** — about one drink per round.
 
 The constraint the literature cares about is `Q ≥ max_item`. When it holds, every visit to a flow serves at least one item and the work per dispatch is O(1) amortised. That is why DRR exists at all: weighted fair queuing achieves comparable fairness but needs virtual-time bookkeeping and a priority queue, at O(log n) per packet. DRR trades a bounded fairness error for a counter and an array.
 
-**On the seeded menu, that constraint does not hold.** The most expensive drink is a Brown Sugar Pearl at 95 seconds with three toppings — boba pearls +15, extra pearls +15, grass jelly +10 — for **135**, against a 120-second default quantum.
+**On the seeded menu, that constraint does not hold, and the default deliberately does not try to make it hold.** The most expensive drink is a Brown Sugar Pearl at 95 seconds with three toppings — boba pearls +15, extra pearls +15, grass jelly +10 — for **135**.
 
 Nothing breaks, because the deficit carries:
 
 | Visit | Deficit | Can it afford 135? |
 |---|---|---|
-| 1 | 0 + 120 = 120 | No — yield, carry 120 |
-| 2 | 120 + 120 = 240 | **Yes** — serve, 105 left |
+| 1 | 0 + 60 = 60 | No — yield, carry 60 |
+| 2 | 60 + 60 = 120 | No — yield, carry 120 |
+| 3 | 120 + 60 = 180 | **Yes** — serve, 45 left |
 
-The priciest drink in the shop waits one extra ring traversal, and the amortised bound weakens from O(1) to O(⌈max_item / Q⌉) — here, two.
+The priciest drink in the shop waits two extra ring traversals, and the amortised bound weakens from O(1) to O(⌈max_item / Q⌉) — here, three. Ring traversal is an array walk over open orders; §10.5 measures the throughput cost of paying it more often as nil (see below).
 
-That is a *choice* rather than an oversight. Raising `Q` to 135 restores the bound, and simultaneously lengthens every order's uninterrupted run, which is worse for the solo customer waiting behind a catering order. The default optimises for the drink people actually order over the worst case on the menu. §10.5's quantum sweep is where that trade gets measured instead of argued.
+**Raise the quantum** and each order is served in longer uninterrupted stretches — better for cohesion, worse for the small order waiting behind. **Lower it** and interleaving is finer, down to the point where a quantum smaller than the cheapest drink buys nothing, because drinks are atomic and cannot be split.
 
-**Raise the quantum** and each order is served in longer uninterrupted stretches — better for cohesion, worse for the small order waiting behind. **Lower it** and interleaving is finer, up to the point where `Q < max_drink` starts costing empty rounds. §10.5's quantum sweep exists to find that crossover empirically rather than by argument.
+#### What the sweep found (§10.5)
+
+The default was 120 until this was measured. §10.5's sweep, 24 seeds × 11-hour day, 3 stations, 1.5× demand, `n = 11,271` small orders:
+
+| `Q` | small orders overtaken | p90 delay when overtaken | p99 | 1–2 drink p90 **wait** |
+|---|---|---|---|---|
+| 45 | 13.1% | 88s | 247s | 272s |
+| **60** | **11.4%** | **88s** | **262s** | **281s** |
+| 75 | 8.8% | 125s | 393s | 271s |
+| 90 | 5.8% | 217s | 492s | 257s |
+| 120 | 3.5% | 250s | 793s | 268s |
+| 135 | 2.5% | 383s | 1022s | 281s |
+
+Three results, none of which were obvious in advance:
+
+**The quantum does not change how long anyone waits.** The wait column spans 257–281s with no monotone trend across a 3× range of `Q`, and station utilisation is identical to three decimal places. It is the same work either way. Everything the quantum controls is *distribution*, not throughput — which also means the O(⌈max_item / Q⌉) traversal cost above is free in practice.
+
+**What it does control is whether delay is spread or concentrated.** A small `Q` rotates the ring fast, so many customers are overtaken slightly. A large `Q` lets one order run uninterrupted, so few are overtaken but those who are lose minutes. At `Q = 135` the p99 is over seventeen minutes.
+
+**`Q = 60` is the knee.** p90 delay is 88s at both 45 and 60 and then climbs steadily; going below 60 buys nothing. The mechanism is that the cheapest drinks are 40 and 45 seconds, so 60 is already about one drink per turn — the finest interleaving that exists, because a drink cannot be split.
+
+Concentrated delay is the worse failure. A customer whose estimate moves by 88 seconds does not notice; one whose estimate jumps four minutes reads it as a broken promise, and §7.3 is explicit that a wait people stop believing is worse than a longer one. The default therefore optimises for the *shape* of the delay, since it cannot change the amount.
+
+**Not measured, and the one real argument against:** the simulator has no model of a barista switching between drink types. A finer quantum interleaves more, and if switching has a real cost in a real kitchen — different cups, different toppings, a blender that has to be rinsed — then `Q = 60` buys its smoothness with throughput the simulator cannot see. Revisit against a real shift before trusting it past the simulator.
 
 #### What this design adds
 
@@ -293,7 +317,7 @@ Textbook DRR is unweighted and walks flows in arrival order. This design scales 
 
 > A four-drink order. Perfect interleaving serves drinks 1 and 2, then the order waits its turn behind everyone else for drinks 3 and 4. Drink 1 was finished at minute 1 and is still on the counter at minute 7 — ice melted, foam collapsed, past `quality_limit_seconds` (300). The customer receives one good drink and one that has been sitting for six minutes.
 >
-> Once 2 of 4 are made, cohesion doubles the quantum from 120 to 240, so the remaining two drinks come out in a single visit rather than two. Perfect interleaving is fair to *orders* and unkind to *drinks*, because a finished drink degrades while it waits. Cohesion is the deliberate unfairness that fixes it, and §9.6's quality timer measures whether it worked.
+> Once 2 of 4 are made, cohesion doubles the quantum from 60 to 120, so the remaining two drinks come out in a single visit rather than two. Perfect interleaving is fair to *orders* and unkind to *drinks*, because a finished drink degrades while it waits. Cohesion is the deliberate unfairness that fixes it, and §9.6's quality timer measures whether it worked.
 
 **Measured, it does not work — it is off by default (ADR-0014).** Sweeping `cohesion_boost` from 0 to 4.0 over 20 seeds makes `cohesion_spread` — this section's own metric — monotonically *worse* at every load above idle, in every order-size class, including the four-drink case above:
 
@@ -446,7 +470,7 @@ Reconsider this only above ~50 orders/hour sustained.
 ```json
 {
   "policy": "drr",
-  "quantum": 120,
+  "quantum": 60,
   "aging_enabled": true,
   "aging_rate": 0.15,
   "cohesion_enabled": false,
@@ -1016,6 +1040,7 @@ The simulator already defined what matters (§10.4). Production watches **the sa
 - **Payment failure after order placement.** Void and remove queued items, or let the drink finish and settle at the counter? Affects whether `placed` implies `queued`.
 - **Order modification after placement.** Currently unsupported. If added, only items still in `queued` can change.
 - **Multi-store.** Schema is store-scoped throughout, and §14.4 removes the one-process-per-store assumption for a single store's pods. True multi-store mostly reduces to what's already namespaced (`sched:{store_id}:*` Redis keys, store-scoped channels); the real gaps are request routing to a store and admin scoping. Revisit before store #2.
+- **A customer's estimate rises when someone orders behind them.** Fair queuing shares capacity with new arrivals, so an order already in the queue genuinely gets slower when the shop gets busier — unlike FIFO, where arrival order is final. §10.5 measures the effect (above) and §9.3 now leads with a monotone progress count rather than a countdown, but the underlying question is unanswered: should a customer ever be shown a number that can move against them, or is the promise made at order time (`quoted_wait_seconds`) the only figure they should see? Revisit with real customers rather than by argument.
 - **Peak-hour large-order policy.** Should catering orders above N drinks require a `promised_at` during peak windows? This is a business rule, but the scheduler already supports it via backward scheduling.
 - **Service mesh.** Considered and deferred. There is almost nothing to mesh: the only in-cluster hops are `web`/`worker` → Postgres and Redis, both TCP, so a mesh contributes L4 mTLS and none of the L7 retries, routing, or golden signals that justify one. Its metrics also do not answer §15's questions, which are business gauges under the simulator's definitions (§10.4). Two sharp edges if adopted anyway: a sidecar keeps the `migrate` Job (§14.2) from ever completing unless native sidecars are used, and ActionCable's shift-long websockets are a known source of idle-timeout trouble. The one real gap it would close is outlier ejection — readiness removes a pod that has lost a dependency, but not one that is Ready and serving 500s. That is not enough to carry the cost. Belongs after everything in §14.5, and after hitting a problem that calls for it.
 
