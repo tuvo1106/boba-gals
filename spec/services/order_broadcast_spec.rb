@@ -59,6 +59,33 @@ RSpec.describe OrderBroadcast do
         .to have_broadcasted_to(described_class.stream_name(ready))
     end
 
+    # `ready` is the last transition there will ever be (ADR-0017), so once it
+    # has been delivered there is nothing further to push. Without this window
+    # the fanout is every order the shop has ever sold, once a second, forever:
+    # measured at 371ms per publish at 2000 orders, against 13ms at 27.
+    it "stops broadcasting to an order that went ready long ago" do
+      stale = order_with_drink(status: "ready", ready_at: 1.hour.ago)
+
+      expect { described_class.call(store) }
+        .not_to have_broadcasted_to(described_class.stream_name(stale))
+    end
+
+    it "keeps broadcasting right up to the edge of the window" do
+      edge = order_with_drink(status: "ready", ready_at: (Order::LIVE_AFTER_READY - 10.seconds).ago)
+
+      expect { described_class.call(store) }
+        .to have_broadcasted_to(described_class.stream_name(edge))
+    end
+
+    # An order still being made has no `ready_at` at all, and must not be
+    # filtered out by a window that only makes sense for ready ones.
+    it "broadcasts to an order still being made regardless of any window" do
+      making = order_with_drink(status: "in_progress", placed_at: 3.days.ago)
+
+      expect { described_class.call(store) }
+        .to have_broadcasted_to(described_class.stream_name(making))
+    end
+
     it "does not broadcast another store's orders" do
       other_store = create(:store, :with_stations)
       theirs = create(:order, store: other_store)

@@ -36,14 +36,22 @@ class OrderBroadcast
   def self.pending_ttl = PENDING_TTL
   def self.flush_job = OrderFlushJob
 
-  # Open orders only. A terminal order (§5.1) has nothing left to report, and
-  # `picked_up` accumulates for the life of the store — fanning out to those
-  # would mean publishing to every order the shop has ever sold, once a second,
-  # forever.
+  # Live orders only — `Order.live`, not `Order.open`.
+  #
+  # `open` means "ever placed": nothing in the application reaches a terminal
+  # status (ADR-0017), so it grows by one row per order sold and never shrinks.
+  # This was the only caller that iterated it directly, and it was the only
+  # thing that grew with it. Measured on the compose stack:
+  #
+  #   open orders      27      527     2027
+  #   publish        13ms    108ms    371ms
+  #
+  # against `ProjectEta` and `BoardView`, both flat across the same range —
+  # they filter on *item* status, which is bounded by actual work.
   def self.publish(store)
     estimates = EtaCache.fetch(store)
 
-    store.orders.open.includes(:order_items).find_each do |order|
+    store.orders.live.includes(:order_items).find_each do |order|
       ActionCable.server.broadcast(
         stream_name(order),
         OrderView.call(order, eta_seconds: estimates.fetch(order.id, 0))

@@ -20,6 +20,13 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Fixed
+- Live order updates no longer get slower as the shop sells more. Every order the shop had
+  ever taken was still counted as in progress, so the once-a-second push to customers'
+  screens walked the whole history — 371ms at 2000 orders and growing, against 15ms now.
+  It now pushes only to orders that are still being made or went ready in the last five
+  minutes (ADR-0017).
+
 ### Changed
 - The kitchen interleaves orders more finely: a barista is handed roughly one drink per turn
   rather than one or two. Measured across 24 simulated days, this does not change how long
