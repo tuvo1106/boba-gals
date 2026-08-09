@@ -447,9 +447,13 @@ Two further arms exist **for the simulator only**, because FIFO alone cannot sep
 | Arm | Rule | What it isolates |
 |---|---|---|
 | `rr` | one drink per order per turn, ignoring `prep_seconds` | **What the deficit is for.** DRR is round robin plus the deficit; RR is the same ring without it. FIFO shows you need fairness, RR shows you need *this* fairness — that serving turns equally is not the same as serving time equally when the menu spans 40s to 135s (§1). |
-| `sjf` | always the shortest queued drink | **The price of fairness.** Shortest-job-first minimises mean wait and is the bound DRR is paying against. It starves large orders by construction, which is exactly the failure §1 exists to prevent — so it is a benchmark, never a policy. |
+| `sjf` | always the shortest queued drink | **The price of fairness.** Shortest-job-first minimises mean wait and is the bound DRR is paying against. It starves whatever is expensive, which is exactly the failure §1 exists to prevent — so it is a benchmark, never a policy. |
 
-`rr` and `sjf` are not selectable on a store. `UpdateSchedulerConfig` (§6.6) accepts `drr` and `fifo` only. A policy that provably starves catering orders must not be one dropdown away from production, and a policy whose whole purpose is to make an argument in a chart has no business dispatching real drinks.
+**What SJF starves is the expensive *drink*, not the large *order*.** This section originally said "large orders by construction", which assumes drink cost tracks order size. It does not: §2 makes the scheduled unit a drink, and §10.3 draws each drink's cost independently of how many drinks the order has, so a 15-drink catering order has fifteen chances to hold a cheap one and SJF serves it happily. Measured (ADR-0013, reproduced by §10.5's ablation), SJF's 7+ order p90 *beats* DRR's, while its dear/cheap p90 ratio reaches 38× at 2.2× demand against DRR's 2.0×.
+
+The conclusion is unchanged and the reason is narrower: SJF is unshippable because a customer's wait must not depend on what they ordered (§6.1), not because catering orders are its victim. Two things follow. Judging SJF on §10.4's size classes alone makes it look like the best arm on the chart, so §10.5's ablation must show the drink-cost split beside the size split. And a menu whose catering orders skewed toward the 95s items would make the original claim true after all — the two failures coincide only when the menu makes them coincide.
+
+`rr` and `sjf` are not selectable on a store. `UpdateSchedulerConfig` (§6.6) accepts `drr` and `fifo` only. A policy that provably starves part of the menu must not be one dropdown away from production, and a policy whose whole purpose is to make an argument in a chart has no business dispatching real drinks.
 
 ### 6.4 Why a priority *floor* for remakes
 
