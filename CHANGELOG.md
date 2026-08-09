@@ -31,6 +31,15 @@ Categories, in this order:
   stopped moving (§9.4).
 
 ### Added
+- **You can order a drink.** The menu, options, cart and checkout now exist as screens rather
+  than as endpoints — `/order` on a phone, `/kiosk` in the shop, one build serving both
+  (§9.3). Options render the control the menu asks for, so a new option group appears
+  correctly without a code change. Payment is at the counter, as designed; there is no card
+  field. Placing an order lands on a screen showing the pickup code and every drink's
+  progress, reachable again later at `/order/<code>` with nothing but the code from the
+  receipt. Sweetness and ice come preselected and there is a quantity control, so the
+  common order is a couple of taps rather than a dozen — six drinks for the office is one
+  pass, not six.
 - A customer can follow their own order live (§9.2). Anyone holding a pickup code can watch
   their drinks move from waiting to being made to ready, one line per drink, with the wait
   estimate updating as the kitchen works — no refreshing, and no seeing anybody else's order.

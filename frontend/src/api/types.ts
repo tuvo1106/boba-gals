@@ -108,3 +108,84 @@ export interface KdsSession {
   /** Needed to subscribe — KitchenChannel rejects a store_id that does not match the token. */
   store: { id: number; name: string }
 }
+
+/** One choice within an option group (§9.1). */
+export interface MenuOption {
+  id: number
+  name: string
+  price_cents: number
+  prep_seconds_delta: number
+}
+
+/**
+ * A set of choices attached to a drink (§9.1).
+ *
+ * `min_select`/`max_select` decide which control the ordering UI renders: a
+ * radio group when at most one may be chosen, a checkbox set otherwise
+ * (ADR-0003). They travel to the client for exactly that reason.
+ */
+export interface OptionGroup {
+  id: number
+  name: string
+  min_select: number
+  max_select: number
+  options: MenuOption[]
+}
+
+export interface MenuItem {
+  id: number
+  name: string
+  category: string
+  price_cents: number
+  base_prep_seconds: number
+  option_groups: OptionGroup[]
+}
+
+/** GET /api/v1/menu. */
+export interface Menu {
+  items: MenuItem[]
+}
+
+/** §5.1. */
+export type OrderStatus =
+  | 'draft' | 'placed' | 'in_progress' | 'partially_ready'
+  | 'ready' | 'picked_up' | 'abandoned' | 'cancelled'
+
+/** §5.1. `finished` is terminal — a remake is a new row, not a reopened one. */
+export type DrinkStatus = 'queued' | 'in_progress' | 'finished' | 'failed' | 'cancelled'
+
+export interface PlacedOrderItem {
+  id: number
+  label: string
+  status: DrinkStatus
+  prep_seconds: number
+  sequence: number
+  remake: boolean
+}
+
+/**
+ * An order as `POST /orders` and `GET /orders/:pickup_code` return it. Mirrors
+ * `OrderSerializer` — note the absence of `customer_phone`, which is by
+ * construction rather than by omission (§13.5).
+ */
+export interface PlacedOrder {
+  pickup_code: string
+  status: OrderStatus
+  source: 'kiosk' | 'web'
+  customer_first_name: string | null
+  placed_at: string
+  promised_at: string | null
+  ready_at: string | null
+  total_cents: number
+  quoted_wait_seconds: number
+  items: PlacedOrderItem[]
+}
+
+/** The `order_update` payload (§9.2). A whole snapshot, never a delta. */
+export interface OrderUpdate {
+  type: 'order_update'
+  pickup_code: string
+  status: OrderStatus
+  eta_seconds: number
+  items: { id: number; label: string; status: DrinkStatus }[]
+}
