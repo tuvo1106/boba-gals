@@ -1,4 +1,4 @@
-import { formatPrice, formatWaitMinutes } from './money'
+import { formatPrice, formatProgress, formatWaitRange } from './money'
 import { tapTarget, type OrderingMode } from './mode'
 import { useOrderStatus } from './useOrderStatus'
 import type { DrinkStatus, OrderStatus, PlacedOrder } from '../api/types'
@@ -39,6 +39,8 @@ export function OrderStatusScreen({
   }
 
   const ready = progress?.status === 'ready'
+  const made = progress?.items.filter((item) => item.status === 'finished').length ?? 0
+  const progressLine = formatProgress(made, progress?.items.length ?? 0)
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-10 text-neutral-100">
@@ -60,11 +62,19 @@ export function OrderStatusScreen({
             {headline(progress?.status)}
           </p>
 
+          {/* Progress leads, the time follows in smaller type. A count of
+              finished drinks only ever goes up; the estimate genuinely moves,
+              because §6.1 shares capacity with orders arriving behind this one.
+              One monotonic thing to watch is what makes the other tolerable. */}
+          {progressLine && !ready && (
+            <p className="mt-2 text-lg text-neutral-200">{progressLine}</p>
+          )}
+
           {/* The estimate disappears once the drinks are made — a countdown next
               to "Ready" is worse than no countdown. */}
           {progress && !ready && (
             <p className="mt-1 font-mono text-sm text-neutral-500">
-              {formatWaitMinutes(progress.etaSeconds)}
+              {formatWaitRange(progress.etaSeconds)}
             </p>
           )}
         </section>
