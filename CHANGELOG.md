@@ -20,6 +20,16 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Fixed
+- Refreshing the kitchen display no longer signs the barista out. The shift now survives a
+  reload — a browser restart, an OS update, a tablet that reloads a backgrounded tab — and
+  still ends when the tab is closed or "sign out" is tapped, so a shared tablet never hands
+  the next barista the last one's session (§13.3).
+- The kitchen display's "oldest" clock now counts up second by second instead of sitting
+  still between updates. In a quiet shop nothing was broadcast for up to 30 seconds at a
+  time, so the one number that says "a drink is being forgotten" was the one number that
+  stopped moving (§9.4).
+
 ### Added
 - A customer can follow their own order live (§9.2). Anyone holding a pickup code can watch
   their drinks move from waiting to being made to ready, one line per drink, with the wait

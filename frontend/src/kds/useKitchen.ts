@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiGetWithToken, apiPost } from '../api/client'
+import { ApiError, apiGetWithToken, apiPost } from '../api/client'
 import { subscribe } from '../api/cable'
 import type { KdsItem, KdsSession, QueueUpdate } from '../api/types'
 
@@ -19,6 +19,11 @@ interface Kitchen {
   queue: QueueUpdate | null
   connection: ConnectionState
   error: string | null
+  /**
+   * How long the drink that has waited longest has been waiting, counted
+   * forward from the last snapshot rather than frozen at it (§9.4).
+   */
+  oldestWaitingSeconds: number
   lastAction: LastAction | null
   start: () => Promise<void>
   finish: (item: KdsItem) => Promise<void>
@@ -36,9 +41,18 @@ interface Kitchen {
  * reconcile.
  *
  * @param session the station token from `POST /kds/session`
+ * @param onExpired called when the server rejects the token — a restored
+ *   session outlives its 12-hour expiry (§13.3), and a screen that keeps
+ *   showing a stale queue behind a dead token is worse than a sign-in prompt
  */
-export function useKitchen(session: KdsSession | null): Kitchen {
+export function useKitchen(session: KdsSession | null, onExpired?: () => void): Kitchen {
   const [queue, setQueue] = useState<QueueUpdate | null>(null)
+  // When that snapshot arrived, so `oldest_waiting_seconds` can be advanced
+  // from it. Stored as an instant for the same reason the undo window is: the
+  // number is derived from the clock rather than decremented, so a tablet that
+  // slept through a shift change shows the truth instead of however many ticks
+  // it managed to run.
+  const [queuedAt, setQueuedAt] = useState(() => Date.now())
   const [connection, setConnection] = useState<ConnectionState>('connecting')
   const [error, setError] = useState<string | null>(null)
   // Stored as the moment it happened rather than as a countdown, so the number
@@ -47,6 +61,14 @@ export function useKitchen(session: KdsSession | null): Kitchen {
   // ticks it managed to run.
   const [acted, setActed] = useState<{ item: KdsItem; kind: LastAction['kind']; at: number } | null>(null)
   const [now, setNow] = useState(() => Date.now())
+
+  // Every snapshot lands here, from either source, so the arrival instant the
+  // header counts forward from is set in exactly one place.
+  const receive = useCallback((snapshot: QueueUpdate) => {
+    setQueue(snapshot)
+    setQueuedAt(Date.now())
+    setNow(Date.now())
+  }, [])
 
   useEffect(() => {
     if (session === null) return
@@ -58,10 +80,17 @@ export function useKitchen(session: KdsSession | null): Kitchen {
     // lands first wins and the other is a harmless idempotent replacement.
     apiGetWithToken<QueueUpdate>('/kds/queue', session.token)
       .then((snapshot) => {
-        if (!cancelled) setQueue(snapshot)
+        if (!cancelled) receive(snapshot)
       })
-      .catch(() => {
-        if (!cancelled) setError('Could not load the queue')
+      .catch((e: unknown) => {
+        if (cancelled) return
+
+        // A restored token that the server no longer accepts. Signing out is
+        // the honest response — the alternative is an empty queue and a
+        // "start next drink" button that 401s on every tap.
+        if (e instanceof ApiError && e.status === 401) return onExpired?.()
+
+        setError('Could not load the queue')
       })
 
     const unsubscribe = subscribe<QueueUpdate>({
@@ -71,7 +100,7 @@ export function useKitchen(session: KdsSession | null): Kitchen {
       // of store 1 — every other station sat at "connecting" forever.
       params: { token: session.token, store_id: session.store.id },
       onReceived: (payload) => {
-        if (!cancelled) setQueue(payload)
+        if (!cancelled) receive(payload)
       },
       onConnected: () => !cancelled && setConnection('live'),
       onDisconnected: () => !cancelled && setConnection('offline'),
@@ -81,18 +110,27 @@ export function useKitchen(session: KdsSession | null): Kitchen {
       cancelled = true
       unsubscribe()
     }
-  }, [session])
+  }, [session, receive, onExpired])
 
-  // The undo affordance expires on its own. A stale "Undo" button that fails
-  // when tapped is worse than no button, because the barista has already
-  // decided the mistake is fixable.
+  // One second is the resolution of everything on this screen: the undo
+  // countdown, and the oldest-wait clock in the header. A single interval runs
+  // for the whole shift rather than being started and stopped per affordance —
+  // the KDS is one tab open all day, and a re-render a second is nothing next
+  // to what the websocket already causes.
   useEffect(() => {
-    if (acted === null) return
+    if (session === null) return
 
     const timer = setInterval(() => setNow(Date.now()), 1000)
 
     return () => clearInterval(timer)
-  }, [acted])
+  }, [session])
+
+  // Frozen at zero when nothing is waiting: an empty queue has no oldest
+  // drink, and ticking upward from nothing would invent a wait.
+  const oldestWaitingSeconds =
+    queue === null || queue.depth === 0
+      ? 0
+      : queue.oldest_waiting_seconds + Math.max(0, Math.floor((now - queuedAt) / 1000))
 
   const secondsLeft = acted === null ? 0 : UNDO_WINDOW_SECONDS - Math.floor((now - acted.at) / 1000)
   const lastAction: LastAction | null =
@@ -142,5 +180,5 @@ export function useKitchen(session: KdsSession | null): Kitchen {
     setActed(null)
   }, [act, acted, session])
 
-  return { queue, connection, error, lastAction, start, finish, undo }
+  return { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, undo }
 }
