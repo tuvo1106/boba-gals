@@ -44,6 +44,31 @@ class Order < ApplicationRecord
     message: "is only collected for web orders"
   }, if: -> { source == "kiosk" }
 
+  # Optional, but if it is given it has to be able to receive a text.
+  #
+  # 10 to 15 digits: E.164 caps a number at 15 digits including the country
+  # code, and nothing shorter than 10 is a mobile number anyone can be reached
+  # on. Formatting the customer typed — spaces, dashes, brackets, dots — is
+  # stripped before counting rather than rejected, because "(555) 555-0123" is a
+  # phone number and refusing it teaches people to distrust the field.
+  #
+  # **No country code is inferred.** A bare 10-digit number is stored as typed,
+  # not silently turned into `+1…`: this shop has no country on record, and
+  # guessing wrong sends the ready text to a stranger. Twilio needs E.164, so
+  # normalisation has to happen when that integration lands and knows where the
+  # store is — see §16.
+  PHONE_FORMAT = /\A\+?\d{10,15}\z/
+  PHONE_PUNCTUATION = /[\s().\-]/
+
+  validates :customer_phone, format: {
+    with: PHONE_FORMAT,
+    message: "is not a phone number that can receive a text"
+  }, allow_blank: true
+
+  # Runs before validation so the format above sees digits, and so what is
+  # stored is what would be dialled.
+  before_validation :squeeze_phone
+
   scope :open, -> { where.not(status: TERMINAL_STATUSES) }
 
   # Orders a customer could still be watching (§9.2).
@@ -102,5 +127,13 @@ class Order < ApplicationRecord
     order_items
       .select { |item| RollUpOrderStatus::COUNTED_STATUSES.include?(item.status) }
       .sort_by(&:sequence)
+  end
+
+  private
+
+  def squeeze_phone
+    return if customer_phone.blank?
+
+    self.customer_phone = customer_phone.strip.gsub(PHONE_PUNCTUATION, "")
   end
 end

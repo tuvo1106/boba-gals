@@ -50,6 +50,13 @@ Categories, in this order:
   drink that failed, not both.
 
 ### Fixed
+- **A phone number that could never receive a text is refused at checkout** (§9.7). The
+  field took anything at all, so a mistyped number produced an order that was made normally
+  and a "your order is ready" text that went nowhere, with nothing to say so. Numbers are
+  accepted the way people write them — `(555) 555-0123` is fine — and the customer is told
+  while they can still fix it. Leaving it blank is still fine; the phone is optional.
+- The cart bar's **Review** button now sits at the right of the bar instead of wherever the
+  drink list happened to end.
 - **A remade drink no longer makes an order look bigger than it is.** After a barista
   spilled one drink of a two-drink order, the kitchen display counted the spilled drink and
   showed the remaining cards as "2 of 3" and "3 of 3" — while the customer's own screen still
