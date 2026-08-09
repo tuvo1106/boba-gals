@@ -141,11 +141,12 @@ jobs:
     env:
       # The cluster serves https only (§14.5); port 80 is not published at all.
       SHOP: https://boba.localtest.me:8443
-      # Every curl below validates against the CA cert-manager minted, without
-      # a flag on each call and without `-k` anywhere. `-k` would make this job
-      # pass against the fake certificate ingress-nginx serves when the real one
-      # failed to issue, which is the one thing these steps exist to catch.
-      CURL_CA_BUNDLE: tmp/boba-ca.crt
+      # Deliberately *not* CURL_CA_BUNDLE at job level. curl reads it from the
+      # environment on every invocation, including the ones inside third-party
+      # actions — helm/kind-action downloads kind with curl, before bin/k8s-up
+      # has written the file, and the whole job died on
+      # "error setting certificate file". It is set per-step below instead, on
+      # the steps that talk to the ingress and only after the file exists.
 
     steps:
       - uses: actions/checkout@v4
@@ -186,7 +187,13 @@ jobs:
           echo "readyReplicas=$ready"
           [ "$ready" = "2" ]
 
+      # Every request from here down validates against the CA cert-manager
+      # minted, and there is no `-k` anywhere. `-k` would make these steps pass
+      # against the fake certificate ingress-nginx serves when issuance fails,
+      # which is the one thing they exist to catch.
       - name: Frontend and API answer through the ingress over TLS
+        env:
+          CURL_CA_BUNDLE: tmp/boba-ca.crt
         run: |
           curl -fsS -o /dev/null "$SHOP/"
           curl -fsS -o /dev/null "$SHOP/board"
@@ -198,6 +205,8 @@ jobs:
       # worked under curl and silently did not work in a browser — and the
       # step 9 dashboard is the first browser surface behind it.
       - name: The admin session cookie is Secure and now has an origin that can keep it
+        env:
+          CURL_CA_BUNDLE: tmp/boba-ca.crt
         run: |
           curl -fsS -i -X POST "$SHOP/api/v1/admin/session" \
             -H 'Content-Type: application/json' \
@@ -242,6 +251,8 @@ jobs:
       # The property the whole probe split exists for: losing a dependency must
       # pull pods from the Service *without* restarting them.
       - name: Readiness ejects pods when Redis goes, liveness does not restart them
+        env:
+          CURL_CA_BUNDLE: tmp/boba-ca.crt
         run: |
           # bin/k8s-up ends with a rollout restart, which can leave a pod
           # Terminating. Settle first, or the measurement below straddles a
@@ -294,6 +305,8 @@ jobs:
       # A placed order has to reach the board. This exercises the full path —
       # ingress, Rails, Postgres, the ETA, and the serializer — end to end.
       - name: An order reaches the board
+        env:
+          CURL_CA_BUNDLE: tmp/boba-ca.crt
         run: |
           curl -fsS -X POST "$SHOP/api/v1/orders" \
             -H 'Content-Type: application/json' \
@@ -305,6 +318,8 @@ jobs:
       # `if`, not `grep ... && { exit 1; } || true` — the trailing `|| true`
       # swallows the very exit it is guarding, so that form can never fail.
       - name: customer_phone never appears on the board
+        env:
+          CURL_CA_BUNDLE: tmp/boba-ca.crt
         run: |
           curl -fsS "$SHOP/api/v1/board" > /tmp/board.json
           if grep -q "customer_phone" /tmp/board.json; then
