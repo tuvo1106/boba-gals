@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { apiPost } from '../api/client'
 import { useKitchen, type LastAction } from './useKitchen'
 import { formatWait } from './format'
+import { clearSession, readSession, writeSession } from './session'
 import type { KdsItem, KdsSession } from '../api/types'
 
 /**
@@ -17,15 +18,29 @@ import type { KdsItem, KdsSession } from '../api/types'
  * pinned rather than tucked away.
  */
 export function KdsScreen() {
-  const [session, setSession] = useState<KdsSession | null>(null)
+  // Restored from the tab's own storage, so a refresh — or a tablet that
+  // reloads itself overnight — does not drop the shift (`session.ts` explains
+  // why it is sessionStorage rather than a cookie).
+  const [session, setSession] = useState<KdsSession | null>(readSession)
 
-  if (session === null) return <SignIn onSignedIn={setSession} />
+  const signIn = useCallback((next: KdsSession) => {
+    writeSession(next)
+    setSession(next)
+  }, [])
 
-  return <Kitchen session={session} onSignedOut={() => setSession(null)} />
+  const signOut = useCallback(() => {
+    clearSession()
+    setSession(null)
+  }, [])
+
+  if (session === null) return <SignIn onSignedIn={signIn} />
+
+  return <Kitchen session={session} onSignedOut={signOut} />
 }
 
 function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: () => void }) {
-  const { queue, connection, error, lastAction, start, finish, undo } = useKitchen(session)
+  const { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, undo } =
+    useKitchen(session, onSignedOut)
 
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -33,10 +48,13 @@ function Kitchen({ session, onSignedOut }: { session: KdsSession; onSignedOut: (
           else." — §9.4, and it means it. */}
       <header className="flex items-center gap-6 border-b border-neutral-800 px-6 py-3">
         <Stat label="waiting" value={queue ? String(queue.depth) : '—'} />
+        {/* Counts forward from the last snapshot rather than sitting still
+            between them. A quiet store broadcasts only on the 30s idle tick,
+            so a frozen number is how a drink gets forgotten (§9.4). */}
         <Stat
           label="oldest"
-          value={queue ? formatWait(queue.oldest_waiting_seconds) : '—'}
-          warn={(queue?.oldest_waiting_seconds ?? 0) > 600}
+          value={queue ? formatWait(oldestWaitingSeconds) : '—'}
+          warn={oldestWaitingSeconds > 600}
         />
 
         <span className="ml-auto flex items-center gap-3 font-mono text-xs text-neutral-500">

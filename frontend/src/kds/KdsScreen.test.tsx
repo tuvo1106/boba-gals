@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KdsScreen } from './KdsScreen'
 import { server } from '../test/server'
 import type { KdsItem, QueueUpdate } from '../api/types'
@@ -80,7 +80,7 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function open(snapshot: QueueUpdate) {
-  const user = userEvent.setup()
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
   serveKds(snapshot)
   render(<KdsScreen />)
   await signIn(user)
@@ -91,9 +91,37 @@ async function open(snapshot: QueueUpdate) {
   return user
 }
 
+// The header's oldest-wait clock is driven by a real interval, so the examples
+// that assert it advancing need control of time. `shouldAdvanceTime` keeps the
+// fake clock moving with the real one, which is what lets MSW and userEvent
+// carry on working normally around it.
+/**
+ * The header's oldest-wait value, in seconds.
+ *
+ * Read from the DOM and compared numerically rather than asserted as an exact
+ * string: `shouldAdvanceTime` lets real time elapse alongside the fake clock,
+ * so pinning an exact second would be a flake waiting for a slow CI box. What
+ * the examples are about is the direction and the magnitude, not the tick.
+ */
+function oldestWaitSeconds(): number {
+  const [ minutes, seconds ] = (screen.getByText('oldest').nextElementSibling?.textContent ?? '')
+    .split(':')
+    .map(Number)
+
+  return minutes * 60 + seconds
+}
+
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
   broadcast = () => {}
   subscribedWith = undefined
+  // The signed-in station now survives a reload, which means it survives from
+  // one example into the next unless it is cleared here.
+  sessionStorage.clear()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('KdsScreen', () => {
@@ -107,7 +135,7 @@ describe('KdsScreen', () => {
     // Deliberately identical whether the station or the PIN was wrong, so the
     // message must not claim to know which.
     it('surfaces a rejected sign-in without saying which field was wrong', async () => {
-      const user = userEvent.setup()
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
       server.use(
         http.post('/api/v1/kds/session', () =>
           HttpResponse.json({ error: 'invalid station or PIN' }, { status: 401 }),
@@ -121,6 +149,72 @@ describe('KdsScreen', () => {
   })
 
   // "Show queue depth and the oldest waiting time in the header. Nothing else."
+  // A KDS tablet gets refreshed — by a barista, by an OS update, by a browser
+  // that reloads a backgrounded tab. Signing in again mid-rush is exactly the
+  // wrong moment for it.
+  describe('staying signed in (§13.3)', () => {
+    it('is still signed in after a reload', async () => {
+      await open(queueUpdate({ depth: 3 }))
+
+      cleanup()
+      serveKds(queueUpdate({ depth: 3 }))
+      render(<KdsScreen />)
+
+      expect(await screen.findByRole('button', { name: /sign out/i })).toBeInTheDocument()
+      expect(screen.queryByLabelText('station')).not.toBeInTheDocument()
+    })
+
+    // A shared tablet must not hand the next barista the last one's shift.
+    it('signing out ends it for good', async () => {
+      const user = await open(queueUpdate({ depth: 3 }))
+
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
+      cleanup()
+      render(<KdsScreen />)
+
+      expect(await screen.findByLabelText('station')).toBeInTheDocument()
+    })
+
+    // The token carries a 12-hour expiry (§13.3). A restored one can outlive
+    // it, and a screen showing a stale queue behind a dead token is worse than
+    // a sign-in prompt — every tap would 401.
+    it('falls back to sign-in when the restored token is rejected', async () => {
+      await open(queueUpdate({ depth: 3 }))
+
+      cleanup()
+      serveKds(queueUpdate({ depth: 3 }))
+      server.use(
+        http.get('/api/v1/kds/queue', () =>
+          HttpResponse.json({ error: 'invalid token' }, { status: 401 }),
+        ),
+      )
+      render(<KdsScreen />)
+
+      expect(await screen.findByLabelText('station')).toBeInTheDocument()
+    })
+
+    it('does not choke on a corrupted stored session', async () => {
+      sessionStorage.setItem('boba_gals.kds_session', 'not json')
+      serveKds(queueUpdate({ depth: 1 }))
+
+      render(<KdsScreen />)
+
+      expect(await screen.findByLabelText('station')).toBeInTheDocument()
+    })
+
+    // Valid JSON of the wrong shape gets past the parse and would otherwise be
+    // handed to the screen as a session — `session.station.name` in the header
+    // is enough to take the whole KDS down, on the screen the shop runs on.
+    it('rejects a stored value that parses but is not a session', async () => {
+      sessionStorage.setItem('boba_gals.kds_session', JSON.stringify({ token: 'tok' }))
+      serveKds(queueUpdate({ depth: 1 }))
+
+      render(<KdsScreen />)
+
+      expect(await screen.findByLabelText('station')).toBeInTheDocument()
+    })
+  })
+
   describe('the header (§9.4)', () => {
     it('shows queue depth and the oldest wait', async () => {
       await open(queueUpdate({ depth: 7, oldest_waiting_seconds: 440 }))
@@ -133,6 +227,49 @@ describe('KdsScreen', () => {
       await open(queueUpdate({ depth: 2, oldest_waiting_seconds: 900 }))
 
       expect(screen.getByText('15:00').className).toContain('orange')
+    })
+
+    // A quiet store broadcasts only on §7.2's 30s idle tick, so a header frozen
+    // at whatever the last snapshot said is how a drink gets forgotten.
+    it('counts the oldest wait up between snapshots', async () => {
+      await open(queueUpdate({ depth: 2, oldest_waiting_seconds: 100 }))
+      expect(oldestWaitSeconds()).toBe(100)
+
+      act(() => vi.advanceTimersByTime(5000))
+
+      expect(oldestWaitSeconds()).toBeGreaterThanOrEqual(105)
+      expect(oldestWaitSeconds()).toBeLessThan(110)
+    })
+
+    // An empty queue has no oldest drink; ticking up from nothing would invent
+    // a wait, and the orange threshold would eventually trip on it.
+    it('does not invent a wait when nothing is queued', async () => {
+      await open(queueUpdate({ depth: 0, oldest_waiting_seconds: 0 }))
+
+      act(() => vi.advanceTimersByTime(30_000))
+
+      expect(oldestWaitSeconds()).toBe(0)
+    })
+
+    // The server is the authority. A client that kept adding to its own total
+    // would drift further from the truth the longer the tab stayed open.
+    it('restarts from the newest snapshot rather than accumulating', async () => {
+      await open(queueUpdate({ depth: 2, oldest_waiting_seconds: 100 }))
+      act(() => vi.advanceTimersByTime(5000))
+
+      act(() => broadcast(queueUpdate({ depth: 2, oldest_waiting_seconds: 20 })))
+      act(() => vi.advanceTimersByTime(2000))
+
+      // Back near the server's 20, not the ~105 it had climbed to. The lower
+      // bound is 20 rather than 22 because the display lags by up to one tick:
+      // the interval keeps its own phase and does not restart with the
+      // snapshot.
+      //
+      // The upper bound is what makes this an assertion. A client that never
+      // reset its origin would show 20 + the 7s elapsed since mount, so
+      // anything at or above 25 means the snapshot's arrival was ignored.
+      expect(oldestWaitSeconds()).toBeGreaterThanOrEqual(20)
+      expect(oldestWaitSeconds()).toBeLessThan(25)
     })
   })
 
