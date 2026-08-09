@@ -84,10 +84,23 @@ async function open(snapshot: QueueUpdate) {
   serveKds(snapshot)
   render(<KdsScreen />)
   await signIn(user)
-  // Waits on the sign-out control rather than on header text: with an empty
-  // queue the word "waiting" appears in both the header label and the
-  // "Nothing waiting" button, and the query would match two nodes.
-  await screen.findByRole('button', { name: /sign out/i })
+
+  // Wait for the *queue snapshot*, not just for the session.
+  //
+  // The sign-out control renders the moment a session exists, which is before
+  // `GET /kds/queue` resolves. Waiting on it left every example that then
+  // queried synchronously for queue content racing the fetch — and on a loaded
+  // CI runner the fetch lost, which is how "marks a remake" and "finishes a
+  // drink in one tap" failed on a merge commit having passed on their own.
+  //
+  // The header renders "—" for the oldest wait until a snapshot has arrived, so
+  // that is the signal. Deliberately not the sign-out button and deliberately
+  // not a bare `waitFor` on some later assertion: this is the one condition
+  // every example downstream actually depends on.
+  await waitFor(() =>
+    expect(screen.getByText('oldest').nextElementSibling).not.toHaveTextContent('—'),
+  )
+
   return user
 }
 
@@ -233,12 +246,17 @@ describe('KdsScreen', () => {
     // at whatever the last snapshot said is how a drink gets forgotten.
     it('counts the oldest wait up between snapshots', async () => {
       await open(queueUpdate({ depth: 2, oldest_waiting_seconds: 100 }))
-      expect(oldestWaitSeconds()).toBe(100)
+      const started = oldestWaitSeconds()
+      expect(started).toBeGreaterThanOrEqual(100)
 
       act(() => vi.advanceTimersByTime(5000))
 
-      expect(oldestWaitSeconds()).toBeGreaterThanOrEqual(105)
-      expect(oldestWaitSeconds()).toBeLessThan(110)
+      // `- 1` because the 1-second interval keeps its own phase: its last fire
+      // inside the advanced window can be up to a tick short of the end, so the
+      // display trails by up to a second. That is the real behaviour, not slack
+      // in the test — a barista sees the same lag.
+      expect(oldestWaitSeconds()).toBeGreaterThanOrEqual(started + 4)
+      expect(oldestWaitSeconds()).toBeLessThan(started + 10)
     })
 
     // An empty queue has no oldest drink; ticking up from nothing would invent
