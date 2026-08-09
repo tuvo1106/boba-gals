@@ -18,8 +18,20 @@ type RunOverrides = Omit<Partial<SimulationRun>, 'metrics'> & {
   metrics?: Partial<SimulationRun['metrics']>
 }
 
+/**
+ * An already-signed-in admin (§13.4). Every example below the gate needs this,
+ * because the dashboard asks the server who it is talking to before it renders
+ * anything — the cookie is HttpOnly, so there is nothing else to ask.
+ */
+function serveSignedIn() {
+  server.use(
+    http.get('/api/v1/admin/session', () => HttpResponse.json({ email: 'admin@bobagals.test' })),
+  )
+}
+
 function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides = {}) {
   requests = []
+  serveSignedIn()
   server.use(
     http.post('/api/v1/admin/simulations', async ({ request }) => {
       const body = (await request.json()) as Record<string, unknown>
@@ -267,11 +279,141 @@ describe('DashboardScreen', () => {
     })
   })
 
-  it('surfaces a signed-out admin as something actionable', async () => {
-    requests = []
-    server.use(http.post('/api/v1/admin/simulations', () => new HttpResponse(null, { status: 401 })))
-    render(<DashboardScreen />)
+  // §13.4. The dashboard is the first browser surface behind the admin cookie,
+  // and until this existed there was no way to obtain that cookie from a
+  // browser at all — the screen said "sign in as admin first" and offered
+  // nothing to sign in with.
+  describe('the admin gate', () => {
+    function serveSignedOut() {
+      server.use(
+        http.get('/api/v1/admin/session', () => new HttpResponse(null, { status: 401 })),
+      )
+    }
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/sign in as admin/i)
+    it('asks for a sign-in when there is no session', async () => {
+      serveSignedOut()
+      render(<DashboardScreen />)
+
+      expect(await screen.findByLabelText('email')).toBeInTheDocument()
+      expect(screen.getByLabelText('password')).toBeInTheDocument()
+    })
+
+    // The other half, and the half a careless test leaves out: asserting only
+    // that the form appears would pass against a screen that never renders the
+    // dashboard at all.
+    it('shows the dashboard when there is one', async () => {
+      await renderRun()
+
+      expect(screen.queryByLabelText('password')).not.toBeInTheDocument()
+      expect(screen.getByText(/small-order p90/i)).toBeInTheDocument()
+    })
+
+    // Not a disabled panel — a config rail rendered to someone signed out shows
+    // the shape of the live store's tuning surface (§10.6) and invites clicks
+    // that silently 401.
+    it('renders none of the panel while signed out', async () => {
+      serveSignedOut()
+      render(<DashboardScreen />)
+      await screen.findByLabelText('email')
+
+      expect(screen.queryByLabelText('seed')).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'policy' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /run/i })).not.toBeInTheDocument()
+    })
+
+    // The session lives in a cookie the page cannot read, so every load asks
+    // the server. Rendering the form during that answer flashes a sign-in
+    // screen at an admin who is already signed in, on every reload.
+    it('shows neither while it is still asking', async () => {
+      let answer: (() => void) | undefined
+      const held = new Promise<void>((resolve) => { answer = resolve })
+      server.use(
+        http.get('/api/v1/admin/session', async () => {
+          await held
+          return HttpResponse.json({ email: 'admin@bobagals.test' })
+        }),
+      )
+
+      render(<DashboardScreen />)
+
+      expect(screen.queryByLabelText('password')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('seed')).not.toBeInTheDocument()
+
+      answer?.()
+      await screen.findByLabelText('seed')
+    })
+
+    it('opens the dashboard once the credentials are accepted', async () => {
+      const user = userEvent.setup()
+      serveSignedOut()
+      serveRun()
+      // `serveRun` registers a signed-in GET, so put the signed-out one back on
+      // top: MSW resolves the most recently registered handler first.
+      serveSignedOut()
+      server.use(
+        http.post('/api/v1/admin/session', () =>
+          HttpResponse.json({ email: 'admin@bobagals.test' })),
+      )
+      render(<DashboardScreen />)
+      await screen.findByLabelText('email')
+
+      await user.type(screen.getByLabelText('email'), 'admin@bobagals.test')
+      await user.type(screen.getByLabelText('password'), 'dev-only-not-a-real-password')
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+      expect(await screen.findByText(/small-order p90/i)).toBeInTheDocument()
+    })
+
+    // The server answers a wrong address and a wrong password identically, so
+    // the endpoint cannot be asked "does this address have an account". A
+    // helpful message here would undo that from the client side.
+    it('repeats the refusal from the server without narrowing it down', async () => {
+      const user = userEvent.setup()
+      serveSignedOut()
+      server.use(
+        http.post('/api/v1/admin/session', () =>
+          HttpResponse.json({ error: 'invalid email or password' }, { status: 401 })),
+      )
+      render(<DashboardScreen />)
+      await screen.findByLabelText('email')
+
+      await user.type(screen.getByLabelText('email'), 'nobody@bobagals.test')
+      await user.type(screen.getByLabelText('password'), 'wrong')
+      await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('invalid email or password')
+      expect(screen.getByLabelText('email')).toBeInTheDocument()
+    })
+
+    it('returns to the form when the session goes away underneath a run', async () => {
+      const user = userEvent.setup()
+      await renderRun()
+      server.use(
+        http.post('/api/v1/admin/simulations', () => new HttpResponse(null, { status: 401 })),
+      )
+
+      await user.click(screen.getByRole('button', { name: /run/i }))
+
+      expect(await screen.findByLabelText('password')).toBeInTheDocument()
+      expect(screen.queryByLabelText('seed')).not.toBeInTheDocument()
+    })
+
+    it('signs out, so a back-office machine is not left on the dashboard', async () => {
+      const user = userEvent.setup()
+      await renderRun()
+      server.use(
+        http.delete('/api/v1/admin/session', () => new HttpResponse(null, { status: 204 })),
+      )
+
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+      expect(await screen.findByLabelText('password')).toBeInTheDocument()
+    })
+
+    it('names who is signed in', async () => {
+      await renderRun()
+
+      expect(screen.getByText('admin@bobagals.test')).toBeInTheDocument()
+    })
   })
 })

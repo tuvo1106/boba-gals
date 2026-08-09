@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
+import { AdminSignIn } from './AdminSignIn'
+import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
-import type { Policy, SimulationRun } from '../api/types'
+import type { AdminUser, Policy, SimulationRun } from '../api/types'
 
 /** §6.3's arms, in the order the ablation reads: least fair to most. */
 const POLICIES: { id: Policy; title: string }[] = [
@@ -13,6 +15,30 @@ const POLICIES: { id: Policy; title: string }[] = [
 ]
 
 /**
+ * The dashboard's door (§13.4).
+ *
+ * A hard gate, the way the KDS gates on its station token: signed out renders
+ * the form and *nothing else*. Not a disabled panel — the config rail holds the
+ * same scheduler knobs that apply-to-store writes to the live store (§10.6), and
+ * every visible-but-dead control teaches an operator that the dashboard is
+ * broken rather than that they are signed out.
+ *
+ * `checking` renders nothing at all rather than the form, or every reload
+ * flashes a sign-in screen at someone who is already signed in.
+ */
+export function DashboardScreen() {
+  const { session, signIn, signOut, expired } = useAdminSession()
+
+  if (session.status === 'checking') {
+    return <main className="min-h-screen bg-neutral-950" aria-busy="true" />
+  }
+
+  if (session.status === 'signed_out') return <AdminSignIn onSignIn={signIn} />
+
+  return <Dashboard admin={session.admin} onSignOut={signOut} onExpired={expired} />
+}
+
+/**
  * The simulation dashboard (DESIGN.md §10.6), starting with its signature
  * element. "Build this first; it will teach you more about the scheduler than
  * any number."
@@ -20,7 +46,15 @@ const POLICIES: { id: Policy; title: string }[] = [
  * An instrument panel, not a marketing page: tabular-numeral monospace for all
  * figures, hairline rules, one accent colour, no gradients.
  */
-export function DashboardScreen() {
+function Dashboard({
+  admin,
+  onSignOut,
+  onExpired,
+}: {
+  admin: AdminUser
+  onSignOut: () => void
+  onExpired: () => void
+}) {
   const [run, setRun] = useState<SimulationRun | null>(null)
   // §10.6: "the previous run ghosted behind the current one for comparison". A
   // number with nothing to compare against is not a verdict.
@@ -69,7 +103,15 @@ export function DashboardScreen() {
           window_seconds: nextSpan,
         }),
       })
-      if (!response.ok) throw new Error(response.status === 401 ? 'Sign in as admin first' : `Run failed (${response.status})`)
+      // A 401 here means the session went away underneath the run — expired, or
+      // signed out in another tab. Back to the form: leaving the panel up with
+      // "sign in first" written in the error slot is a dead screen that names
+      // its problem without offering the fix.
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      if (!response.ok) throw new Error(`Run failed (${response.status})`)
       const next = (await response.json()) as SimulationRun
       setRun((current) => {
         if (current) setPrevious({ run: current, policy })
@@ -207,6 +249,25 @@ export function DashboardScreen() {
         >
           {busy ? 'Running…' : 'Run'}
         </button>
+
+        {/* Who, and a way out. A dashboard that can change live scheduler
+            behaviour (§10.6) should not be left signed in on a back-office
+            machine because there was no button to leave it.
+
+            One group, because the header wraps: as two siblings the identity
+            and its control land on different lines the moment the window is
+            narrow, and a bare "sign out" under the title reads as a heading. */}
+        <div className="flex items-baseline gap-3">
+          <span className="font-mono text-xs text-neutral-600" title={admin.email}>
+            {admin.email}
+          </span>
+          <button
+            onClick={onSignOut}
+            className="font-mono text-xs text-neutral-500 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-300"
+          >
+            sign out
+          </button>
+        </div>
       </header>
 
       {/* Separated from the header deliberately: these change the *day*, while
