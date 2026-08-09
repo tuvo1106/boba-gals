@@ -166,6 +166,39 @@ RSpec.describe "Api::V1::Kds", type: :request do
     end
   end
 
+  describe "POST /api/v1/kds/items/:id/fail" do
+    it "queues a replacement and returns it, not the drink that went wrong" do
+      item = queue_drink(status: "in_progress", started_at: 1.minute.ago, station: station)
+
+      post "/api/v1/kds/items/#{item.id}/fail", params: { reason: "spill" }, headers: auth, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(item.reload.status).to eq("failed")
+      # The remake is what the barista now has to make; returning the dead row
+      # would put it back on screen.
+      expect(response.parsed_body).to include("status" => "queued", "remake" => true)
+      expect(response.parsed_body["id"]).not_to eq(item.id)
+    end
+
+    it "rejects a reason that is not one of §9.4's three" do
+      item = queue_drink(status: "in_progress", started_at: 1.minute.ago, station: station)
+
+      post "/api/v1/kds/items/#{item.id}/fail", params: { reason: "because" }, headers: auth, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(item.reload.status).to eq("in_progress")
+    end
+
+    it "cannot fail another store's drink" do
+      other = create(:order_item, order: create(:order, store: create(:store)),
+                     status: "in_progress", started_at: 1.minute.ago)
+
+      post "/api/v1/kds/items/#{other.id}/fail", params: { reason: "spill" }, headers: auth, as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
   describe "POST /api/v1/kds/items/:id/undo" do
     it "reverses the last transition inside the window (§9.4)" do
       item = queue_drink(status: "in_progress", started_at: 1.minute.ago, station: station)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, apiGetWithToken, apiPost } from '../api/client'
 import { subscribe } from '../api/cable'
-import type { KdsItem, KdsSession, QueueUpdate } from '../api/types'
+import type { FailReason, KdsItem, KdsSession, QueueUpdate } from '../api/types'
 
 /** §5.2: the undo window on the last action. Mirrors `UndoLastAction::WINDOW`. */
 export const UNDO_WINDOW_SECONDS = 60
@@ -27,6 +27,7 @@ interface Kitchen {
   lastAction: LastAction | null
   start: () => Promise<void>
   finish: (item: KdsItem) => Promise<void>
+  fail: (item: KdsItem, reason: FailReason) => Promise<void>
   undo: () => Promise<void>
 }
 
@@ -170,6 +171,16 @@ export function useKitchen(session: KdsSession | null, onExpired?: () => void): 
     [act, session],
   )
 
+  // Deliberately not remembered as a `lastAction`. Undo rewinds a mistap; a
+  // remake records that a real drink was really made wrong (§5.2), and undoing
+  // it would delete the evidence and leave the customer without a drink. A
+  // barista who taps this by accident fails the remake in turn.
+  const fail = useCallback(
+    (item: KdsItem, reason: FailReason) =>
+      act(() => apiPost<KdsItem>(`/kds/items/${item.id}/fail`, { reason }, { token: session?.token }), null),
+    [ act, session ],
+  )
+
   // Depends on `acted`, the stable state, rather than on the derived
   // `lastAction`, which is a fresh object every render and would rebuild this
   // callback on every tick of the countdown.
@@ -180,5 +191,5 @@ export function useKitchen(session: KdsSession | null, onExpired?: () => void): 
     setActed(null)
   }, [act, acted, session])
 
-  return { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, undo }
+  return { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, fail, undo }
 }

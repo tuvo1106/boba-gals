@@ -100,6 +100,9 @@ export interface QueueUpdate {
   oldest_waiting_seconds: number
 }
 
+/** §9.4: "Fail/remake requires a reason tap (spill, wrong order, quality)." */
+export type FailReason = 'spill' | 'wrong_order' | 'quality'
+
 export interface KdsSession {
   token: string
   expires_in: number
