@@ -153,11 +153,23 @@ RSpec.describe Simulator::Ablation do
       expect(three).to be > one * 2
     end
 
-    # A run is unbounded compute behind an admin session; four arms multiply it.
+    # A run is unbounded compute behind an admin session; six arms multiply it.
+    #
+    # Stubbed to 2 rather than run at 25. The claim is "a request above the
+    # ceiling is served at the ceiling", which is independent of what the
+    # ceiling happens to be — and asserting it by simulating 300 days took 48
+    # seconds, a quarter of the whole suite, to test one `clamp`.
     it "refuses to run more days than the ceiling" do
-      expect(described_class::MAX_SEEDS).to eq(25)
+      stub_const("#{described_class}::MAX_SEEDS", 2)
+
       expect(ablate(seeds: 10_000).first[:metrics][:orders])
-        .to eq(ablate(seeds: described_class::MAX_SEEDS).first[:metrics][:orders])
+        .to eq(ablate(seeds: 2).first[:metrics][:orders])
+    end
+
+    # The ceiling's actual value, asserted separately and for free. It is a
+    # capacity decision rather than a property of the clamp.
+    it "keeps the ceiling at 25 days" do
+      expect(described_class::MAX_SEEDS).to eq(25)
     end
 
     it "treats a nonsense day count as one day" do

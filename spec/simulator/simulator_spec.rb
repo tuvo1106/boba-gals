@@ -263,8 +263,12 @@ RSpec.describe Simulator do
     # A single-drink order's sitting time *is* the customer's walk-up delay, so
     # it can never be improved by scheduling. Reporting it mixed into one figure
     # puts a floor near 10% under the number and hides the cohesion signal.
+    # Four hours rather than the full eleven: one station at 3.0x is saturated
+    # within the first, and the separation is *wider* on the short day (0.399 vs
+    # 0.288, against 0.353 vs 0.261 over eleven hours). The full day cost 25
+    # seconds — an eighth of the suite — to say the same thing less clearly.
     it "reports multi-drink orders separately from the pickup-delay floor" do
-      metrics = run(seed: 7, stations: 1, demand_multiplier: 3.0).to_h
+      metrics = run(seed: 7, stations: 1, demand_multiplier: 3.0, hours: 4).to_h
 
       expect(metrics[:quality_breach_rate_multi]).to be > metrics[:quality_breach_rate]
     end
@@ -623,8 +627,16 @@ RSpec.describe Simulator do
       expect(result[:p50_abs]).to eq(30.0)
     end
 
+    # Two stations at 3.0x over four hours rather than three at 3.5x over
+    # eleven: both back the shop up far enough to push work past the horizon,
+    # and this one does it in 1.7s instead of 16.7s. The cap needs a *deep
+    # queue*, which is a function of how far over capacity the shop is, not of
+    # how long it stays there.
     it "reaches the horizon at all in a shop far past saturation" do
-      expect(accuracy(demand_multiplier: 3.5)[:capped]).to be_positive
+      swamped = accuracy(stations: 2, demand_multiplier: 3.0, hours: 4)
+
+      expect(swamped[:capped]).to be_positive
+      expect(swamped[:orders]).to be_positive
     end
 
     it "refuses to call a handful of orders a percentile" do
