@@ -1,7 +1,8 @@
 # EWMA of observed prep durations per menu item (§7.3).
 #
-# Written by `RecordPrepTime` on every finished drink and read by `ProjectEta`
-# once `confident?`. It was in the schema from the start, unused, because the
+# Written by `RecordPrepTime` a full undo window after each finished drink
+# (ADR-0019, §5.2) and read by `ProjectEta` once `confident?`. It was in the
+# schema from the start, unused, because the
 # difference between a board customers trust and one they learn to ignore is
 # whether these numbers are real rather than seeded guesses.
 class PrepTimeStat < ApplicationRecord

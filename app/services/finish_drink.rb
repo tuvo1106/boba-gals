@@ -24,11 +24,18 @@ class FinishDrink
       }
     )
 
-    # §7.3 learns from `finished_at - started_at`, so this is the only moment
-    # the observation exists. Outliers are rejected inside the recorder rather
-    # than here — a barista who forgot to tap "finish" is a data problem, not a
-    # reason to fail the transition they did make.
-    RecordPrepTime.new.call(item)
+    # §7.3 learns from `finished_at - started_at`. Deferred by a full undo
+    # window rather than recorded inline, because §5.2 requires undo to discard
+    # the sample and an EWMA cannot be cleanly un-blended — so the sample is not
+    # taken until there is nothing left to undo (ADR-0019). The job re-checks
+    # the item is still finished; a mistap that gets undone never reaches it.
+    #
+    # Outliers are rejected inside the recorder rather than here — a barista who
+    # forgot to tap "finish" is a data problem, not a reason to fail the
+    # transition they did make.
+    RecordPrepTimeJob
+      .set(wait: UndoLastAction::WINDOW)
+      .perform_later(item.id, item.finished_at)
 
     order = RollUpOrderStatus.new.call(item.order)
 

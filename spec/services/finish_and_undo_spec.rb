@@ -39,12 +39,27 @@ RSpec.describe "finishing and undoing drinks" do
     # disconnected and every prep-time spec would still pass, because they all
     # drive `RecordPrepTime` directly.
     describe "feeding the EWMA (§7.3)" do
-      it "learns the drink's duration" do
+      include ActiveJob::TestHelper
+
+      it "learns the drink's duration once the undo window has closed" do
         item = working_drink(started_at: 90.seconds.ago)
 
-        expect { described_class.new.call(item) }.to change(PrepTimeStat, :count).by(1)
+        described_class.new.call(item)
+
+        expect(PrepTimeStat.count).to eq(0), "learning inside the undo window reopens #69"
+
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
         expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).ewma_seconds)
           .to be_within(2).of(90)
+      end
+
+      it "schedules the sample for a full undo window later (§5.2)" do
+        item = working_drink
+
+        expect { described_class.new.call(item) }
+          .to have_enqueued_job(RecordPrepTimeJob)
+          .at(a_value_within(2.seconds).of(UndoLastAction::WINDOW.from_now))
       end
 
       # A data problem must never fail the transition the barista did make.
@@ -54,6 +69,9 @@ RSpec.describe "finishing and undoing drinks" do
                                 sample_count: PrepTimeStat::MINIMUM_SAMPLES)
 
         expect(described_class.new.call(item)).to be_success
+
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
         expect(item.reload.status).to eq("finished")
         expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).ewma_seconds).to eq(60)
       end
@@ -106,10 +124,6 @@ RSpec.describe "finishing and undoing drinks" do
   describe UndoLastAction do
     # Undo corrects a mistap, not a drink (§5.2). A drink genuinely made and
     # wrong is a remake, which shipped at build step 8 — see `FailDrink`.
-    #
-    # Nothing here asserts what undo does to the prep-time sample, and that gap
-    # is why issue #69 went unnoticed: `FinishDrink` records one and undo does
-    # not discard it, which §5.2 requires.
     it "returns a finished drink to in_progress inside the window" do
       item = working_drink
       FinishDrink.new.call(item)
@@ -156,6 +170,74 @@ RSpec.describe "finishing and undoing drinks" do
       described_class.new.call(second.reload)
 
       expect(order.reload).to have_attributes(status: "partially_ready", ready_at: nil)
+    end
+
+    # Issue #69. A mistap is almost always *early* — the wrong card, or a tap
+    # before the drink is done — so a phantom duration biases the EWMA down,
+    # the projection quotes short, and the board goes late (§7.3). The [0.25x,
+    # 4x] outlier guard does not catch it, because a mistap is plausible.
+    #
+    # These assert on `PrepTimeStat` rather than on the job, so they stay true
+    # if the mechanism from ADR-0019 is ever replaced by a different one.
+    describe "discarding the prep-time sample (§5.2, §7.3)" do
+      include ActiveJob::TestHelper
+
+      def ewma_for(item)
+        PrepTimeStat.find_by(menu_item_id: item.menu_item_id)&.ewma_seconds
+      end
+
+      it "learns nothing from a finish that was undone" do
+        item = working_drink(started_at: 90.seconds.ago)
+        FinishDrink.new.call(item)
+
+        described_class.new.call(item.reload)
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(ewma_for(item)).to be_nil
+      end
+
+      # The value has to be untouched, not merely present: an undo that left a
+      # phantom sample behind would still pass a `PrepTimeStat.count` check
+      # whenever the menu item already had a stat row.
+      it "leaves an existing average exactly where it was" do
+        item = working_drink(started_at: 20.seconds.ago)
+        create(:prep_time_stat, menu_item_id: item.menu_item_id, ewma_seconds: 60,
+                                sample_count: PrepTimeStat::MINIMUM_SAMPLES)
+        FinishDrink.new.call(item)
+
+        described_class.new.call(item.reload)
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(ewma_for(item)).to eq(60)
+        expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).sample_count)
+          .to eq(PrepTimeStat::MINIMUM_SAMPLES)
+      end
+
+      # Both finishes enqueue a job, and only the second one happened. Without
+      # the elapsed-window check in `RecordPrepTimeJob` the drink would be
+      # counted twice, which is the same bias in the other direction.
+      it "learns exactly one sample across an undo and a re-finish" do
+        item = working_drink(started_at: 90.seconds.ago)
+        FinishDrink.new.call(item)
+        described_class.new.call(item.reload)
+        travel_to(10.seconds.from_now) { FinishDrink.new.call(item.reload) }
+
+        travel_to(UndoLastAction::WINDOW.from_now + 30.seconds) { perform_enqueued_jobs }
+
+        expect(PrepTimeStat.find_by(menu_item_id: item.menu_item_id).sample_count).to eq(1)
+      end
+
+      # The window is the *only* thing gating the sample, so a finish nobody
+      # touched must still teach the board (§7.3) — a fix that discarded
+      # everything would pass every example above.
+      it "still learns from a finish that stands" do
+        item = working_drink(started_at: 90.seconds.ago)
+        FinishDrink.new.call(item)
+
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(ewma_for(item)).to be_within(2).of(90)
+      end
     end
   end
 
