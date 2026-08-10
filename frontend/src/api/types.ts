@@ -1,5 +1,12 @@
-// Payload shapes from the Rails API. Hand-written for now; build step 4 brings
-// rswag-generated docs (ADR-0002) and these should be checked against them.
+// Payload shapes from the Rails API, hand-written and kept in step by hand.
+//
+// ADR-0002 expected rswag to generate an OpenAPI document from the request
+// specs at build step 4, and these types to be checked against it. Step 4
+// shipped without it — rswag is not in the Gemfile and `docs/api/` does not
+// exist — so nothing verifies that a type here matches what the server sends
+// except a test failing. Adding a required field to a shared type means
+// updating every hand-built fixture of it; grep the test files rather than
+// trusting one suite run.
 
 /** A row in the board's Making column (DESIGN.md §9.2, §9.5). */
 export interface MakingRow {

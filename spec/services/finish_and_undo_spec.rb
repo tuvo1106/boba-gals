@@ -105,7 +105,11 @@ RSpec.describe "finishing and undoing drinks" do
 
   describe UndoLastAction do
     # Undo corrects a mistap, not a drink (§5.2). A drink genuinely made and
-    # wrong is a remake, which is build step 8.
+    # wrong is a remake, which shipped at build step 8 — see `FailDrink`.
+    #
+    # Nothing here asserts what undo does to the prep-time sample, and that gap
+    # is why issue #69 went unnoticed: `FinishDrink` records one and undo does
+    # not discard it, which §5.2 requires.
     it "returns a finished drink to in_progress inside the window" do
       item = working_drink
       FinishDrink.new.call(item)

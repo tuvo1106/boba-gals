@@ -5,9 +5,9 @@ module Api
         # POST /api/v1/kds/items/start
         #
         # Takes no item id: the barista taps "start next" and the server decides
-        # which drink that is. That is what lets build step 5 swap FIFO for the
-        # scheduler without the client changing at all, and it is why two
-        # simultaneous taps cannot collide on one row (§8).
+        # which drink that is. That is what let DRR replace FIFO at build step 5
+        # without the client changing at all, and it is why two simultaneous
+        # taps cannot collide on one row (§8).
         def start
           item = ClaimNextDrink.new.call(station: current_station, barista: current_barista)
 

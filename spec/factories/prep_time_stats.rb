@@ -1,7 +1,6 @@
 FactoryBot.define do
-  # The EWMA of observed prep durations (§7.3). Unused until build step 7 — the
-  # admin view reads it now so "is the EWMA converging" is answerable without a
-  # console the moment it starts filling in.
+  # The EWMA of observed prep durations (§7.3), written by `RecordPrepTime` and
+  # read by `ProjectEta` once `confident?`.
   factory :prep_time_stat do
     menu_item
     ewma_seconds { 45.0 }

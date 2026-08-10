@@ -4,11 +4,11 @@ module Api
       class PrepTimeStatsController < BaseController
         # GET /api/v1/admin/prep_time_stats
         #
-        # The learned prep times (§7.3) next to the seeded guesses they will
-        # eventually override. Empty until build step 7 fills it in — it ships
-        # now because "is the EWMA converging" is the first question anyone asks
-        # when the board's ETA looks wrong, and answering it should not require
-        # a console.
+        # The learned prep times (§7.3) next to the seeded guesses they
+        # override once `confident?`. It shipped empty, ahead of the EWMA that
+        # fills it, because "is the EWMA converging" is the first question
+        # anyone asks when the board's ETA looks wrong and answering it should
+        # not require a console.
         def index
           stats = PrepTimeStat.joins(:menu_item)
                               .where(menu_items: { store_id: current_store.id })

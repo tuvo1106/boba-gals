@@ -2,8 +2,9 @@ import { render, screen } from '@testing-library/react'
 import App from './App'
 
 // Queries by role and accessible name, per docs/testing.md — data-testid is a
-// last resort. This spec exists to prove the Vitest + RTL path works end to end;
-// the surfaces it will eventually cover arrive from build step 1.
+// last resort. Written before there was anything to test, to prove the Vitest +
+// RTL path worked end to end. The surfaces arrived; this one stays as the
+// smoke test that the app mounts at all.
 describe('App', () => {
   it('renders the shop name as a heading', () => {
     render(<App />)

@@ -1,6 +1,7 @@
 # EWMA of observed prep durations per menu item (§7.3).
 #
-# Unused until build step 7. It exists in the schema from the start because the
+# Written by `RecordPrepTime` on every finished drink and read by `ProjectEta`
+# once `confident?`. It was in the schema from the start, unused, because the
 # difference between a board customers trust and one they learn to ignore is
 # whether these numbers are real rather than seeded guesses.
 class PrepTimeStat < ApplicationRecord
