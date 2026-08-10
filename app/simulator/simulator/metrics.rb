@@ -49,6 +49,9 @@ module Simulator
         # number for what equalising *time* rather than *jobs* buys (§6.1).
         # SJF spreads these 14x apart; DRR keeps them within ~15%.
         wait_by_drink_cost: wait_by_drink_cost,
+        # §10.4: "ETA error (p50 abs) **and bias** (signed mean) — bias is the
+        # one that destroys trust."
+        eta_accuracy: eta_accuracy,
         quality_breach_rate: breach_rate(@orders),
         quality_breach_rate_multi: breach_rate(@orders.reject { |o| o.items.size == 1 }),
         # "Reneging prices the cost of slowness in lost revenue rather than
@@ -80,6 +83,43 @@ module Simulator
 
         { orders: waits.size, p90_meaningful: waits.size >= P90_MIN_SAMPLES }.merge(percentiles(waits))
       end
+    end
+
+    # What the customer was told against what happened (§10.4, §7.3).
+    #
+    # **The signed mean is deliberate, and it is the one exception to this
+    # file's own rule.** §10.4 opens with "never the mean" because a mean hides
+    # a bad tail — but here the tail is not the question. Bias asks whether the
+    # shop is *systematically* late, and a median signed error cannot see it: a
+    # shop that beats its quote by a second on half of orders and is four
+    # minutes late on the other half has a median near zero and a trust problem.
+    # Absolute error and bias answer different questions, so §10.4 asks for
+    # both, and neither alone is enough.
+    #
+    # Measured on the §7.1 projection: at 1.0x demand the bias is about +2.5s
+    # against a 60s median quote, so the estimator is close to unbiased. The
+    # figure was +142s until `ProjectEta#order_ahead` was fixed — every bit of
+    # that was order-ahead customers quoted zero seconds and then "waiting"
+    # their whole two-hour horizon.
+    def eta_accuracy
+      errors = @orders.filter_map(&:eta_error)
+      capped = @orders.count(&:quote_capped)
+
+      return { orders: 0, capped: capped, measurable: false, p50_abs: 0.0, p90_abs: 0.0, bias: 0.0 } if errors.empty?
+
+      {
+        orders: errors.size,
+        # Quotes that hit the projection horizon, excluded above because they
+        # are a floor rather than an estimate (`Projection::HORIZON_SECONDS`).
+        # Surfaced rather than dropped silently: a run where most orders are
+        # capped is a saturated shop, and the accuracy figures describe only the
+        # customers who got a real answer.
+        capped: capped,
+        measurable: errors.size >= P90_MIN_SAMPLES,
+        p50_abs: percentile(errors.map(&:abs), 50),
+        p90_abs: percentile(errors.map(&:abs), 90),
+        bias: (errors.sum / errors.size).round(1)
+      }
     end
 
     # Cheap and dear are the ends of §10.3's menu — Thai Tea at 40s against a

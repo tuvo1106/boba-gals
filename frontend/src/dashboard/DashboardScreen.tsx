@@ -3,6 +3,7 @@ import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { AdminSignIn } from './AdminSignIn'
 import { AblationBars } from './AblationBars'
+import { MetricGrid } from './MetricGrid'
 import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
 import type { Ablation, AdminUser, Policy, SimulationRun } from '../api/types'
@@ -412,6 +413,12 @@ function Dashboard({
               }
             />
           </dl>
+
+          {/* §10.4's supporting table in full. The row of figures above is the
+              at-a-glance read; this is the one that shows all three size
+              classes against all three percentiles, and whether the quote the
+              customer got was any good. */}
+          <MetricGrid metrics={run.metrics} />
         </>
       )}
 

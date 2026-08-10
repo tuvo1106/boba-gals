@@ -23,9 +23,16 @@ module Simulator
 
     OPENS_AT = 10 # 10:00, matching the profile's first bucket
 
+    # §7.1's multiplier on the projected wait, mirroring
+    # `Store::SCHEDULER_DEFAULTS`. Kept as a literal rather than read from the
+    # model so a simulated shop needs no database; `scenario_spec` asserts the
+    # two are equal, which is what stops them drifting.
+    DEFAULT_ETA_SAFETY_FACTOR = 1.15
+
     attr_reader :seed, :stations, :hours, :arrival_profile, :size_mix,
                 :demand_multiplier, :large_order_rate, :scheduler_config,
-                :menu, :prep_sigma, :remake_rate, :web_share, :order_ahead_share
+                :menu, :prep_sigma, :remake_rate, :web_share, :order_ahead_share,
+                :eta_safety_factor
 
     # @param seed [Integer] the whole run is a function of this
     # @param menu [Array<Hash>] `[{ name:, prep_seconds:, weight: }, ...]`
@@ -35,7 +42,8 @@ module Simulator
                    arrival_profile: DEFAULT_ARRIVAL_PROFILE, size_mix: DEFAULT_SIZE_MIX,
                    demand_multiplier: 1.0, large_order_rate: nil,
                    scheduler_config: {}, menu: nil, prep_sigma: 0.28, remake_rate: 0.02,
-                   web_share: 0.35, order_ahead_share: 0.08)
+                   web_share: 0.35, order_ahead_share: 0.08,
+                   eta_safety_factor: DEFAULT_ETA_SAFETY_FACTOR)
       @seed = seed
       @stations = stations
       @hours = hours
@@ -51,6 +59,7 @@ module Simulator
       # can renege, and whether they can order ahead — all web-only (§9.3).
       @web_share = web_share
       @order_ahead_share = order_ahead_share
+      @eta_safety_factor = eta_safety_factor
     end
 
     # A spread wide enough that fairness is a real question. "A menu where

@@ -15,6 +15,7 @@ require "#{root}/app/simulator/simulator/rng"
 require "#{root}/app/simulator/simulator/scenario"
 require "#{root}/app/simulator/simulator/event_queue"
 require "#{root}/app/simulator/simulator/metrics"
+require "#{root}/app/simulator/simulator/projection"
 require "#{root}/app/simulator/simulator"
 
 # Scenario#config and Metrics#by_size_class use ActiveSupport conveniences that
