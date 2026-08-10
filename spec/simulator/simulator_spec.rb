@@ -263,8 +263,12 @@ RSpec.describe Simulator do
     # A single-drink order's sitting time *is* the customer's walk-up delay, so
     # it can never be improved by scheduling. Reporting it mixed into one figure
     # puts a floor near 10% under the number and hides the cohesion signal.
+    # Four hours rather than the full eleven: one station at 3.0x is saturated
+    # within the first, and the separation is *wider* on the short day (0.399 vs
+    # 0.288, against 0.353 vs 0.261 over eleven hours). The full day cost 25
+    # seconds — an eighth of the suite — to say the same thing less clearly.
     it "reports multi-drink orders separately from the pickup-delay floor" do
-      metrics = run(seed: 7, stations: 1, demand_multiplier: 3.0).to_h
+      metrics = run(seed: 7, stations: 1, demand_multiplier: 3.0, hours: 4).to_h
 
       expect(metrics[:quality_breach_rate_multi]).to be > metrics[:quality_breach_rate]
     end
@@ -545,6 +549,114 @@ RSpec.describe Simulator do
 
     it "is empty rather than broken for a shop with no arrivals" do
       expect(run(seed: 1, arrival_profile: [ 0 ]).to_h[:orders]).to eq(0)
+    end
+  end
+
+  # §10.4: "ETA error (p50 abs) **and bias** (signed mean) — bias is the one
+  # that destroys trust." §7.3 puts it as the difference between a board
+  # customers trust and one they learn to ignore.
+  describe "ETA accuracy (§10.4, §7.3)" do
+    def accuracy(**overrides) = run(seed: 7, stations: 3, **overrides).to_h[:eta_accuracy]
+
+    it "reports absolute error and signed bias, because they answer different questions" do
+      expect(accuracy).to include(:p50_abs, :p90_abs, :bias, :orders, :capped, :measurable)
+    end
+
+    # The one place this suite wants a mean. A shop that beats its quote on half
+    # of orders and is four minutes late on the other half has a median signed
+    # error near zero and a trust problem — only the mean sees it.
+    it "signs the bias, so a shop that is always late cannot hide behind a median" do
+      late = [ order_quoted(60, took: 300), order_quoted(60, took: 300) ]
+
+      expect(metrics_for(late)[:bias]).to be > 200
+    end
+
+    it "reads negative when the shop beats its quote" do
+      early = [ order_quoted(300, took: 60), order_quoted(300, took: 60) ]
+
+      expect(metrics_for(early)[:bias]).to be_negative
+    end
+
+    # An estimator this far off would be reported as unbiased by absolute error
+    # alone, which is exactly the failure §10.4 pairs the two figures to catch.
+    it "keeps absolute error positive when the bias cancels to zero" do
+      mixed = [ order_quoted(60, took: 300), order_quoted(300, took: 60) ]
+      result = metrics_for(mixed)
+
+      expect(result[:bias]).to be_within(1).of(0)
+      expect(result[:p50_abs]).to be > 200
+    end
+
+    # §7.1's projection against §10.3's shop. Not asserting a tight bound — the
+    # point is that the estimator is not systematically wrong by more than a
+    # drink's worth of time in a shop that is keeping up.
+    it "is close to unbiased in a shop that is keeping up" do
+      result = accuracy(demand_multiplier: 1.0)
+
+      expect(result[:measurable]).to be(true)
+      expect(result[:bias].abs).to be < 60
+    end
+
+    # This figure was +142s until `ProjectEta#order_ahead`'s defect was fixed in
+    # both projections: an order-ahead customer was quoted zero and then
+    # "waited" their entire two-hour horizon. Nothing else moved it.
+    it "does not let order-ahead customers manufacture a bias" do
+      with_ahead = accuracy(demand_multiplier: 1.0, order_ahead_share: 0.5)
+
+      expect(with_ahead[:bias].abs).to be < 120
+    end
+
+    # A capped quote is a floor, so its error is an artefact of the cap. Counted
+    # rather than dropped silently — a run where most orders are capped is a
+    # saturated shop, and the accuracy figures then describe only the minority
+    # who got a real answer.
+    # An earlier version of this asserted only that `capped` was positive in a
+    # saturated run, which stayed true whether or not the exclusion existed —
+    # removing the exclusion left every example green. It measured that the
+    # counter counted, not that the figures ignored what it counted.
+    it "leaves a capped quote out of the error figures entirely" do
+      usable = order_quoted(60, took: 90)
+      capped = order_quoted(60, took: 3000)
+      capped.quote_capped = true
+
+      result = metrics_for([ usable, capped ])
+
+      expect(result[:orders]).to eq(1)
+      expect(result[:capped]).to eq(1)
+      # Counted, the capped order's 2940s miss would set p50_abs on its own.
+      expect(result[:p50_abs]).to eq(30.0)
+    end
+
+    # Two stations at 3.0x over four hours rather than three at 3.5x over
+    # eleven: both back the shop up far enough to push work past the horizon,
+    # and this one does it in 1.7s instead of 16.7s. The cap needs a *deep
+    # queue*, which is a function of how far over capacity the shop is, not of
+    # how long it stays there.
+    it "reaches the horizon at all in a shop far past saturation" do
+      swamped = accuracy(stations: 2, demand_multiplier: 3.0, hours: 4)
+
+      expect(swamped[:capped]).to be_positive
+      expect(swamped[:orders]).to be_positive
+    end
+
+    it "refuses to call a handful of orders a percentile" do
+      expect(metrics_for([ order_quoted(60, took: 90) ])[:measurable]).to be(false)
+    end
+
+    it "is zero rather than broken for a shop with no arrivals" do
+      expect(run(seed: 1, arrival_profile: [ 0 ]).to_h[:eta_accuracy][:orders]).to eq(0)
+    end
+
+    def order_quoted(quoted, took:)
+      Simulator::Order.new(
+        id: rand(1_000_000), arrived_at: 0.0, ready_at: took.to_f, quoted_seconds: quoted.to_f,
+        items: [ Simulator::Drink.new(id: "d", prep_seconds: 60, actual_prep_seconds: 60,
+                                      service_seconds: 60.0, finished_at: took.to_f, remake: false) ]
+      )
+    end
+
+    def metrics_for(orders)
+      described_class::Metrics.new(orders: orders, seconds: 3600, stations: 1).to_h[:eta_accuracy]
     end
   end
 end

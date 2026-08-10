@@ -13,6 +13,7 @@ function metrics(
       cheap: { orders: 200, p90: cheap }, dear: { orders: 40, p90: dear },
       comparable: true, ratio: dear / cheap,
     },
+    eta_accuracy: { orders: 400, capped: 0, measurable: true, p50_abs: 14.5, p90_abs: 44.2, bias: 2.4 },
     quality_breach_rate: 0.1, quality_breach_rate_multi: 0.2,
     wait_seconds: { p50: 60, p90: small, p99: 300 },
     by_size_class: {

@@ -31,6 +31,16 @@ Categories, in this order:
   ordered.
 
 ### Added
+- **The dashboard shows how long every size of order waited, not just two of them** (§10.4).
+  The simulator has always measured typical / 9-in-10 / 99-in-100 waits for small, medium
+  and catering orders — nine figures — and the screen showed two. Mid-size orders were
+  invisible, so a scheduler starving them could not be seen. A class with too few orders to
+  support a percentile is marked rather than presented as one.
+- **The dashboard scores the wait the customer was quoted** (§10.4, §7.3). Three figures:
+  the typical miss, the worst tenth, and whether the shop runs systematically **late or
+  early** — the last being the one §7.3 says decides whether people trust the board. Quotes
+  from a shop so backed up that the estimate stops meaning anything are excluded and
+  counted, rather than quietly averaged in.
 - **The dashboard can run the same day six ways and chart the difference** (§10.5, §6.3).
   One click compares first-come-first-served against round robin, the deficit, aging and
   cohesion — every arm serving the identical stream of customers, so a gap between two bars
@@ -97,6 +107,12 @@ Categories, in this order:
   minutes (ADR-0017).
 
 ### Changed
+- **Simulated customers now see the same wait estimate the real shop would show them**
+  (§7.1, §10.3). They were deciding whether to stay or leave based on an older, cruder
+  calculation that the shop itself stopped using — one that quoted by queue position and so
+  badly overstated the wait whenever fair queuing was about to serve a small order early.
+  The result is that simulated runs show fewer people walking out at high demand, which is
+  the more accurate figure rather than a rosier one.
 - The kitchen interleaves orders more finely: a barista is handed roughly one drink per turn
   rather than one or two. Measured across 24 simulated days, this does not change how long
   anyone waits — it changes who absorbs the delay. Before, a few customers were badly

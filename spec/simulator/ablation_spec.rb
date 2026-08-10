@@ -48,8 +48,13 @@ RSpec.describe Simulator::Ablation do
   # At 2.2× the arms legitimately serve different numbers — see the example
   # below — so that version was asserting the wrong invariant and would have
   # broken the moment the demand in this file was raised.
+  # The top level is 2.5x rather than 3.0x purely for cost: every arrival is now
+  # quoted with §7.1's forward projection, which is O(queue) per arrival, and a
+  # 3.0x day costs 5.4s per arm against 1.4s at 2.5x. The property under test —
+  # identical arrival streams — is load-independent, and 2.5x is already past
+  # saturation at 89% utilisation with 152 customers walking out.
   it "gives every arm the same customers, so a difference is the mechanism" do
-    [ 1.6, 2.2, 3.0 ].each do |demand|
+    [ 1.6, 2.2, 2.5 ].each do |demand|
       arrived = described_class.call(seed: 7, stations: 3, demand_multiplier: demand)
                                .map { |a| a[:arrived] }
 
@@ -148,11 +153,23 @@ RSpec.describe Simulator::Ablation do
       expect(three).to be > one * 2
     end
 
-    # A run is unbounded compute behind an admin session; four arms multiply it.
+    # A run is unbounded compute behind an admin session; six arms multiply it.
+    #
+    # Stubbed to 2 rather than run at 25. The claim is "a request above the
+    # ceiling is served at the ceiling", which is independent of what the
+    # ceiling happens to be — and asserting it by simulating 300 days took 48
+    # seconds, a quarter of the whole suite, to test one `clamp`.
     it "refuses to run more days than the ceiling" do
-      expect(described_class::MAX_SEEDS).to eq(25)
+      stub_const("#{described_class}::MAX_SEEDS", 2)
+
       expect(ablate(seeds: 10_000).first[:metrics][:orders])
-        .to eq(ablate(seeds: described_class::MAX_SEEDS).first[:metrics][:orders])
+        .to eq(ablate(seeds: 2).first[:metrics][:orders])
+    end
+
+    # The ceiling's actual value, asserted separately and for free. It is a
+    # capacity decision rather than a property of the clamp.
+    it "keeps the ceiling at 25 days" do
+      expect(described_class::MAX_SEEDS).to eq(25)
     end
 
     it "treats a nonsense day count as one day" do

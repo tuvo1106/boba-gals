@@ -81,10 +81,16 @@ RSpec.describe "POST /api/v1/admin/ablations (§10.5, §10.6)" do
 
     # The number actually used, not the number asked for — a response claiming
     # 10,000 days when it ran 25 is a lie the chart would repeat.
+    # Stubbed rather than run at the real ceiling: what matters is that the
+    # response reports the number used, not that 25 is the number. Running it
+    # for real meant simulating 150 days to check one integer.
     it "reports the clamped day count rather than the requested one" do
+      stub_const("Simulator::Ablation::MAX_SEEDS", 2)
+
       ablate(seed: 7, seeds: 10_000)
 
-      expect(body["seeds"]).to eq(Simulator::Ablation::MAX_SEEDS)
+      expect(body["seeds"]).to eq(2)
+      expect(body["arms"].first["metrics"]["orders"]).to be_positive
     end
 
     it "defaults to one day, as §10.5 specifies" do

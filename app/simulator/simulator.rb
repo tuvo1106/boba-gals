@@ -22,8 +22,25 @@ module Simulator
 
   Order = Struct.new(:id, :arrived_at, :items, :queue_depth_on_arrival, :ready_at,
                      :first_ready_at, :picked_up_at, :promised_at, :reneged, :web,
-                     keyword_init: true) do
+                     :quoted_seconds, :quote_capped, keyword_init: true) do
     def wait_seconds = ready_at && (ready_at - arrived_at)
+
+    # What the customer was told at the counter, against what happened (§10.4).
+    #
+    # Signed, and deliberately so: negative means the shop beat its quote,
+    # positive means the customer waited longer than they were promised. §7.3 is
+    # blunt that bias is what destroys trust in the board, and an absolute error
+    # cannot see a shop that is late every single time.
+    #
+    # @return [Float, nil] nil until the order is ready, for anyone who walked
+    #   out before ordering, and for a quote that hit the projection horizon —
+    #   that one is a floor, so its "error" would be an artefact of the cap
+    #   rather than anything the estimator did (`Projection::HORIZON_SECONDS`)
+    def eta_error
+      return nil if quote_capped
+
+      wait_seconds && quoted_seconds && (wait_seconds - quoted_seconds)
+    end
 
     # What the *customer* ordered. `items` grows when a drink is remade (§5.2),
     # so counting it would move a remade 2-drink order into §10.4's "3-6" class
@@ -174,13 +191,50 @@ module Simulator
       # abstract seconds (§10.4), and it is why a saturated shop's wait
       # percentiles stop rising — the customers who would have waited longest
       # are the ones who never join.
-      if order.web && @rng.stream(:renege, order.id).uniform < renege_probability
+      # Quoted with the order's own drinks already in the queue, exactly as
+      # `CreateOrder` quotes in production (§7.1) — a customer's wait includes
+      # the work they just created.
+      order.quoted_seconds = quote_for(order)
+
+      # They decide on the number they were shown. Quoting one figure and
+      # balking against another would model a shop nobody has ever run.
+      if order.web && @rng.stream(:renege, order.id).uniform < renege_probability(perceived_wait(order))
         order.reneged = true
         @reneged += 1
         return
       end
 
       @pending << order
+    end
+
+    # How long this customer thinks they are being asked to wait.
+    #
+    # For a walk-up that is simply the quote. For someone ordering ahead it is
+    # how far past their chosen slot the shop is quoting — a customer who picked
+    # an 11am pickup is not deterred by being told 11am, and treating their
+    # two-hour horizon as a two-hour queue makes every order-ahead customer balk
+    # on arrival (§9.3, §10.3).
+    #
+    # @return [Float] seconds
+    def perceived_wait(order)
+      return order.quoted_seconds if order.promised_at.nil?
+
+      order.quoted_seconds - (order.promised_at - @clock)
+    end
+
+    # §7.1's forward projection, run against the pending queue plus this order.
+    #
+    # @return [Float] seconds this customer is told to expect
+    def quote_for(order)
+      projection = Projection.new(
+        orders: @pending + [ order ], stations: @stations, now: @clock,
+        config: @scenario.config, safety_factor: @scenario.eta_safety_factor,
+        target: order.id
+      )
+      quote = projection.call.fetch(order.id, 0.0)
+      order.quote_capped = projection.capped?
+
+      quote
     end
 
     def build_order(size)
@@ -228,12 +282,16 @@ module Simulator
       )
     end
 
-    # Estimated wait, for the renege decision. The naive estimate of §12 step 3:
-    # outstanding work over stations. A customer decides on what they are told,
-    # not on what turns out to be true.
-    def renege_probability
-      eta = queued_seconds / [ @scenario.stations, 1 ].max
-
+    # How likely a customer is to walk, given the wait they were quoted (§10.3).
+    #
+    # Nobody balks under eight minutes; the curve rises from there and caps at
+    # 80%, because some share of customers will wait however long it takes. The
+    # thresholds describe the *customer*, not the estimator, so they are
+    # unchanged from when this read the naive `queued_seconds / stations` — what
+    # changed is that `eta` is now the number actually shown (§7.1).
+    #
+    # @param eta [Float] the quoted wait, in seconds
+    def renege_probability(eta)
       ((eta - 480) / 1200.0).clamp(0.0, 0.8)
     end
 
