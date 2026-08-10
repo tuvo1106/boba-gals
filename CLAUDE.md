@@ -170,6 +170,36 @@ So:
 - Prefer a bounded run over an open-ended one: `timeout N docker compose exec …` puts a
   ceiling on the damage a forgotten command can do.
 
+### Restoring a file you broke on purpose
+
+Proving a guard is armed means breaking the invariant, watching the specific spec fail, and
+putting the file back. **Copy it to a scratch path first and restore from that copy.**
+
+Do not restore with `git checkout <path>`. Most of this work happens with a tree full of
+uncommitted changes, so that reverts to the last commit and takes everything unstaged with
+it — it once wiped sixty lines of unstaged work in `app/simulator/simulator.rb` while undoing
+a one-line `perl -pi` edit. Restore by `cp`, then grep for a distinctive line from your change
+to confirm the restore rather than assuming it. Breaking several files means backing up each
+one, not just the first.
+
+### Check the frontend the way CI does
+
+```bash
+npm --prefix frontend run lint       # oxlint
+npm --prefix frontend run typecheck  # tsc -b --noEmit
+npm --prefix frontend run test:run   # vitest, once
+```
+
+**Never verify with a bare `npx tsc --noEmit`.** The repo's script is `tsc -b` — build mode,
+which walks the project references and typechecks the *test* project. Plain `tsc --noEmit`
+skips it and returns 0 while a `*.test.tsx` fixture is broken. CI runs `tsc -b` twice, in the
+frontend job and again inside the image build in the cluster job, so one such miss turns two
+jobs red. A `pre-push` hook now runs `typecheck`, but the hook is a backstop, not the habit.
+
+Adding a required field to a shared type in `frontend/src/api/types.ts` means every
+hand-built fixture of that type needs it. Grep the test files for the type name rather than
+trusting one suite run.
+
 Run:
 
 ```bash
