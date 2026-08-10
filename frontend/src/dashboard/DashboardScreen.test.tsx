@@ -67,6 +67,7 @@ function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides 
           station_utilisation: 0.364,
           cohesion_spread_p90: 40,
           max_queue_depth: 12,
+          eta_accuracy: { orders: 385, capped: 0, measurable: true, p50_abs: 14.5, p90_abs: 44.2, bias: 2.4 },
           quality_breach_rate: 0.132,
           quality_breach_rate_multi: 0.263,
           reneged: 0,

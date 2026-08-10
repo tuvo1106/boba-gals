@@ -60,6 +60,25 @@ export interface SimulationMetrics {
     comparable: boolean
     ratio: number
   }
+  /**
+   * What the customer was told, against what happened (§10.4, §7.3).
+   *
+   * Absolute error and bias answer different questions and §10.4 asks for
+   * both: a shop that beats its quote on half of orders and is four minutes
+   * late on the rest has a fine median error and a trust problem. `bias` is
+   * signed — positive means late.
+   */
+  eta_accuracy: {
+    /** Orders with a usable error. Excludes capped quotes. */
+    orders: number
+    /** Quotes that hit the projection horizon, so they are a floor not an estimate. */
+    capped: number
+    /** False when too few orders to treat these as percentiles. */
+    measurable: boolean
+    p50_abs: number
+    p90_abs: number
+    bias: number
+  }
   quality_breach_rate: number
   /** The same, over multi-drink orders only — where cohesion is judged (§6.4, §9.6). */
   quality_breach_rate_multi: number

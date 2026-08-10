@@ -48,8 +48,13 @@ RSpec.describe Simulator::Ablation do
   # At 2.2× the arms legitimately serve different numbers — see the example
   # below — so that version was asserting the wrong invariant and would have
   # broken the moment the demand in this file was raised.
+  # The top level is 2.5x rather than 3.0x purely for cost: every arrival is now
+  # quoted with §7.1's forward projection, which is O(queue) per arrival, and a
+  # 3.0x day costs 5.4s per arm against 1.4s at 2.5x. The property under test —
+  # identical arrival streams — is load-independent, and 2.5x is already past
+  # saturation at 89% utilisation with 152 customers walking out.
   it "gives every arm the same customers, so a difference is the mechanism" do
-    [ 1.6, 2.2, 3.0 ].each do |demand|
+    [ 1.6, 2.2, 2.5 ].each do |demand|
       arrived = described_class.call(seed: 7, stations: 3, demand_multiplier: demand)
                                .map { |a| a[:arrived] }
 
