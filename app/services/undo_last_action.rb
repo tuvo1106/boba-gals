@@ -38,9 +38,15 @@ class UndoLastAction
     # which is exactly why status is always derived rather than set (§5.2).
     order = RollUpOrderStatus.new.call(item.order)
 
-    # No prep-time sample is discarded here yet because none is recorded until
-    # build step 7. When the EWMA lands, this is where the phantom duration must
-    # be dropped, or the model learns from a mistap (§5.2, §7.3).
+    # **The prep-time sample is not discarded here, and §5.2 says it must be
+    # (issue #69).** `FinishDrink` records one, so undoing a mistap leaves the
+    # phantom duration in the EWMA — and mistaps skew early, so they bias the
+    # learned time down and the board quotes short (§7.3).
+    #
+    # This comment used to say the sample did not exist yet because the EWMA
+    # arrived at build step 7. It did arrive, and nothing came back here. Left
+    # as a known gap rather than patched, because an EWMA cannot be cleanly
+    # inverted and the fix is a decision about *when* learning happens.
     BroadcastStoreViews.call(order.store)
 
     Result.new(success?: true, item: item)

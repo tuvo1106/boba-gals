@@ -38,8 +38,9 @@ unless ENV["COVERAGE"] == "0"
 
   # SimpleCov has no per-directory minimum, and `app/scheduler/**` is held to a
   # stricter bar than the rest of the app: it is pure, has no I/O, and is the
-  # code the whole design rests on (DESIGN.md §6.2, §10.1). Nothing lives there
-  # until build step 5, so the gate is a no-op until it does.
+  # code the whole design rests on (DESIGN.md §6.2, §10.1). The `unless empty?`
+  # below is what let this ship before the scheduler existed; it stays because a
+  # partial run that touches no scheduler file should not fail on its absence.
   SimpleCov.at_exit do
     result = SimpleCov.result
     result.format!
