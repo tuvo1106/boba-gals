@@ -20,16 +20,6 @@ Categories, in this order:
 
 ## [Unreleased]
 
-### Fixed
-- **An order placed for a later pickup time no longer says "ready now"** (§7.1, §7.3). A
-  customer ordering at 9am for an 11am collection was quoted **zero seconds**, on their own
-  screen and on the board, because the kitchen correctly refuses to start the drink yet and
-  nothing filled in the answer. They are now quoted the time they actually chose. An
-  identical order placed for right away was, and still is, quoted normally.
-- A pre-ordered pickup time is no longer padded by the safety margin meant for estimates —
-  someone who picked 11:00 was being told 11:18, and the error grew the further ahead they
-  ordered.
-
 ### Added
 - **The dashboard shows how long every size of order waited, not just two of them** (§10.4).
   The simulator has always measured typical / 9-in-10 / 99-in-100 waits for small, medium
@@ -53,15 +43,6 @@ Categories, in this order:
 - The comparison pools up to 25 days. One day cannot tell a real improvement from noise, so
   the chart says so until the day count is raised.
 
-### Security
-- **The cluster is served over TLS, and only over TLS** (§14.5). The admin sign-in cookie is
-  marked secure, which means a browser refuses to store it from a plain-http address — so
-  signing in to the admin screens worked when scripted and silently did nothing in a real
-  browser. The shop now answers at `https://boba.localtest.me:8443`; plain http is not
-  served at all rather than served and quietly broken. Certificates are issued and renewed
-  by the cluster itself.
-
-### Added
 - **The simulation dashboard has a sign-in** (§13.4). It could only be reached by someone
   willing to authenticate with a command-line tool first — the screen said "sign in as admin
   first" and offered nothing to sign in with. It now asks for an email and password, shows
@@ -88,62 +69,6 @@ Categories, in this order:
   spill is not how long a drink takes. The customer sees the replacement in place of the
   drink that failed, not both.
 
-### Fixed
-- **A phone number that could never receive a text is refused at checkout** (§9.7). The
-  field took anything at all, so a mistyped number produced an order that was made normally
-  and a "your order is ready" text that went nowhere, with nothing to say so. Numbers are
-  accepted the way people write them — `(555) 555-0123` is fine — and the customer is told
-  while they can still fix it. Leaving it blank is still fine; the phone is optional.
-- The cart bar's **Review** button now sits at the right of the bar instead of wherever the
-  drink list happened to end.
-- **A remade drink no longer makes an order look bigger than it is.** After a barista
-  spilled one drink of a two-drink order, the kitchen display counted the spilled drink and
-  showed the remaining cards as "2 of 3" and "3 of 3" — while the customer's own screen still
-  said two drinks. Both now count only the drinks the order is still for (§9.4).
-- Live order updates no longer get slower as the shop sells more. Every order the shop had
-  ever taken was still counted as in progress, so the once-a-second push to customers'
-  screens walked the whole history — 371ms at 2000 orders and growing, against 15ms now.
-  It now pushes only to orders that are still being made or went ready in the last five
-  minutes (ADR-0017).
-
-### Changed
-- **Simulated customers now see the same wait estimate the real shop would show them**
-  (§7.1, §10.3). They were deciding whether to stay or leave based on an older, cruder
-  calculation that the shop itself stopped using — one that quoted by queue position and so
-  badly overstated the wait whenever fair queuing was about to serve a small order early.
-  The result is that simulated runs show fewer people walking out at high demand, which is
-  the more accurate figure rather than a rosier one.
-- The kitchen interleaves orders more finely: a barista is handed roughly one drink per turn
-  rather than one or two. Measured across 24 simulated days, this does not change how long
-  anyone waits — it changes who absorbs the delay. Before, a few customers were badly
-  delayed when a busy patch hit; now more customers are slightly delayed and almost nobody
-  is badly delayed. The worst case at peak falls from over four minutes to under a minute
-  and a half (§6.1, §10.5).
-- The order status screen leads with how many drinks are made rather than with a countdown,
-  and quotes the wait as a range. The estimate really does move — the kitchen shares capacity
-  between orders, so drinks ordered after yours can push yours out — and a single number that
-  jumps upward reads as a broken promise. A count of finished drinks only ever goes forward,
-  which gives a customer one thing to trust while the estimate does what it honestly must
-  (§7.3, §9.3).
-
-### Fixed
-- Pickup codes on the board line up in a column again instead of drifting with the length of
-  the name beside them — a long enough first name pushed the code off the card entirely. The
-  code is what tells two Sarahs apart (§9.5, locked), so it has to be scannable.
-- The drink line on the board is legible for an order of more than one drink. It showed each
-  drink's full build string, so a single drink with toppings filled the line and everything
-  after it was cut off. It now names the drinks, counts repeats, and summarises a long order:
-  `Classic Milk Tea ×6`, or `Thai Tea ×2 · Taro Milk Tea ×2 +11 more` (§9.5).
-- Refreshing the kitchen display no longer signs the barista out. The shift now survives a
-  reload — a browser restart, an OS update, a tablet that reloads a backgrounded tab — and
-  still ends when the tab is closed or "sign out" is tapped, so a shared tablet never hands
-  the next barista the last one's session (§13.3).
-- The kitchen display's "oldest" clock now counts up second by second instead of sitting
-  still between updates. In a quiet shop nothing was broadcast for up to 30 seconds at a
-  time, so the one number that says "a drink is being forgotten" was the one number that
-  stopped moving (§9.4).
-
-### Added
 - **You can order a drink.** The menu, options, cart and checkout now exist as screens rather
   than as endpoints — `/order` on a phone, `/kiosk` in the shop, one build serving both
   (§9.3). Options render the control the menu asks for, so a new option group appears
@@ -250,7 +175,123 @@ Categories, in this order:
   to be accepting connections first, so a slow-starting database no longer fails a deploy
   (§14.2, ADR-0007).
 
+### Changed
+- **Simulated customers now see the same wait estimate the real shop would show them**
+  (§7.1, §10.3). They were deciding whether to stay or leave based on an older, cruder
+  calculation that the shop itself stopped using — one that quoted by queue position and so
+  badly overstated the wait whenever fair queuing was about to serve a small order early.
+  The result is that simulated runs show fewer people walking out at high demand, which is
+  the more accurate figure rather than a rosier one.
+- The kitchen interleaves orders more finely: a barista is handed roughly one drink per turn
+  rather than one or two. Measured across 24 simulated days, this does not change how long
+  anyone waits — it changes who absorbs the delay. Before, a few customers were badly
+  delayed when a busy patch hit; now more customers are slightly delayed and almost nobody
+  is badly delayed. The worst case at peak falls from over four minutes to under a minute
+  and a half (§6.1, §10.5).
+- The order status screen leads with how many drinks are made rather than with a countdown,
+  and quotes the wait as a range. The estimate really does move — the kitchen shares capacity
+  between orders, so drinks ordered after yours can push yours out — and a single number that
+  jumps upward reads as a broken promise. A count of finished drinks only ever goes forward,
+  which gives a customer one thing to trust while the estimate does what it honestly must
+  (§7.3, §9.3).
+
+- The simulation dashboard is quieter. Every figure carried three lines of explanation, above
+  a stack of banners that pushed the lane ribbon — the thing the page exists for — most of the
+  way down the screen. The explanations are now behind a `?` toggle (or a hover), and the
+  duplicated warnings are one line that only appears when it applies (§10.6).
+- Wait times keep updating while a barista is mid-drink. Previously the board's numbers only
+  moved when something happened — a drink starting or finishing — so a customer watching a
+  95-second drink being made saw a frozen countdown, and a drink running over its estimate
+  never corrected until it landed. A tick every 30 seconds now refreshes them (§7.2).
+- Placing an order is no longer slower when the shop is busier. Working out wait times means
+  simulating the queue forward, which costs 3ms when quiet but 175ms with 436 drinks waiting —
+  and it was running inside the request that placed the order. It now runs in the background,
+  at most once every 2 seconds per store, with the board reading the latest result (§7.2).
+- Opening or closing a bar updates every wait time on the board immediately, rather than at
+  the next drink transition (§7.2).
+- Wait times on the board and at the counter are now projected by running the real scheduler
+  forward over the current queue, rather than dividing outstanding work by the number of
+  stations (§7.1). The old estimate quoted by queue position, so it told a customer with one
+  drink behind a 15-drink catering order that they were fifteenth in line — when fair queuing
+  will actually interleave them almost immediately. It also stays right when the scheduler is
+  retuned, which a formula cannot.
+- The cohesion boost is off by default. It was meant to stop an order's first drink melting
+  while the rest were made; measured over 20 seeds it makes that wait steadily *worse* as the
+  boost rises, in every order size, at every load — including the four-drink case it was
+  designed around. Shops running it will see catering orders finish sooner (ADR-0014).
+
+- Placing an order now reaches the kitchen and the board immediately. Previously the KDS
+  only learned about it when someone refreshed (§9.2).
+- The wait quoted at ordering time now includes the safety margin the board uses, so the
+  number a customer is told and the number they then watch are computed the same way
+  (§7.1). ETA error and bias are measured against that quote (§10.4), and comparing two
+  differently-computed numbers would have made the metric meaningless.
+- ActionCable now uses the Redis adapter in development as well as production. The async
+  adapter is single-process, so it would work locally and silently fail across the two
+  `web` pods the design runs from the first deploy (§14.4).
+- `bin/docker-entrypoint` no longer runs `db:prepare` on boot. Migrations belong to the
+  `migrate` Job applied before each rollout (§14.2).
+- DESIGN.md's stack line now reads React 19 rather than React 18. Nothing in the design
+  depends on the version, and shadcn/Radix — which ADR-0003 commits to — target 19.
+
+- Project workflow scaffolding: `CLAUDE.md`, PR template, ADR log, testing conventions,
+  and this changelog.
+- CI pipeline running rubocop, RSpec with coverage gates, and the frontend lint/type/test
+  suite. Jobs are guarded on the files they need, so CI is green until the app lands (§12).
+- Git hooks via lefthook: conventional-commit validation, lint autocorrect on staged files,
+  and a guard against committing secret files (§14.6).
+- Quality-gate decisions recorded in [ADR-0002](docs/adr/0002-quality-gates.md): SimpleCov
+  thresholds, mutation testing scoped to the scheduler, rswag-generated API docs.
+- Frontend styling decision recorded in
+  [ADR-0003](docs/adr/0003-tailwind-with-shadcn-as-needed.md): Tailwind project-wide from
+  build step 1, with shadcn/ui components pulled in individually where they earn their
+  place (§9.3, §10.6).
+
+[Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
+
 ### Fixed
+- **An order placed for a later pickup time no longer says "ready now"** (§7.1, §7.3). A
+  customer ordering at 9am for an 11am collection was quoted **zero seconds**, on their own
+  screen and on the board, because the kitchen correctly refuses to start the drink yet and
+  nothing filled in the answer. They are now quoted the time they actually chose. An
+  identical order placed for right away was, and still is, quoted normally.
+- A pre-ordered pickup time is no longer padded by the safety margin meant for estimates —
+  someone who picked 11:00 was being told 11:18, and the error grew the further ahead they
+  ordered.
+
+- **A phone number that could never receive a text is refused at checkout** (§9.7). The
+  field took anything at all, so a mistyped number produced an order that was made normally
+  and a "your order is ready" text that went nowhere, with nothing to say so. Numbers are
+  accepted the way people write them — `(555) 555-0123` is fine — and the customer is told
+  while they can still fix it. Leaving it blank is still fine; the phone is optional.
+- The cart bar's **Review** button now sits at the right of the bar instead of wherever the
+  drink list happened to end.
+- **A remade drink no longer makes an order look bigger than it is.** After a barista
+  spilled one drink of a two-drink order, the kitchen display counted the spilled drink and
+  showed the remaining cards as "2 of 3" and "3 of 3" — while the customer's own screen still
+  said two drinks. Both now count only the drinks the order is still for (§9.4).
+- Live order updates no longer get slower as the shop sells more. Every order the shop had
+  ever taken was still counted as in progress, so the once-a-second push to customers'
+  screens walked the whole history — 371ms at 2000 orders and growing, against 15ms now.
+  It now pushes only to orders that are still being made or went ready in the last five
+  minutes (ADR-0017).
+
+- Pickup codes on the board line up in a column again instead of drifting with the length of
+  the name beside them — a long enough first name pushed the code off the card entirely. The
+  code is what tells two Sarahs apart (§9.5, locked), so it has to be scannable.
+- The drink line on the board is legible for an order of more than one drink. It showed each
+  drink's full build string, so a single drink with toppings filled the line and everything
+  after it was cut off. It now names the drinks, counts repeats, and summarises a long order:
+  `Classic Milk Tea ×6`, or `Thai Tea ×2 · Taro Milk Tea ×2 +11 more` (§9.5).
+- Refreshing the kitchen display no longer signs the barista out. The shift now survives a
+  reload — a browser restart, an OS update, a tablet that reloads a backgrounded tab — and
+  still ends when the tab is closed or "sign out" is tapped, so a shared tablet never hands
+  the next barista the last one's session (§13.3).
+- The kitchen display's "oldest" clock now counts up second by second instead of sitting
+  still between updates. In a quiet shop nothing was broadcast for up to 30 seconds at a
+  time, so the one number that says "a drink is being forgotten" was the one number that
+  stopped moving (§9.4).
+
 - The customer board keeps updating when the background worker is down. Wait times are
   recomputed at most every 2 seconds and the board refreshes up to once a second (§7.2, §9.2)
   — but the board had been gated on the slower of the two, so a drink finishing shortly after
@@ -370,64 +411,16 @@ Categories, in this order:
 - Ruby and Node versions pinned in `.ruby-version` and `.node-version`, read by mise
   locally, by CI, and by both Dockerfiles.
 
-### Fixed
 
 - Live kitchen updates would have failed in development and production with a gem loading
   error. The Redis client was pinned a major version ahead of what ActionCable accepts, so
   the pub/sub adapter §14.4 requires could not load — and the test suite could not see it,
   because tests use a different adapter. Caught by exercising the running container.
 
-### Changed
-- The simulation dashboard is quieter. Every figure carried three lines of explanation, above
-  a stack of banners that pushed the lane ribbon — the thing the page exists for — most of the
-  way down the screen. The explanations are now behind a `?` toggle (or a hover), and the
-  duplicated warnings are one line that only appears when it applies (§10.6).
-- Wait times keep updating while a barista is mid-drink. Previously the board's numbers only
-  moved when something happened — a drink starting or finishing — so a customer watching a
-  95-second drink being made saw a frozen countdown, and a drink running over its estimate
-  never corrected until it landed. A tick every 30 seconds now refreshes them (§7.2).
-- Placing an order is no longer slower when the shop is busier. Working out wait times means
-  simulating the queue forward, which costs 3ms when quiet but 175ms with 436 drinks waiting —
-  and it was running inside the request that placed the order. It now runs in the background,
-  at most once every 2 seconds per store, with the board reading the latest result (§7.2).
-- Opening or closing a bar updates every wait time on the board immediately, rather than at
-  the next drink transition (§7.2).
-- Wait times on the board and at the counter are now projected by running the real scheduler
-  forward over the current queue, rather than dividing outstanding work by the number of
-  stations (§7.1). The old estimate quoted by queue position, so it told a customer with one
-  drink behind a 15-drink catering order that they were fifteenth in line — when fair queuing
-  will actually interleave them almost immediately. It also stays right when the scheduler is
-  retuned, which a formula cannot.
-- The cohesion boost is off by default. It was meant to stop an order's first drink melting
-  while the rest were made; measured over 20 seeds it makes that wait steadily *worse* as the
-  boost rises, in every order size, at every load — including the four-drink case it was
-  designed around. Shops running it will see catering orders finish sooner (ADR-0014).
-
-- Placing an order now reaches the kitchen and the board immediately. Previously the KDS
-  only learned about it when someone refreshed (§9.2).
-- The wait quoted at ordering time now includes the safety margin the board uses, so the
-  number a customer is told and the number they then watch are computed the same way
-  (§7.1). ETA error and bias are measured against that quote (§10.4), and comparing two
-  differently-computed numbers would have made the metric meaningless.
-- ActionCable now uses the Redis adapter in development as well as production. The async
-  adapter is single-process, so it would work locally and silently fail across the two
-  `web` pods the design runs from the first deploy (§14.4).
-- `bin/docker-entrypoint` no longer runs `db:prepare` on boot. Migrations belong to the
-  `migrate` Job applied before each rollout (§14.2).
-- DESIGN.md's stack line now reads React 19 rather than React 18. Nothing in the design
-  depends on the version, and shadcn/Radix — which ADR-0003 commits to — target 19.
-
-- Project workflow scaffolding: `CLAUDE.md`, PR template, ADR log, testing conventions,
-  and this changelog.
-- CI pipeline running rubocop, RSpec with coverage gates, and the frontend lint/type/test
-  suite. Jobs are guarded on the files they need, so CI is green until the app lands (§12).
-- Git hooks via lefthook: conventional-commit validation, lint autocorrect on staged files,
-  and a guard against committing secret files (§14.6).
-- Quality-gate decisions recorded in [ADR-0002](docs/adr/0002-quality-gates.md): SimpleCov
-  thresholds, mutation testing scoped to the scheduler, rswag-generated API docs.
-- Frontend styling decision recorded in
-  [ADR-0003](docs/adr/0003-tailwind-with-shadcn-as-needed.md): Tailwind project-wide from
-  build step 1, with shadcn/ui components pulled in individually where they earn their
-  place (§9.3, §10.6).
-
-[Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
+### Security
+- **The cluster is served over TLS, and only over TLS** (§14.5). The admin sign-in cookie is
+  marked secure, which means a browser refuses to store it from a plain-http address — so
+  signing in to the admin screens worked when scripted and silently did nothing in a real
+  browser. The shop now answers at `https://boba.localtest.me:8443`; plain http is not
+  served at all rather than served and quietly broken. Certificates are issued and renewed
+  by the cluster itself.

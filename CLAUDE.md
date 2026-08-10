@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A boba shop ordering + kitchen scheduling system. Rails 8 API + React 18 (TypeScript),
+A boba shop ordering + kitchen scheduling system. Rails 8 API + React 19 (TypeScript),
 PostgreSQL, Redis, Sidekiq, deployed to Kubernetes.
 
 **`DESIGN.md` is the specification and the source of truth.** It is section-numbered

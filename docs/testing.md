@@ -34,11 +34,19 @@ Test it exhaustively.
 
 Enforced by SimpleCov in CI. A PR that drops below fails.
 
-| Scope | Line | Branch |
-|---|---|---|
-| Overall | 90% | — |
-| `app/scheduler/**` | 100% | 100% |
-| `app/services/**` | 95% | — |
+| Scope | Line | Branch | Enforced by |
+|---|---|---|---|
+| Overall | 90% | — | `minimum_coverage` in `spec/spec_helper.rb` |
+| `app/scheduler/**` | 100% | 100% | a `SimpleCov.at_exit` hook — SimpleCov has no per-directory minimum |
+
+Both fail `rspec` in-process rather than in a separate CI step, and the overall gate is
+skipped on a partial run (`bin/rspec spec/models`) because a subset cannot meet a
+whole-project floor.
+
+There is deliberately **no separate gate on `app/services/**`.** An earlier version of this
+table listed one at 95% that nothing enforced, which is the same failure as a guard that
+always passes: it looked armed. Services are covered by the overall floor; if they ever need
+their own bar, add the check first and the row second.
 
 Coverage is a floor, not a goal. 100% coverage of the scheduler with no starvation test
 is worthless. The §11 checklist below is what actually matters.
@@ -118,6 +126,29 @@ Killing those means writing tests that assert nothing anyone cares about.
 What to do with a *new* survivor: read it as a question. "Would a barista notice if this
 changed?" If yes, it is a missing test. If no, it is equivalent and should be left alone.
 
+## What a simulation spec is allowed to cost
+
+Every simulated arrival runs a forward projection through `Scheduler.pick_next` (§7.1), so a
+simulated day is not free and a saturated one is expensive. Profile before optimising —
+`bin/rspec --profile` — because the cost is never spread evenly. It concentrated in twelve
+examples once, at 84% of the whole suite.
+
+Two rules fell out of that, and both make the assertion sharper rather than weaker:
+
+- **Stub the ceiling, don't run to it.** Two examples asserted that a request above
+  `Ablation::MAX_SEEDS` is clamped by simulating 300 and 150 days. `stub_const` to 2 tests
+  the same `clamp` in a tenth of the time, and no longer passes by coincidence of the
+  constant's value — which then gets its own one-line assertion.
+- **Buy saturation with demand, not with hours.** A property that needs a backed-up shop
+  needs the shop to be *over capacity*, which is a ratio, not a duration. One station at
+  3.0× is saturated inside the first hour: four hours separated the multi-drink breach rate
+  from the overall rate more widely than eleven did (0.399 vs 0.288, against 0.353 vs
+  0.261), in a tenth of the time.
+
+Neither is licence to lower a threshold or skip a case to make a red suite green. The test
+is that the numbers still say what they said — check coverage is unchanged, and that the
+margin on the assertion got wider rather than narrower.
+
 ## Golden tests
 
 Fixed seeds producing byte-identical dispatch sequences. They live in
@@ -144,10 +175,12 @@ Fixed seeds producing byte-identical dispatch sequences. They live in
 - If the simulator is ever implemented client-side (§10.1 option B), 20 golden scenarios
   asserting Ruby and TypeScript agree become mandatory.
 
-## Acceptance criteria (§11)
+## Acceptance criteria (§11) — not yet built
 
-These are simulation-backed properties, run as a slow-tagged suite (`--tag acceptance`),
-not on every push:
+**No `acceptance`-tagged spec exists.** These are §11's simulation-backed properties and the
+intended shape is a slow-tagged suite (`--tag acceptance`) kept off every push. Written down
+here as a target rather than a description of something that runs — the ETA bias figure the
+third one needs only started existing with §10.4's metric grid:
 
 - Small-order p90 wait is flat (±15%) across large-order rates 0%–12%, under DRR, at 3
   stations, default demand.

@@ -1131,6 +1131,23 @@ surviving mutant means no assertion depended on the altered expression. Scoped t
 scheduler (ADR-0002), with the rationale and the equivalent-mutant caveat in
 `docs/testing.md`.
 
+**Ablation** — borrowed from experimental design: measure a system, then remove one
+component at a time and measure again, so each difference is attributable to the piece that
+changed. §10.5's ladder is an ablation in reverse — it starts from the simplest scheduler and
+*adds* one mechanism per rung — which is the same argument read from the other end. It is
+only an ablation if the rungs share their inputs; without common random numbers below, it is
+several unrelated runs on a chart.
+
+**Bias** — the *signed* mean error of an estimate: positive means the shop is systematically
+late, negative that it is systematically early. Distinct from absolute error, which measures
+how far off a typical quote is without caring in which direction. The two are reported
+together (§10.4) because either alone reports success on an estimator that is plainly broken
+— an estimate late by four minutes half the time and early by four minutes the rest has zero
+bias and a large absolute error, while one that is late by ten seconds *every single time*
+has a small absolute error and the bias that §7.3 says destroys trust in the board. This is
+the one place the design asks for a mean, against §10.4's own "never the mean" rule, and
+deliberately: a median signed error cannot see a systematic lean.
+
 **Common random numbers (CRN)** — a variance-reduction technique for comparing two
 configurations of a simulation: give both the *same* random draws, so the difference between
 them is attributable to the change and not to luck. The subtlety is that a single shared

@@ -20,7 +20,7 @@ and `.node-version`).
 mise install                 # Ruby 3.4.10, Node 24.19.0
 bundle install
 npm --prefix frontend install
-lefthook install             # commit-msg + pre-commit hooks
+lefthook install             # commit-msg + pre-commit + pre-push hooks
 
 docker compose up -d postgres redis
 bin/rails db:prepare
@@ -106,11 +106,15 @@ bundle exec rubocop
 
 npm --prefix frontend run test:run
 npm --prefix frontend run lint
+npm --prefix frontend run typecheck
 ```
 
 Coverage gates (ADR-0002): **90% overall**, and **100% line and branch on
-`app/scheduler/**`** once it exists. Both fail `rspec` directly rather than in a
-separate CI step.
+`app/scheduler/**`**. Both fail `rspec` directly rather than in a separate CI step.
+
+Check the frontend with `run typecheck` (`tsc -b`), never a bare `npx tsc --noEmit` —
+build mode walks the project references and so typechecks the test project, and the bare
+form does not. A `pre-push` hook runs it either way.
 
 ## Layout
 
@@ -131,7 +135,11 @@ Follow §12. Steps 1–3 give a shop that functions, step 4 puts it in a cluster
 every later feature ships through Kubernetes, and steps 5–6 are where the design's
 central claim actually gets tested.
 
-**Current position: step 0 complete** — containers, toolchain, and CI.
+**Current position: steps 0–8 complete, step 9 in progress.** The shop takes orders,
+schedules them with DRR, runs a kitchen display and a board, deploys to a kind cluster over
+TLS, projects ETAs forward through the real scheduler, and handles remakes, offline kiosks
+and the ready SMS. Step 9's dashboard has the lane ribbon, the §10.4 metric grid and the
+§10.5 ablation; the quantum sweep, staffing curve and apply-to-store are still open.
 
 Postgres runs in-cluster as a StatefulSet (§14.2), which is instructive for a
 learning project and wrong for a real store; that would use a managed database.
