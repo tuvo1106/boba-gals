@@ -250,6 +250,14 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **Undoing a mistap on the kitchen display no longer teaches the board a drink was faster
+  than it is** (§5.2, §7.3). Tapping Done on the wrong card and undoing it still counted
+  that non-drink toward how long the drink takes — and because a mistap is nearly always
+  *early*, every one of them dragged the learned time down and made the board quote short.
+  One undone mistap was enough to move a 60-second drink to 52. The shop now waits out the
+  60-second undo window before learning anything, so an undone tap teaches it nothing,
+  and a drink that is finished, undone, and finished again counts once rather than twice.
+  Drinks nobody touches are learned from exactly as before, a minute later.
 - **An order placed for a later pickup time no longer says "ready now"** (§7.1, §7.3). A
   customer ordering at 9am for an 11am collection was quoted **zero seconds**, on their own
   screen and on the board, because the kitchen correctly refuses to start the drink yet and

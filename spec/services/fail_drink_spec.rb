@@ -117,9 +117,8 @@ RSpec.describe FailDrink do
   it "does not teach the prep-time average from a drink that was never made" do
     item = making
 
-    expect(RecordPrepTime).not_to receive(:new)
-
-    described_class.new.call(item, reason: "spill")
+    expect { described_class.new.call(item, reason: "spill") }
+      .not_to have_enqueued_job(RecordPrepTimeJob)
   end
 
   it "logs the remake so it can be counted (§10.4, §15)" do

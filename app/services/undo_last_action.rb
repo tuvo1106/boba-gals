@@ -38,15 +38,13 @@ class UndoLastAction
     # which is exactly why status is always derived rather than set (§5.2).
     order = RollUpOrderStatus.new.call(item.order)
 
-    # **The prep-time sample is not discarded here, and §5.2 says it must be
-    # (issue #69).** `FinishDrink` records one, so undoing a mistap leaves the
-    # phantom duration in the EWMA — and mistaps skew early, so they bias the
-    # learned time down and the board quotes short (§7.3).
+    # No prep-time sample is discarded here, and that is now the design rather
+    # than a gap: §5.2's requirement is met by never taking the sample in the
+    # first place. `FinishDrink` defers `RecordPrepTimeJob` by `WINDOW`, so an
+    # undone finish is undone before anything was learned from it (ADR-0019).
     #
-    # This comment used to say the sample did not exist yet because the EWMA
-    # arrived at build step 7. It did arrive, and nothing came back here. Left
-    # as a known gap rather than patched, because an EWMA cannot be cleanly
-    # inverted and the fix is a decision about *when* learning happens.
+    # Anything that shortens `WINDOW` on one side only reopens issue #69 — the
+    # job reads this same constant, which is what keeps the two in step.
     BroadcastStoreViews.call(order.store)
 
     Result.new(success?: true, item: item)
