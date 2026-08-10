@@ -56,7 +56,16 @@ class ProjectEta
   def for_open_orders
     ready_at = project
 
-    ready_at.transform_values { |time| with_safety(time - @now) }
+    ready_at.to_h do |id, time|
+      seconds = time - @now
+
+      # §7.1's safety factor pads an *estimate*. A promised time is not an
+      # estimate — it is the time the customer chose, and §6.2 schedules
+      # backward to hit it. Padding it by 15% tells someone who asked for 11:00
+      # that their drink lands at 11:18, and the error grows with the horizon:
+      # a two-hour order ahead would be quoted eighteen minutes late.
+      [ id, promised?(id) ? [ seconds.ceil, 0 ].max : with_safety(seconds) ]
+    end
   end
 
   # Per-item projection, which §7.2's board broadcast and §9.5's "Next up"
@@ -76,12 +85,35 @@ class ProjectEta
   def project
     run
 
-    @item_projection.each_with_object({}) do |(item_id, times), orders|
+    projected = @item_projection.each_with_object({}) do |(item_id, times), orders|
       order_id = @order_id_by_item.fetch(item_id)
       # §7.1: "Order ETA = max over its items." An order is ready when its
       # slowest drink is, not when its first one is.
       orders[order_id] = [ orders[order_id], times[:ready_at] ].compact.max
     end
+
+    order_ahead(projected)
+  end
+
+  # An order promised for later is deliberately not dispatchable yet — §6.2
+  # schedules it backward from `promised_at` so an 11am pickup is not made at
+  # 9am. `pick_next` therefore never returns it, it never reaches
+  # `@item_projection`, and without this it falls out of the projection
+  # entirely: `for_order`'s `fetch(id, 0)` then quotes **zero seconds** and the
+  # customer is told their drink is ready now.
+  #
+  # Its honest ready time is the time it was promised for, which is the whole
+  # point of backward scheduling. `max` rather than assignment because an order
+  # can be partly dispatched — if any of its drinks did project, the later of
+  # the two answers is the one the customer should hear.
+  def order_ahead(projected)
+    flows_by_id.each do |id, flow|
+      next if flow.promised_at.nil?
+
+      projected[id] = [ projected[id], flow.promised_at ].compact.max
+    end
+
+    projected
   end
 
   def run
@@ -99,6 +131,9 @@ class ProjectEta
     seed_in_progress
 
     state = SchedulerStateStore.new(@store).load
+    # Captured before the loop: `pick_next` shifts drinks off flow queues as it
+    # dispatches (§6.2), so afterwards there is no list of what was queued.
+    @flows_by_id = state.flows.index_by(&:id)
     free_at = station_free_times
     dispatches = 0
 
@@ -118,6 +153,16 @@ class ProjectEta
       record(picked, clock)
       free_at[index] = clock + prep_seconds_for(picked[:item])
     end
+  end
+
+  def flows_by_id
+    run
+    @flows_by_id
+  end
+
+  # @return [Boolean] whether this order was placed for a chosen pickup time
+  def promised?(order_id)
+    !flows_by_id[order_id]&.promised_at.nil?
   end
 
   def seed_in_progress

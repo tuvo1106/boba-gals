@@ -243,6 +243,52 @@ RSpec.describe ProjectEta do
 
       expect(described_class.for_open_orders(store)[walk_up.id]).to eq(60)
     end
+
+    # The example above watches the *neighbour*. It passed throughout the
+    # window in which an order-ahead customer was quoted zero seconds, because
+    # nothing asked what that customer was told.
+    #
+    # §6.2 schedules a promise backward, so `pick_next` correctly refuses to
+    # dispatch it yet — it never reached `@item_projection`, and `for_order`'s
+    # `fetch(id, 0)` default answered on its behalf. Someone ordering at 9am for
+    # an 11am pickup saw "ready now" (§7.3).
+    it "quotes a promised order for when it was promised, not zero" do
+      now = Time.current
+      promised = create(:order, store: store, promised_at: now + 2.hours)
+      queue(promised, 1, queued_at: now - 1.minute)
+
+      expect(described_class.for_order(store, promised, now: now)).to eq(7200)
+    end
+
+    it "still answers when every open order is promised for later" do
+      now = Time.current
+      promised = create(:order, store: store, promised_at: now + 90.minutes)
+      queue(promised, 2, queued_at: now - 1.minute)
+
+      expect(described_class.for_open_orders(store, now: now)).to eq(promised.id => 5400)
+    end
+
+    # §7.1's safety factor pads an estimate. A promise is the time the customer
+    # chose, and padding it scales with the horizon — at 1.15 a two-hour order
+    # ahead would be quoted eighteen minutes after the slot it asked for.
+    it "does not pad a promised time with the safety factor" do
+      store.update!(scheduler_config: store.scheduler_config.merge("eta_safety_factor" => 1.5))
+      now = Time.current
+      promised = create(:order, store: store, promised_at: now + 1.hour)
+      queue(promised, 1, queued_at: now - 1.minute)
+
+      expect(described_class.for_order(store, promised, now: now)).to eq(3600)
+    end
+
+    # Once the promise comes within reach, §6.2 releases it and it projects like
+    # anything else — the promised time must not pin it open forever.
+    it "projects a promise that has come due as ordinary work" do
+      now = Time.current
+      due = create(:order, store: store, promised_at: now + 30.seconds)
+      queue(due, 1, queued_at: now - 1.minute)
+
+      expect(described_class.for_order(store, due, now: now)).to be <= 60
+    end
   end
 
   # §7.3: the seeded base_prep_seconds are guesses, and the projection is only
