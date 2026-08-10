@@ -20,6 +20,16 @@ Categories, in this order:
 
 ## [Unreleased]
 
+### Fixed
+- **An order placed for a later pickup time no longer says "ready now"** (§7.1, §7.3). A
+  customer ordering at 9am for an 11am collection was quoted **zero seconds**, on their own
+  screen and on the board, because the kitchen correctly refuses to start the drink yet and
+  nothing filled in the answer. They are now quoted the time they actually chose. An
+  identical order placed for right away was, and still is, quoted normally.
+- A pre-ordered pickup time is no longer padded by the safety margin meant for estimates —
+  someone who picked 11:00 was being told 11:18, and the error grew the further ahead they
+  ordered.
+
 ### Added
 - **The dashboard can run the same day six ways and chart the difference** (§10.5, §6.3).
   One click compares first-come-first-served against round robin, the deficit, aging and
