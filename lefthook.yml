@@ -29,6 +29,29 @@ commit-msg:
           exit 1
         fi
 
+# Catches the one class of failure that is invisible locally but red in CI.
+#
+# `npm run typecheck` is `tsc -b` — build mode, which walks the project
+# references and so typechecks the **test** project too. A bare
+# `npx tsc --noEmit` does not, and passes happily while a `*.test.tsx` fixture
+# is missing a newly-required field. CI runs `tsc -b` twice (the frontend job,
+# and again inside the frontend image build in the cluster job), so that one
+# mistake costs two red jobs and about eight minutes.
+#
+# Push-time rather than commit-time: it is a few seconds, which is too slow to
+# pay on every commit and far cheaper than a CI round trip.
+pre-push:
+  parallel: true
+  commands:
+    frontend-types:
+      root: "frontend/"
+      glob: "frontend/*.{ts,tsx}"
+      run: |
+        set -e
+        [ -d "$HOME/.local/share/mise/shims" ] && PATH="$HOME/.local/share/mise/shims:$PATH"
+        export PATH
+        npm run typecheck
+
 pre-commit:
   parallel: true
   commands:
