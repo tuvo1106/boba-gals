@@ -21,6 +21,13 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The dashboard can turn a day's simulation into a shift schedule** (§10.5). One click runs
+  every open hour at one to eight stations and reports the fewest that keep that hour's p90
+  under a target you pick — 5, 10, or 15 minutes. An hour that still misses target at eight
+  stations is marked rather than silently shown as "fixed by adding baristas", since nothing
+  past eight was ever tried. The method runs the whole day at each station count rather than
+  varying staff mid-shift, which the simulator cannot yet do — ADR-0020 has the reasoning and
+  what a truer version would need.
 - **The dashboard can sweep the quantum and show where small orders start losing to large
   ones** (§10.5). One click runs the same day at ten quantum settings from 30s to 400s and
   charts small-order p90 against large-order p90 together — each on its own scale, since

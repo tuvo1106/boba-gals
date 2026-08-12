@@ -4,10 +4,11 @@ import { DayScrubber } from './DayScrubber'
 import { AdminSignIn } from './AdminSignIn'
 import { AblationBars } from './AblationBars'
 import { QuantumSweepChart } from './QuantumSweepChart'
+import { StaffingCurveTable } from './StaffingCurveTable'
 import { MetricGrid } from './MetricGrid'
 import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
-import type { Ablation, AdminUser, Policy, QuantumSweep, SimulationRun } from '../api/types'
+import type { Ablation, AdminUser, Policy, QuantumSweep, StaffingCurve, SimulationRun } from '../api/types'
 
 /** §6.3's arms, in the order the ablation reads: least fair to most. */
 const POLICIES: { id: Policy; title: string }[] = [
@@ -97,6 +98,11 @@ function Dashboard({
   const [sweep, setSweep] = useState<QuantumSweep | null>(null)
   const [sweepDays, setSweepDays] = useState(1)
   const [sweeping, setSweeping] = useState(false)
+  // §10.5 #3, same reasoning again: eight runs per day, asked for explicitly.
+  const [staffing, setStaffing] = useState<StaffingCurve | null>(null)
+  const [staffingDays, setStaffingDays] = useState(1)
+  const [target, setTarget] = useState(600)
+  const [staffingBusy, setStaffingBusy] = useState(false)
 
   async function compare(days = ablationDays) {
     setComparing(true)
@@ -145,6 +151,31 @@ function Dashboard({
       setError(e instanceof Error ? e.message : 'Sweep failed')
     } finally {
       setSweeping(false)
+    }
+  }
+
+  async function staff(days = staffingDays, targetSeconds = target) {
+    setStaffingBusy(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/v1/admin/staffing_curves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          seed, demand_multiplier: demand, seeds: days, target_seconds: targetSeconds,
+        }),
+      })
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      if (!response.ok) throw new Error(`Staffing curve failed (${response.status})`)
+      setStaffing((await response.json()) as StaffingCurve)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Staffing curve failed')
+    } finally {
+      setStaffingBusy(false)
     }
   }
 
@@ -520,6 +551,53 @@ function Dashboard({
         </div>
 
         {sweep && <QuantumSweepChart sweep={sweep} />}
+      </section>
+
+      {/* §10.5 #3, its own section for the same reason the two above are: a
+          different question again — not "what happened today" or "where
+          should a knob sit", but "how many baristas does each hour need". */}
+      <section className="mt-10 border-t border-neutral-800 pt-4">
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <button
+            onClick={() => staff()} disabled={staffingBusy}
+            className="border border-neutral-700 px-3 py-1 uppercase hover:border-amber-500 disabled:opacity-40"
+          >
+            {staffingBusy ? 'Staffing…' : 'Build staffing curve'}
+          </button>
+
+          <label className="text-neutral-500">
+            over{' '}
+            <select
+              value={staffingDays} aria-label="days per station count"
+              onChange={(e) => setStaffingDays(Number(e.target.value))}
+              className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
+            >
+              <option value={1}>1 day</option>
+              <option value={5}>5 days</option>
+              <option value={12}>12 days</option>
+              <option value={25}>25 days</option>
+            </select>
+          </label>
+
+          <label className="text-neutral-500">
+            target p90{' '}
+            <select
+              value={target} aria-label="target p90"
+              onChange={(e) => setTarget(Number(e.target.value))}
+              className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
+            >
+              <option value={300}>5 min</option>
+              <option value={600}>10 min</option>
+              <option value={900}>15 min</option>
+            </select>
+          </label>
+
+          <span className="text-neutral-600">
+            runs each open hour at 1–8 stations, whole day, at the seed and demand above (§10.5)
+          </span>
+        </div>
+
+        {staffing && <StaffingCurveTable curve={staffing} />}
       </section>
     </main>
   )

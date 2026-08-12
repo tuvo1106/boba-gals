@@ -141,6 +141,23 @@ The loops also outlived their cleanup — backgrounded processes reparent to PID
 Any background process must be cleaned up by explicit PID, and the cleanup verified rather
 than assumed.
 
+### Keep simulator specs lean
+
+A spec that calls `Simulator.simulate` — directly, or through `Ablation`, `QuantumSweep`,
+`StaffingCurve`, or whatever §10.5 experiment comes next — costs roughly a second per
+simulated day under SimpleCov's branch instrumentation. Loop that over several pooled
+`seeds:` or a swept range of points and one example can quietly cost minutes; a handful of
+`seeds: 5` examples in one file added 4+ minutes to `bin/rspec` before anyone noticed
+(`spec/simulator/staffing_curve_spec.rb`, trimmed 4m9s → 1m47s for the same 11 examples).
+
+Before adding pooled days or a wide range to an example, ask whether the comparison being
+made actually needs that much — two figures far enough apart usually settle in one day, and
+a mechanism check (clamping, reproducibility, a fallback path) rarely cares where in the
+real range the answer lands. Keep exactly one example that runs the real, unstubbed
+range/day-count end to end, and narrow the rest — `stub_const` the swept constant down for
+examples that are only checking the mechanism. Check `bin/rspec`'s wall-clock time before
+calling a new simulator spec done, the same way the coverage gates get checked.
+
 ### Killing a command does not kill what it started
 
 **Interrupting `docker compose exec` kills the client, not the process in the container.**
