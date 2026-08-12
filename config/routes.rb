@@ -61,6 +61,12 @@ Rails.application.routes.draw do
         # endpoint rather than a parameter on `simulations`, because it returns
         # four metric sets and no timeline — a different shape, not a variant.
         post "ablations", to: "ablations#create"
+
+        # §10.5's quantum sweep: the same day run at ten quantum values, so
+        # small-order and large-order p90 can be plotted together and the
+        # crossover read off the chart. Its own endpoint for the same reason
+        # as `ablations` — a different response shape, not a variant.
+        post "quantum_sweeps", to: "quantum_sweeps#create"
       end
     end
   end

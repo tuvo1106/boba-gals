@@ -3,10 +3,11 @@ import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { AdminSignIn } from './AdminSignIn'
 import { AblationBars } from './AblationBars'
+import { QuantumSweepChart } from './QuantumSweepChart'
 import { MetricGrid } from './MetricGrid'
 import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
-import type { Ablation, AdminUser, Policy, SimulationRun } from '../api/types'
+import type { Ablation, AdminUser, Policy, QuantumSweep, SimulationRun } from '../api/types'
 
 /** §6.3's arms, in the order the ablation reads: least fair to most. */
 const POLICIES: { id: Policy; title: string }[] = [
@@ -91,6 +92,11 @@ function Dashboard({
   const [ablation, setAblation] = useState<Ablation | null>(null)
   const [ablationDays, setAblationDays] = useState(1)
   const [comparing, setComparing] = useState(false)
+  // §10.5 #2, same reasoning as the ablation above: ten runs is asked for
+  // explicitly rather than re-run on every config change.
+  const [sweep, setSweep] = useState<QuantumSweep | null>(null)
+  const [sweepDays, setSweepDays] = useState(1)
+  const [sweeping, setSweeping] = useState(false)
 
   async function compare(days = ablationDays) {
     setComparing(true)
@@ -114,6 +120,31 @@ function Dashboard({
       setError(e instanceof Error ? e.message : 'Comparison failed')
     } finally {
       setComparing(false)
+    }
+  }
+
+  async function sweepQuantum(days = sweepDays) {
+    setSweeping(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/v1/admin/quantum_sweeps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          seed, stations, demand_multiplier: demand, seeds: days,
+        }),
+      })
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      if (!response.ok) throw new Error(`Sweep failed (${response.status})`)
+      setSweep((await response.json()) as QuantumSweep)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sweep failed')
+    } finally {
+      setSweeping(false)
     }
   }
 
@@ -454,6 +485,41 @@ function Dashboard({
         </div>
 
         {ablation && <AblationBars ablation={ablation} />}
+      </section>
+
+      {/* §10.5 #2, its own section for the same reason the ablation is: a
+          different question from the run above ("what happened today") and
+          from the ablation ("is the scheduler the reason") — this one asks
+          "where should the quantum be set". */}
+      <section className="mt-10 border-t border-neutral-800 pt-4">
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs">
+          <button
+            onClick={() => sweepQuantum()} disabled={sweeping}
+            className="border border-neutral-700 px-3 py-1 uppercase hover:border-amber-500 disabled:opacity-40"
+          >
+            {sweeping ? 'Sweeping…' : 'Sweep quantum'}
+          </button>
+
+          <label className="text-neutral-500">
+            over{' '}
+            <select
+              value={sweepDays} aria-label="days per point"
+              onChange={(e) => setSweepDays(Number(e.target.value))}
+              className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
+            >
+              <option value={1}>1 day</option>
+              <option value={5}>5 days</option>
+              <option value={12}>12 days</option>
+              <option value={25}>25 days</option>
+            </select>
+          </label>
+
+          <span className="text-neutral-600">
+            runs the same day at ten quantum values, 30s–400s, at the seed and demand above (§10.5)
+          </span>
+        </div>
+
+        {sweep && <QuantumSweepChart sweep={sweep} />}
       </section>
     </main>
   )

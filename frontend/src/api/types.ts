@@ -275,3 +275,21 @@ export interface Ablation {
   quantum: number | null
   arms: AblationArm[]
 }
+
+/** One quantum tried, and what a day looked like at it (§10.5 #2). */
+export interface QuantumSweepPoint {
+  quantum: number
+  /** Customers who walked in — identical across every point (ADR-0011). */
+  arrived: number
+  metrics: SimulationMetrics
+}
+
+/** The response from POST /api/v1/admin/quantum_sweeps (§10.5 #2). */
+export interface QuantumSweep {
+  seed: number
+  seeds: number
+  stations: number
+  demand_multiplier: number
+  /** Ten points, ascending — `Simulator::QuantumSweep::POINTS`. */
+  points: QuantumSweepPoint[]
+}
