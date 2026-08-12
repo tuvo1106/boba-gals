@@ -21,6 +21,13 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The dashboard can sweep the quantum and show where small orders start losing to large
+  ones** (§10.5). One click runs the same day at ten quantum settings from 30s to 400s and
+  charts small-order p90 against large-order p90 together — each on its own scale, since
+  catering orders run several times longer by nature. Every point shares the same simulated
+  customers, so a difference between two points is the quantum and not a luckier Tuesday.
+  This is the evidence owed for why the shipped default sits at 60s rather than somewhere
+  else on that range.
 - **The dashboard shows how long every size of order waited, not just two of them** (§10.4).
   The simulator has always measured typical / 9-in-10 / 99-in-100 waits for small, medium
   and catering orders — nine figures — and the screen showed two. Mid-size orders were
