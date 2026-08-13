@@ -21,6 +21,10 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **`worker` now exports its own Prometheus metrics** (§15, ADR-0026): job counts, queue
+  latency, and retry/dead totals from `yabeda-sidekiq`, on a standalone exporter thread
+  since `worker` runs no HTTP server of its own to mount `/metrics` on the way `web` does.
+  Closes the gap ADR-0025 deliberately left open when the business gauges shipped.
 - **Production exports the business metrics §15 asks for, scraped by Prometheus and charted
   in Grafana** (§15, §10.4). Beyond yabeda-rails' framework defaults: kitchen queue depth,
   a customer wait-time histogram by order size class, ETA signed error against the quote

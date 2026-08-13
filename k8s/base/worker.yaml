@@ -5,6 +5,26 @@
 # recompute and idle tick (§7.2) at step 7, and the abandoned-order sweep
 # (§5.1), quality-timer checks (§9.6) and SMS (§9.7) at step 8 — all via
 # sidekiq-cron, never cron in a container.
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  # This pod serves no application traffic — this Service exists only so
+  # k8s/monitoring/worker-service-monitor.yaml (§15, ADR-0026) has a stable
+  # target for the standalone exporter thread config/initializers/yabeda_sidekiq.rb
+  # starts on the `metrics` port. The label is on the Service, for the
+  # ServiceMonitor's selector — distinct from `spec.selector` below, which
+  # picks pods.
+  labels:
+    app: worker
+spec:
+  selector:
+    app: worker
+  ports:
+    - name: metrics
+      port: 9394
+      targetPort: metrics
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,13 +43,18 @@ spec:
         - name: worker
           image: boba-api
           command: ["bundle", "exec", "sidekiq"]
+          ports:
+            - name: metrics
+              containerPort: 9394
           envFrom:
             - configMapRef: { name: boba-config }
             - secretRef: { name: boba-secrets }
           # Liveness only — it serves no traffic, so there is nothing for a
           # readiness gate to gate (§14.3). A process check rather than the
           # sidekiq_alive gem: one fewer dependency and one fewer port, and it
-          # answers the question the kubelet is actually asking.
+          # answers the question the kubelet is actually asking. The metrics
+          # port above is scraped, not probed (§15) — it has no bearing on
+          # whether this pod is healthy.
           livenessProbe:
             exec:
               command: ["pgrep", "-f", "sidekiq"]
