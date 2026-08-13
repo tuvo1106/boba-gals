@@ -153,7 +153,7 @@ function DrinkCard({
 }) {
   return (
     <li
-      className={`rounded-lg border-2 ${lead ? 'p-6' : 'p-4 opacity-90'} ${item.remake ? 'border-amber-500 bg-amber-950/30' : 'border-neutral-700 bg-neutral-900'}`}
+      className={`rounded-lg border-2 ${lead ? 'p-6' : 'p-4 opacity-90'} ${item.remake ? 'border-amber-500 bg-amber-950/30' : item.quality_breach ? 'border-rose-600 bg-rose-950/20' : 'border-neutral-700 bg-neutral-900'}`}
     >
       <div className="flex items-start gap-4">
         <div className="min-w-0">
@@ -162,6 +162,15 @@ function DrinkCard({
               who was standing there when it was created. */}
           {item.remake && (
             <p className="mb-1 font-mono text-xs font-bold tracking-widest text-amber-400 uppercase">Remake</p>
+          )}
+          {/* A sibling drink went stale waiting on the counter (§9.6). This
+              card is not the stale one — that one already left the queue —
+              it's the rest of the same order, so finishing it just makes a
+              second drink wait too unless someone checks in or remakes now. */}
+          {!item.remake && item.quality_breach && (
+            <p className="mb-1 font-mono text-xs font-bold tracking-widest text-rose-500 uppercase">
+              Order sitting — check in
+            </p>
           )}
           <Tokens item={item} lead={lead} />
         </div>

@@ -11,13 +11,15 @@ class KitchenQueue
   # @param store [Store]
   # @return [Hash] the KitchenChannel `queue_update` payload
   def self.call(store)
-    in_progress = items_for(store).where(status: "in_progress").order(:started_at)
+    in_progress = items_for(store).where(status: "in_progress").order(:started_at).to_a
     queued = items_for(store).where(status: "queued").order(:queued_at, :id)
+    next_up = queued.limit(NEXT_UP).to_a
+    breached_order_ids = breached_order_ids_among(in_progress + next_up)
 
     {
       type: "queue_update",
-      in_progress: in_progress.map { |i| serialize(i) },
-      next_up: queued.limit(NEXT_UP).map { |i| serialize(i) },
+      in_progress: in_progress.map { |i| serialize(i, breached_order_ids) },
+      next_up: next_up.map { |i| serialize(i, breached_order_ids) },
       depth: queued.count,
       # Header shows queue depth and the oldest waiting time. Nothing else (§9.4).
       oldest_waiting_seconds: oldest_waiting_seconds(queued)
@@ -38,9 +40,28 @@ class KitchenQueue
     (Time.current - oldest).round
   end
 
+  # A breach is logged against a *finished* sibling drink, which has already
+  # left this view entirely — a fully-finished order has no KDS row at all
+  # (ADR-0005). So the marker rides on whatever's left of the order that's
+  # still visible here, warning the barista before the next drink out of the
+  # same slow order too (§9.4, §9.6). Scoped to the order ids on screen rather
+  # than the store's whole breach history, which only grows (§15).
+  #
+  # @param items [Array<OrderItem>]
+  # @return [Array<Integer>] order ids with at least one logged breach
+  def self.breached_order_ids_among(items)
+    order_ids = items.map(&:order_id)
+    return [] if order_ids.empty?
+
+    SchedulerEvent.joins(:order_item)
+                  .where(event_type: "quality_breach", order_items: { order_id: order_ids })
+                  .distinct
+                  .pluck("order_items.order_id")
+  end
+
   # customer_phone appears nowhere, here or in any other broadcast — the board
   # privacy rule extends to every channel (§13.5).
-  def self.serialize(item)
+  def self.serialize(item, breached_order_ids = [])
     countable = item.order.countable_items
 
     {
@@ -63,6 +84,9 @@ class KitchenQueue
       position: countable.index(item) + 1,
       order_size: countable.size,
       remake: item.remake?,
+      # A staff-visible marker prompting a check-in or a proactive remake
+      # (§9.4, §9.6) — never shown to the customer (§9.5).
+      quality_breach: breached_order_ids.include?(item.order_id),
       station_id: item.station_id,
       started_at: item.started_at
     }
