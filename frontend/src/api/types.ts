@@ -52,6 +52,34 @@ export interface TimelineDrink {
 /** §6.3. `rr` and `sjf` are simulator-only comparison arms. */
 export type Policy = 'drr' | 'fifo' | 'rr' | 'sjf'
 
+/**
+ * `stores.scheduler_config`, effective rather than raw (§6.6, §10.6) — every
+ * key present even if the store never set it, matching
+ * `Store#effective_scheduler_config` server-side. `policy` is narrower here
+ * than `Policy`: `UpdateSchedulerConfig::SCHEMA` refuses `rr` and `sjf`, so a
+ * live store can never actually hold one.
+ */
+export interface SchedulerConfig {
+  policy: 'drr' | 'fifo'
+  quantum: number
+  aging_enabled: boolean
+  aging_rate: number
+  cohesion_enabled: boolean
+  cohesion_boost: number
+  remake_multiplier: number
+  promise_buffer: number
+  quality_limit_seconds: number
+  eta_safety_factor: number
+}
+
+/** The response from GET/PATCH /api/v1/admin/scheduler_config (§10.6). */
+export interface SchedulerConfigResponse {
+  store_id: number
+  scheduler_config: SchedulerConfig
+  /** `UpdateSchedulerConfig::SCHEMA`'s keys — what a PATCH may name. */
+  editable: string[]
+}
+
 /** What a run reports (§10.4). Shared by a single run and by each ablation arm. */
 export interface SimulationMetrics {
   orders: number

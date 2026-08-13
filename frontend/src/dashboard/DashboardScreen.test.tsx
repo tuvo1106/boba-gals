@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { DashboardScreen } from './DashboardScreen'
 import { server } from '../test/server'
-import type { SimulationRun } from '../api/types'
+import type { SchedulerConfig, SimulationRun } from '../api/types'
 
 /** Every request the screen makes, so a test can assert what it asked for. */
 let requests: Record<string, unknown>[] = []
@@ -26,6 +26,29 @@ type RunOverrides = Omit<Partial<SimulationRun>, 'metrics'> & {
 function serveSignedIn() {
   server.use(
     http.get('/api/v1/admin/session', () => HttpResponse.json({ email: 'admin@bobagals.test' })),
+  )
+  // Every render fetches this on mount for §10.6's "Apply to store" — a
+  // default here keeps every other describe block's tests from having to
+  // know that, the same way they don't have to mock /simulations by hand.
+  serveSchedulerConfig()
+}
+
+function defaultSchedulerConfig(overrides: Partial<SchedulerConfig> = {}): SchedulerConfig {
+  return {
+    policy: 'drr', quantum: 60, aging_enabled: true, aging_rate: 0.15,
+    cohesion_enabled: false, cohesion_boost: 1.0, remake_multiplier: 4.0,
+    promise_buffer: 120, quality_limit_seconds: 300, eta_safety_factor: 1.15,
+    ...overrides,
+  }
+}
+
+function serveSchedulerConfig(overrides: Partial<SchedulerConfig> = {}) {
+  server.use(
+    http.get('/api/v1/admin/scheduler_config', () => HttpResponse.json({
+      store_id: 1,
+      scheduler_config: defaultSchedulerConfig(overrides),
+      editable: Object.keys(defaultSchedulerConfig()),
+    })),
   )
 }
 
@@ -415,6 +438,139 @@ describe('DashboardScreen', () => {
       await renderRun()
 
       expect(screen.getByText('admin@bobagals.test')).toBeInTheDocument()
+    })
+  })
+
+  // §10.6: "Ship an 'Apply to store' action that writes the current config to
+  // stores.scheduler_config, with a confirmation showing the diff." Thin by
+  // design — the rail only exposes `policy` today.
+  describe('apply to store', () => {
+    let applyRequests: Record<string, unknown>[]
+
+    function serveApply(overrides: { status?: number; errors?: string[] } = {}) {
+      applyRequests = []
+      server.use(
+        http.patch('/api/v1/admin/scheduler_config', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          applyRequests.push(body)
+
+          if (overrides.status) {
+            return HttpResponse.json({ errors: overrides.errors ?? [ 'invalid' ] }, { status: overrides.status })
+          }
+
+          const config = (body.scheduler_config as Record<string, unknown>) ?? {}
+          return HttpResponse.json({
+            store_id: 1,
+            scheduler_config: defaultSchedulerConfig(config as Partial<SchedulerConfig>),
+            editable: Object.keys(defaultSchedulerConfig()),
+          })
+        }),
+      )
+    }
+
+    it('shows what is actually live once it loads', async () => {
+      await renderRun()
+
+      expect(await screen.findByText('live DRR')).toBeInTheDocument()
+    })
+
+    it('disables applying when the rail already matches what is live', async () => {
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      expect(screen.getByRole('button', { name: 'Apply to store' })).toBeDisabled()
+    })
+
+    it('enables applying once a different, appliable policy is picked', async () => {
+      const user = userEvent.setup()
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+
+      expect(screen.getByRole('button', { name: 'Apply to store' })).toBeEnabled()
+    })
+
+    it('never enables applying rr or sjf — the server would refuse them anyway', async () => {
+      const user = userEvent.setup()
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'sjf' }))
+
+      const button = screen.getByRole('button', { name: 'Apply to store' })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute('title', expect.stringContaining('simulator-only'))
+    })
+
+    it('shows the diff and waits for confirmation before writing anything', async () => {
+      const user = userEvent.setup()
+      serveApply()
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+      await user.click(screen.getByRole('button', { name: 'Apply to store' }))
+
+      expect(screen.getByText('apply policy: drr → fifo?')).toBeInTheDocument()
+      expect(applyRequests).toHaveLength(0)
+    })
+
+    it('writes the change only once confirmed, and reflects what is now live', async () => {
+      const user = userEvent.setup()
+      serveApply()
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+      await user.click(screen.getByRole('button', { name: 'Apply to store' }))
+      await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+      await waitFor(() => expect(applyRequests).toHaveLength(1))
+      expect(applyRequests[0]).toEqual({ scheduler_config: { policy: 'fifo' } })
+      expect(await screen.findByText('live FIFO')).toBeInTheDocument()
+    })
+
+    it('cancels without writing anything', async () => {
+      const user = userEvent.setup()
+      serveApply()
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+      await user.click(screen.getByRole('button', { name: 'Apply to store' }))
+      await user.click(screen.getByRole('button', { name: 'cancel' }))
+
+      expect(screen.queryByText('apply policy: drr → fifo?')).not.toBeInTheDocument()
+      expect(applyRequests).toHaveLength(0)
+    })
+
+    it('shows the server refusal without pretending the change landed', async () => {
+      const user = userEvent.setup()
+      serveApply({ status: 422, errors: [ 'policy must be one of: drr, fifo' ] })
+      await renderRun()
+      await screen.findByText('live DRR')
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+      await user.click(screen.getByRole('button', { name: 'Apply to store' }))
+      await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+      expect(await screen.findByText('policy must be one of: drr, fifo')).toBeInTheDocument()
+
+      // Cancelling out of the failed confirmation proves nothing was applied
+      // server-side — the rail is still reading the original live value.
+      await user.click(screen.getByRole('button', { name: 'cancel' }))
+      expect(screen.getByText('live DRR')).toBeInTheDocument()
+    })
+
+    // A background status read, not a user-initiated one — failing here must
+    // not raise the same page-wide alert a failed run would.
+    it('leaves the button disabled rather than alerting when the live read fails', async () => {
+      server.use(http.get('/api/v1/admin/scheduler_config', () => new HttpResponse(null, { status: 500 })))
+      await renderRun()
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Apply to store' })).toBeDisabled()
     })
   })
 })
