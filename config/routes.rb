@@ -67,6 +67,12 @@ Rails.application.routes.draw do
         # crossover read off the chart. Its own endpoint for the same reason
         # as `ablations` — a different response shape, not a variant.
         post "quantum_sweeps", to: "quantum_sweeps#create"
+
+        # §10.5's staffing curve: for each open hour, the fewest stations that
+        # hold p90 under target — an actual shift schedule rather than a
+        # single-day metric. Its own endpoint for the same reason as the
+        # other two experiments: a different response shape, not a variant.
+        post "staffing_curves", to: "staffing_curves#create"
       end
     end
   end

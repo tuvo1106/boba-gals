@@ -293,3 +293,29 @@ export interface QuantumSweep {
   /** Ten points, ascending — `Simulator::QuantumSweep::POINTS`. */
   points: QuantumSweepPoint[]
 }
+
+/**
+ * One open hour's answer: the fewest stations, of the eight tried, whose p90
+ * for orders arriving that hour cleared `target_seconds` (§10.5 #3).
+ */
+export interface StaffingCurveHour {
+  /** Shop-clock hour, 10–20 — matches `clock.ts`'s `OPENS_AT`. */
+  hour: number
+  stations: number
+  /** False means every count up to `Simulator::StaffingCurve::STATIONS_TRIED`'s
+   *  ceiling still missed the target — `stations` is the ceiling, not an answer. */
+  achieved: boolean
+  p90: number
+  orders: number
+  p90_meaningful: boolean
+}
+
+/** The response from POST /api/v1/admin/staffing_curves (§10.5 #3). */
+export interface StaffingCurve {
+  seed: number
+  seeds: number
+  demand_multiplier: number
+  target_seconds: number
+  /** Eleven hours, ascending — one per §10.3's arrival profile. */
+  hours: StaffingCurveHour[]
+}
