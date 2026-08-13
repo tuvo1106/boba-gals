@@ -21,6 +21,13 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The dashboard can push a policy change to the live store** (§10.6). "Apply to store" sits
+  in its own labelled box, separate from the simulator controls above it, and shows the diff
+  — live policy versus what's on the rail — before writing anything; nothing is sent until
+  that's confirmed. Disabled outright for RR or SJF, since those are simulator-only comparison
+  arms the server has always refused. Deliberately thin for now: quantum, aging, and cohesion
+  stay experiment-only rather than becoming rail controls, since the rail never had a
+  persistent value for them to begin with — ADR-0022 has the reasoning.
 - **The dashboard can find how much demand a config can actually take** (§10.5). One click
   raises demand from 0.5x to 3x and reports the first point where the typical customer's
   wait crosses 15 minutes (5 and 10 are also selectable) — the shop's real capacity under

@@ -10,7 +10,8 @@ import { MetricGrid } from './MetricGrid'
 import { useAdminSession } from './useAdminSession'
 import { shopClock } from './clock'
 import type {
-  Ablation, AdminUser, BreakingPoint, Policy, QuantumSweep, StaffingCurve, SimulationRun,
+  Ablation, AdminUser, BreakingPoint, Policy, QuantumSweep, SchedulerConfig, StaffingCurve,
+  SimulationRun,
 } from '../api/types'
 
 /** §6.3's arms, in the order the ablation reads: least fair to most. */
@@ -113,6 +114,15 @@ function Dashboard({
   const [breakingDays, setBreakingDays] = useState(1)
   const [breakingTarget, setBreakingTarget] = useState(900)
   const [breaking, setBreaking] = useState(false)
+  // §10.6's "Apply to store": what's actually live, versus what the config
+  // rail is set to. `null` until the first fetch resolves — the button stays
+  // disabled rather than guessing, since applying against a stale or absent
+  // read is exactly the "dashboard state silently becomes production state"
+  // failure §10.6 warns against.
+  const [liveConfig, setLiveConfig] = useState<SchedulerConfig | null>(null)
+  const [confirmingApply, setConfirmingApply] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
 
   async function compare(days = ablationDays) {
     setComparing(true)
@@ -214,6 +224,58 @@ function Dashboard({
     }
   }
 
+  // A background status read, not a user-initiated action — failing here
+  // shows up as "Apply to store" staying disabled (its title says why),
+  // rather than the same page-wide alert a failed run or sweep would raise.
+  // That banner is for things the operator asked for; this is a check they
+  // didn't.
+  async function fetchLiveConfig() {
+    try {
+      const response = await fetch('/api/v1/admin/scheduler_config', { credentials: 'same-origin' })
+
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      if (!response.ok) return
+      const body = (await response.json()) as { scheduler_config: SchedulerConfig }
+
+      setLiveConfig(body.scheduler_config)
+    } catch {
+      // liveConfig stays null; the button's own title covers this case.
+    }
+  }
+
+  // §10.6: "writes the current config to stores.scheduler_config, with a
+  // confirmation showing the diff. Never let dashboard state silently become
+  // production state." `confirmingApply` is that confirmation — this only
+  // runs once the operator has already seen the diff and clicked through it.
+  async function applyToStore() {
+    setApplying(true)
+    setApplyError(null)
+    try {
+      const response = await fetch('/api/v1/admin/scheduler_config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ scheduler_config: { policy } }),
+      })
+      if (response.status === 401) {
+        onExpired()
+        return
+      }
+      const body = (await response.json()) as { scheduler_config?: SchedulerConfig; errors?: string[] }
+      if (!response.ok) throw new Error(body.errors?.join(', ') ?? `Apply failed (${response.status})`)
+
+      setLiveConfig(body.scheduler_config ?? null)
+      setConfirmingApply(false)
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : 'Apply failed')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   async function go(
     nextSeed = seed, nextPolicy = policy, nextSpan = span, nextFrom = from,
     nextStations = stations, nextDemand = demand,
@@ -255,7 +317,7 @@ function Dashboard({
     }
   }
 
-  useEffect(() => { go() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { go(); fetchLiveConfig() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Scrub to where an order was actually made. Order ids run in arrival order,
@@ -305,7 +367,9 @@ function Dashboard({
         <div className="flex gap-1 font-mono text-xs" role="group" aria-label="policy">
           {POLICIES.map(({ id: p, title }) => (
             <button
-              key={p} onClick={() => { setPolicy(p); go(seed, p) }} title={title}
+              key={p}
+              onClick={() => { setPolicy(p); setConfirmingApply(false); setApplyError(null); go(seed, p) }}
+              title={title}
               className={`px-2 py-0.5 uppercase ${policy === p ? 'bg-amber-600 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'}`}
             >
               {p}
@@ -428,6 +492,22 @@ function Dashboard({
           <span className="w-8 tabular-nums text-neutral-300">{demand.toFixed(1)}×</span>
         </label>
 
+      </div>
+
+      {/* Its own box, deliberately: the masthead's policy buttons and this
+          row answer different questions — "what am I simulating" against
+          "what is the shop actually running" — and had no line between them
+          when this lived inline in the header. A reader could not tell
+          which policy button was about to write to production. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3 border border-neutral-800 px-3 py-2">
+        <span className="font-mono text-xs tracking-widest text-neutral-600 uppercase">Live store</span>
+        <ApplyToStore
+          policy={policy} liveConfig={liveConfig} confirming={confirmingApply} applying={applying}
+          error={applyError}
+          onRequestApply={() => setConfirmingApply(true)}
+          onCancel={() => { setConfirmingApply(false); setApplyError(null) }}
+          onConfirm={applyToStore}
+        />
       </div>
 
       {error && <p role="alert" className="font-mono text-sm text-amber-500">{error}</p>}
@@ -734,6 +814,79 @@ function Verdict({
         </p>
       )}
     </section>
+  )
+}
+
+/**
+ * §10.6's "Apply to store" — the only path from the dashboard's config rail
+ * to `stores.scheduler_config`. Thin by design: today the rail only exposes
+ * `policy`, so that is the only field this writes (ADR-0022). `rr`/`sjf`
+ * never reach the confirm step — `UpdateSchedulerConfig::SCHEMA` refuses
+ * them, and disabling the button here says so before the request round-trip
+ * does.
+ *
+ * "Never let dashboard state silently become production state" (§10.6):
+ * `confirming` is a required stop between clicking and writing, and shows
+ * the diff — live policy versus what the rail is set to — rather than
+ * asking for blind trust in a button label.
+ */
+function ApplyToStore({
+  policy, liveConfig, confirming, applying, error, onRequestApply, onCancel, onConfirm,
+}: {
+  policy: Policy
+  liveConfig: SchedulerConfig | null
+  confirming: boolean
+  applying: boolean
+  error: string | null
+  onRequestApply: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const simulatorOnly = policy === 'rr' || policy === 'sjf'
+  const matchesLive = liveConfig !== null && liveConfig.policy === policy
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2 border border-amber-700 px-2 py-1 font-mono text-xs">
+        <span className="text-amber-500">
+          apply policy: {liveConfig?.policy} → {policy}?
+        </span>
+        <button
+          onClick={onConfirm} disabled={applying}
+          className="border border-amber-600 bg-amber-600 px-2 py-0.5 uppercase text-neutral-950 hover:bg-amber-500 disabled:opacity-40"
+        >
+          {applying ? 'Applying…' : 'Confirm'}
+        </button>
+        <button
+          onClick={onCancel} disabled={applying}
+          className="text-neutral-500 hover:text-neutral-300 disabled:opacity-40"
+        >
+          cancel
+        </button>
+        {error && <span className="text-rose-500">{error}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 font-mono text-xs">
+      <span className="text-neutral-600" title="What the store is actually running right now">
+        live {liveConfig ? liveConfig.policy.toUpperCase() : '…'}
+      </span>
+      <button
+        onClick={onRequestApply}
+        disabled={simulatorOnly || liveConfig === null || matchesLive}
+        title={
+          simulatorOnly ? `${policy.toUpperCase()} is simulator-only and can never run live`
+            : liveConfig === null ? 'Reading live config…'
+              : matchesLive ? 'Already live'
+                : `Write policy: ${policy} to the store`
+        }
+        className="border border-neutral-700 px-2 py-0.5 uppercase text-neutral-500 hover:border-amber-500 hover:text-neutral-300 disabled:opacity-30 disabled:hover:border-neutral-700 disabled:hover:text-neutral-500"
+      >
+        Apply to store
+      </button>
+    </div>
   )
 }
 
