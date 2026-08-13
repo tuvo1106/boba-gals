@@ -49,6 +49,8 @@ class FinishDrink
       # reachable more than once — the KDS undo (§5.2) can move an order back
       # out of it and a re-finish re-enters it.
       SendReadySmsJob.perform_later(order.id)
+
+      record_wait_metrics(order)
     end
 
     BroadcastStoreViews.call(order.store)
@@ -56,6 +58,22 @@ class FinishDrink
   end
 
   private
+
+  # §10.4's headline and its ETA bias supporting metric (§15), observed at the
+  # one event they're both defined from: an order actually reaching `ready`.
+  # Same reachable-more-than-once caveat as the SMS above — a re-finish after
+  # a KDS undo observes again, which is correct: it's a second real wait for
+  # whoever is still waiting on that order, not a duplicate of the first.
+  def record_wait_metrics(order)
+    wait_seconds = order.ready_at - order.placed_at
+    Yabeda.boba_gals.order_wait_seconds.measure({ store: order.store_id, size_class: order.size_class }, wait_seconds)
+
+    return if order.quoted_wait_seconds.nil?
+
+    Yabeda.boba_gals.eta_signed_error_seconds.measure(
+      { store: order.store_id }, wait_seconds - order.quoted_wait_seconds
+    )
+  end
 
   def failure(message)
     Result.new(success?: false, error: message)

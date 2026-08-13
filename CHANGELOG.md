@@ -21,6 +21,17 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **Production exports the business metrics §15 asks for, scraped by Prometheus and charted
+  in Grafana** (§15, §10.4). Beyond yabeda-rails' framework defaults: kitchen queue depth,
+  a customer wait-time histogram by order size class, ETA signed error against the quote
+  given at placement, and running totals of quality breaches and remakes. One Grafana
+  dashboard mirrors §10.4's headline — small-order p90 wait next to the concurrent
+  large-order rate, the live analogue of the simulator's swept `large_order_rate` parameter.
+  The four "current total" gauges are computed fresh from Postgres on every scrape rather
+  than incremented in-process, because one of their sources (the quality-breach sweep) runs
+  on `worker`, which has no metrics exporter yet — ADR-0025 has the reasoning. `kube-prometheus-stack`
+  installs via Helm into the local kind cluster (`bin/k8s-up`, skipped in CI — real memory
+  weight the cluster smoke test doesn't need to prove the app side works).
 - **The KDS flags a drink that's been sitting too long while the rest of its order is still
   being made** (§9.4, §9.6). A periodic sweep finds finished drinks past `quality_limit_seconds`
   (default 5 minutes) whose order is still waiting on a sibling and logs one breach per drink

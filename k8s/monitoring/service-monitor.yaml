@@ -1,0 +1,18 @@
+# Tells Prometheus (installed separately via the kube-prometheus-stack chart,
+# k8s/kube-prometheus-stack-values.yaml) where to scrape this app's own
+# metrics (§15). A CRD from that chart's Prometheus Operator, so this can only
+# be applied once that chart is installed — never part of k8s/base or
+# k8s/overlays/*, which CI applies to a cluster that doesn't have it.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: web
+  namespace: boba-gals
+spec:
+  selector:
+    matchLabels:
+      app: web
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

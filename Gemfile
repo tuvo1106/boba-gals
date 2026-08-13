@@ -32,6 +32,13 @@ gem "rack-cors", "~> 3.0"
 # pod grant its own 10/min instead of enforcing one limit across both.
 gem "rack-attack", "~> 6.7"
 
+# Metrics (§15), scraped from /metrics by kube-prometheus-stack. yabeda-sidekiq
+# is deliberately not here yet — it needs a metrics server running inside the
+# worker process too, which is infra plumbing for a later PR, not this one.
+gem "yabeda", "~> 0.16"
+gem "yabeda-rails", "~> 0.11"
+gem "yabeda-prometheus", "~> 0.9"
+
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 

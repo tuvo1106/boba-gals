@@ -129,6 +129,19 @@ class Order < ApplicationRecord
       .sort_by(&:sequence)
   end
 
+  # §10.4's size classes, by drink count. Duplicated rather than shared with
+  # the simulator's own `SIZE_CLASSES` (`app/simulator/simulator/metrics.rb`)
+  # — that layer measures `Simulator::Drink` structs, not `Order` rows, so
+  # there is no single method either side could call. The boundary is three
+  # small, stable ranges; not worth an extraction neither side would reuse.
+  SIZE_CLASSES = { "1-2" => (1..2), "3-6" => (3..6), "7+" => (7..) }.freeze
+
+  # @return [String, nil] which of SIZE_CLASSES this order's drink count falls into
+  def size_class
+    count = countable_items.size
+    SIZE_CLASSES.find { |_, range| range.cover?(count) }&.first
+  end
+
   private
 
   def squeeze_phone

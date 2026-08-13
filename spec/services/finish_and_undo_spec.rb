@@ -241,6 +241,49 @@ RSpec.describe "finishing and undoing drinks" do
     end
   end
 
+  # §15's histograms are observed at the same one event the order_ready
+  # SchedulerEvent and the SMS already key off — see the comments there for
+  # why that event fires exactly once per genuine ready transition.
+  describe "wait metrics (§15)" do
+    it "records the order's wait time, tagged by size class" do
+      item = working_drink
+      order.update!(placed_at: 5.minutes.ago)
+
+      expect(Yabeda.boba_gals.order_wait_seconds).to receive(:measure)
+        .with({ store: store.id, size_class: "1-2" }, a_value_within(2).of(300))
+
+      FinishDrink.new.call(item)
+    end
+
+    it "records the signed ETA error against quoted_wait_seconds" do
+      item = working_drink
+      order.update!(placed_at: 5.minutes.ago, quoted_wait_seconds: 200)
+
+      expect(Yabeda.boba_gals.eta_signed_error_seconds).to receive(:measure)
+        .with({ store: store.id }, a_value_within(2).of(100))
+
+      FinishDrink.new.call(item)
+    end
+
+    it "does not record anything while the order is only part made" do
+      first = working_drink
+      working_drink
+
+      expect(Yabeda.boba_gals.order_wait_seconds).not_to receive(:measure)
+
+      FinishDrink.new.call(first)
+    end
+
+    it "skips the ETA error when quoted_wait_seconds was never set" do
+      item = working_drink
+      order.update!(quoted_wait_seconds: nil)
+
+      expect(Yabeda.boba_gals.eta_signed_error_seconds).not_to receive(:measure)
+
+      FinishDrink.new.call(item)
+    end
+  end
+
   # §9.7: exactly one message, when the order transitions to ready.
   describe "the ready SMS (§9.7)" do
     # `perform_enqueued_jobs` — the undo/re-finish example needs the job to

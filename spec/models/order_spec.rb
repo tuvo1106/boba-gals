@@ -86,6 +86,33 @@ RSpec.describe Order do
     end
   end
 
+  describe "#size_class (§10.4)" do
+    def order_with(drink_count)
+      order = create(:order)
+      drink_count.times { |i| create(:order_item, order: order, sequence: i + 1) }
+      order
+    end
+
+    it "classes 1-2 drinks as \"1-2\"" do
+      expect(order_with(1).size_class).to eq("1-2")
+      expect(order_with(2).size_class).to eq("1-2")
+    end
+
+    it "classes 3-6 drinks as \"3-6\"" do
+      expect(order_with(3).size_class).to eq("3-6")
+      expect(order_with(6).size_class).to eq("3-6")
+    end
+
+    it "classes 7 or more drinks as \"7+\", uncapped" do
+      expect(order_with(7).size_class).to eq("7+")
+      expect(order_with(20).size_class).to eq("7+")
+    end
+
+    it "is nil for an order with no countable drinks yet" do
+      expect(create(:order).size_class).to be_nil
+    end
+  end
+
   describe "#promised?" do
     it "is false for ASAP orders" do
       expect(build(:order, promised_at: nil)).not_to be_promised

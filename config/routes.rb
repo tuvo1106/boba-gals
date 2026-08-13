@@ -9,6 +9,14 @@ Rails.application.routes.draw do
   # business question and must never drive the kubelet (§14.3).
   get "readyz" => "readiness#show"
 
+  # Scraped by kube-prometheus-stack (§15), not the kubelet — this is not a
+  # probe. Unauthenticated deliberately: the ingress routes only /api and
+  # /cable to `web` (§14.2), everything else to `frontend`, so this path is
+  # unreachable from outside the cluster no matter what it returns. In-cluster
+  # scraping reaches it directly through the `web` Service, bypassing the
+  # ingress entirely.
+  mount Yabeda::Prometheus::Exporter => "/metrics"
+
   namespace :api do
     namespace :v1 do
       # Ordering — kiosk and web (§9.1)
