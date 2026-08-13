@@ -272,6 +272,11 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The quantum sweep chart now marks what its lines are actually worth in seconds**
+  (§10.5). It shipped with only the caption stating each series' range in words — reading
+  a point's height meant hovering it one at a time. Both sweep charts now carry reference
+  lines with values on them, so the shape of a curve is legible at a glance instead of only
+  its endpoints.
 - **Undoing a mistap on the kitchen display no longer teaches the board a drink was faster
   than it is** (§5.2, §7.3). Tapping Done on the wrong card and undoing it still counted
   that non-drink toward how long the drink takes — and because a mistap is nearly always

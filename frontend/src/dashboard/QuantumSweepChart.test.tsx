@@ -95,6 +95,17 @@ describe('QuantumSweepChart (§10.5 #2)', () => {
     expect(screen.getByText('quantum 180s — 7+ drinks p90 1811s (n=4, not a percentile)')).toBeInTheDocument()
   })
 
+  // Regression: the chart shipped with only the caption stating each series'
+  // range in words, and no way to read a point's height without hovering it.
+  it('labels the top and bottom reference line on both scales', () => {
+    render(<QuantumSweepChart sweep={sweep()} />)
+
+    expect(screen.getByText('418s')).toBeInTheDocument()
+    expect(screen.getByText('303s')).toBeInTheDocument()
+    expect(screen.getByText('2008s')).toBeInTheDocument()
+    expect(screen.getByText('1523s')).toBeInTheDocument()
+  })
+
   it('warns that a single day cannot separate a small gap from noise', () => {
     render(<QuantumSweepChart sweep={sweep()} />)
 
