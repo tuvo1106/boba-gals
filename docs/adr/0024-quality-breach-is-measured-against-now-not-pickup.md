@@ -83,6 +83,12 @@ invisible to it entirely. Framed as an operational signal rather than a research
 answers "is the melted-first-drink problem happening right now", not "what fraction of drinks
 go stale."
 
+The flat 300s threshold is also blunter than it looks once read against ADR-0014's own spread
+figures: p90 spread for 3+ drink orders runs 943s–7505s, 3x–25x past the limit, so the marker
+is close to guaranteed on any order that size rather than catching an actual outlier. Left as
+is here — it still does §9.6's one job — with size-aware calibration tracked separately
+([#80](https://github.com/tuvo1106/boba-gals/issues/80)) rather than blocking this change.
+
 30s sweep granularity means a breach is logged and the marker appears up to 30 seconds after
 the drink actually crossed the threshold — imperceptible against a 300s default limit, same
 tradeoff the ETA idle tick already accepted.
