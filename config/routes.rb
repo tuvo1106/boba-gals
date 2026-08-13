@@ -73,6 +73,12 @@ Rails.application.routes.draw do
         # single-day metric. Its own endpoint for the same reason as the
         # other two experiments: a different response shape, not a variant.
         post "staffing_curves", to: "staffing_curves#create"
+
+        # §10.5's breaking point: raise demand until p90 crosses the target —
+        # the shop's real capacity. Its own endpoint for the same reason as
+        # the other three experiments: a curve plus a capacity figure, not a
+        # single-day metric or a variant of another response shape.
+        post "breaking_points", to: "breaking_points#create"
       end
     end
   end

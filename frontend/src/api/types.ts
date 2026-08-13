@@ -319,3 +319,28 @@ export interface StaffingCurve {
   /** Eleven hours, ascending — one per §10.3's arrival profile. */
   hours: StaffingCurveHour[]
 }
+
+/** One demand multiplier tried, and what a day looked like at it (§10.5 #4). */
+export interface BreakingPointPoint {
+  demand_multiplier: number
+  /** Customers who walked in. Unlike `Ablation`/`QuantumSweep`, this is *not*
+   *  expected to match across points — demand_multiplier scales the arrival
+   *  intensity itself (§10.1), so a higher point sees more customers by
+   *  construction. */
+  arrived: number
+  metrics: SimulationMetrics
+}
+
+/** The response from POST /api/v1/admin/breaking_points (§10.5 #4). */
+export interface BreakingPoint {
+  seed: number
+  seeds: number
+  stations: number
+  target_seconds: number
+  /** Points, ascending — `Simulator::BreakingPoint::POINTS`. */
+  points: BreakingPointPoint[]
+  /** The first demand multiplier whose overall p90 crossed `target_seconds` —
+   *  the shop's real capacity. Null when nothing in `points` crossed it, the
+   *  ceiling of what was tried rather than an answer. */
+  capacity: number | null
+}
