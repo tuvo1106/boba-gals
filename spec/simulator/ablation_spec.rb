@@ -53,7 +53,11 @@ RSpec.describe Simulator::Ablation do
   # 3.0x day costs 5.4s per arm against 1.4s at 2.5x. The property under test —
   # identical arrival streams — is load-independent, and 2.5x is already past
   # saturation at 89% utilisation with 152 customers walking out.
-  it "gives every arm the same customers, so a difference is the mechanism" do
+  # `:slow` (docs/testing.md): the 2.2x and 2.5x runs this checks are the
+  # most expensive in this file — 3.48s and 5.55s against 0.68s at the
+  # 1.6x every other example here uses — because saturation is the property
+  # under test and cannot be checked cheaply.
+  it "gives every arm the same customers, so a difference is the mechanism", :slow do
     [ 1.6, 2.2, 2.5 ].each do |demand|
       arrived = described_class.call(seed: 7, stations: 3, demand_multiplier: demand)
                                .map { |a| a[:arrived] }
@@ -68,7 +72,9 @@ RSpec.describe Simulator::Ablation do
   # "Reneging prices the cost of slowness in lost revenue rather than abstract
   # seconds" — so an arm serving *fewer* orders off identical arrivals is the
   # metric doing its job, not the experiment leaking.
-  it "lets the arms serve different numbers of those customers when the shop is slammed" do
+  # `:slow`: needs real saturation (2.2x) to mean anything, same reason as
+  # the example above.
+  it "lets the arms serve different numbers of those customers when the shop is slammed", :slow do
     runs = described_class.call(seed: 7, stations: 3, demand_multiplier: 2.2)
 
     served = runs.map { |a| a[:metrics][:orders] }

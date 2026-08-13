@@ -43,60 +43,67 @@ RSpec.describe "POST /api/v1/admin/ablations (§10.5, §10.6)" do
         .to include("fifo" => "control", "drr" => "rung", "sjf" => "bound")
     end
 
-    # Both comparison arms are judged on drink cost rather than order size —
-    # SJF's whole damage lands there (§6.1). A payload without it leaves the
-    # chart's second axis with nothing to draw.
-    it "carries the drink-cost split every arm is judged on" do
-      ablate(seed: 7)
+    # Everything below checks presence and plumbing, never a specific arm's
+    # identity, so two arms (real configs, just fewer of them) prove the same
+    # thing for a third of the cost.
+    context "with a narrowed arm list" do
+      before { stub_const("Simulator::Ablation::ARMS", Simulator::Ablation::ARMS.first(2)) }
 
-      expect(body["arms"]).to all(include("metrics" => include("wait_by_drink_cost")))
-    end
+      # Both comparison arms are judged on drink cost rather than order size —
+      # SJF's whole damage lands there (§6.1). A payload without it leaves the
+      # chart's second axis with nothing to draw.
+      it "carries the drink-cost split every arm is judged on" do
+        ablate(seed: 7)
 
-    it "labels each arm for someone who has not read §6" do
-      ablate(seed: 7)
+        expect(body["arms"]).to all(include("metrics" => include("wait_by_drink_cost")))
+      end
 
-      expect(body["arms"].map { |a| a["label"] }).to all(be_present)
-      expect(body["arms"].map { |a| a["blurb"] }).to all(be_present)
-    end
+      it "labels each arm for someone who has not read §6" do
+        ablate(seed: 7)
 
-    # "Every run must display its seed" (§10.6), and a bar chart comparing
-    # schedulers is worth less than nothing if nobody can re-run it.
-    it "reports everything needed to reproduce the chart" do
-      ablate(seed: 7, stations: 4, seeds: 2, quantum: 90)
+        expect(body["arms"].map { |a| a["label"] }).to all(be_present)
+        expect(body["arms"].map { |a| a["blurb"] }).to all(be_present)
+      end
 
-      expect(body).to include(
-        "seed" => 7, "seeds" => 2, "stations" => 4, "quantum" => 90,
-        "demand_multiplier" => 1.6
-      )
-    end
+      # "Every run must display its seed" (§10.6), and a bar chart comparing
+      # schedulers is worth less than nothing if nobody can re-run it.
+      it "reports everything needed to reproduce the chart" do
+        ablate(seed: 7, stations: 4, seeds: 2, quantum: 90)
 
-    it "is reproducible from the seed" do
-      ablate(seed: 7)
-      first = body
+        expect(body).to include(
+          "seed" => 7, "seeds" => 2, "stations" => 4, "quantum" => 90,
+          "demand_multiplier" => 1.6
+        )
+      end
 
-      ablate(seed: 7)
+      it "is reproducible from the seed" do
+        ablate(seed: 7)
+        first = body
 
-      expect(body).to eq(first)
-    end
+        ablate(seed: 7)
 
-    # The number actually used, not the number asked for — a response claiming
-    # 10,000 days when it ran 25 is a lie the chart would repeat.
-    # Stubbed rather than run at the real ceiling: what matters is that the
-    # response reports the number used, not that 25 is the number. Running it
-    # for real meant simulating 150 days to check one integer.
-    it "reports the clamped day count rather than the requested one" do
-      stub_const("Simulator::Ablation::MAX_SEEDS", 2)
+        expect(body).to eq(first)
+      end
 
-      ablate(seed: 7, seeds: 10_000)
+      # The number actually used, not the number asked for — a response claiming
+      # 10,000 days when it ran 25 is a lie the chart would repeat.
+      # Stubbed rather than run at the real ceiling: what matters is that the
+      # response reports the number used, not that 25 is the number. Running it
+      # for real meant simulating 150 days to check one integer.
+      it "reports the clamped day count rather than the requested one" do
+        stub_const("Simulator::Ablation::MAX_SEEDS", 2)
 
-      expect(body["seeds"]).to eq(2)
-      expect(body["arms"].first["metrics"]["orders"]).to be_positive
-    end
+        ablate(seed: 7, seeds: 10_000)
 
-    it "defaults to one day, as §10.5 specifies" do
-      ablate(seed: 7)
+        expect(body["seeds"]).to eq(2)
+        expect(body["arms"].first["metrics"]["orders"]).to be_positive
+      end
 
-      expect(body["seeds"]).to eq(1)
+      it "defaults to one day, as §10.5 specifies" do
+        ablate(seed: 7)
+
+        expect(body["seeds"]).to eq(1)
+      end
     end
   end
 end

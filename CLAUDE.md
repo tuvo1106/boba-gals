@@ -155,8 +155,18 @@ made actually needs that much — two figures far enough apart usually settle in
 a mechanism check (clamping, reproducibility, a fallback path) rarely cares where in the
 real range the answer lands. Keep exactly one example that runs the real, unstubbed
 range/day-count end to end, and narrow the rest — `stub_const` the swept constant down for
-examples that are only checking the mechanism. Check `bin/rspec`'s wall-clock time before
+examples that are only checking the mechanism. **Narrow the demand too, not just the swept
+constant's range** — a low station or point count can itself be expensive at a file's
+realistic demand (1 station at 1.6× costs 3.16s against 0.14s at 3), so a "narrowed" context
+that only shrinks the range can still be slow. Check `bin/rspec`'s wall-clock time before
 calling a new simulator spec done, the same way the coverage gates get checked.
+
+The one real, unstubbed example still costs something even narrowed to a single run — tag
+it `:slow` (`spec/spec_helper.rb` excludes `:slow` by default; `SLOW=1 bin/rspec` runs
+everything). This is what closed out issue #75: four experiment files each doing this
+independently had grown `bin/rspec` to 5m33s locally / 17+ minutes in CI. Full reasoning
+and the exact commands are in `docs/testing.md`'s "What a simulation spec is allowed to
+cost".
 
 ### Killing a command does not kill what it started
 

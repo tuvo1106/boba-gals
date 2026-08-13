@@ -149,6 +149,38 @@ Neither is licence to lower a threshold or skip a case to make a red suite green
 is that the numbers still say what they said — check coverage is unchanged, and that the
 margin on the assertion got wider rather than narrower.
 
+**A third rule, once the first two stopped being enough (issue #75).** By the time four
+§10.5 experiments each had their own spec file, `bin/rspec` had grown from seconds to 5m33s
+locally and 17+ minutes in CI — not from any one file, but from the same shape repeating:
+a "narrowed" context that was narrow in *range* but not in *cost* (a low station or drink
+count is itself expensive at this file's realistic demand — 1 station at 1.6x demand costs
+3.16s against 0.14s at 3, a 22x difference that narrowing the count alone does not fix), and
+request specs that never stubbed anything at all, paying full simulation cost just to
+exercise routing and response shape.
+
+**Tag a real-parameter example `:slow` rather than deleting the coverage it earns.**
+`spec/spec_helper.rb` excludes `:slow` by default; `SLOW=1 bin/rspec` runs everything,
+including every `:slow` example. Two commands, not two suites to keep in sync:
+
+```bash
+bin/rspec                              # fast tier — CI, every push
+SLOW=1 bin/rspec                       # both tiers — before a release, or touching app/simulator/**
+SLOW=1 bin/rspec spec/simulator/staffing_curve_spec.rb   # one file's slow examples
+```
+
+What earns the tag: an example that needs the *real* range, the *real* demand, or enough
+pooled days to trust a noisy statistic — the ones the first two rules above cannot make
+cheap without changing what's being proven. Everything else gets the existing two rules
+applied harder: stub the swept constant small **and** drop demand to whatever a mechanism
+check (clamping, reproducing, falling back) doesn't depend on the realism of — narrowing
+only the *count* while leaving demand realistic was the gap that let `staffing_curve_spec.rb`
+back up to 108.98s despite already having a "narrowed" context.
+
+Net effect: 628 examples → 619 in the default tier (76.68s from 333s locally, coverage
+gates unchanged — 99.36%/94.23%, `app/scheduler/**` still 100%/100%), 626 across both tiers
+together (163.1s). §11's acceptance suite, when it exists, is the next candidate for the
+same tag rather than a bespoke `--tag acceptance` mechanism.
+
 ## Golden tests
 
 Fixed seeds producing byte-identical dispatch sequences. They live in
@@ -177,10 +209,11 @@ Fixed seeds producing byte-identical dispatch sequences. They live in
 
 ## Acceptance criteria (§11) — not yet built
 
-**No `acceptance`-tagged spec exists.** These are §11's simulation-backed properties and the
-intended shape is a slow-tagged suite (`--tag acceptance`) kept off every push. Written down
-here as a target rather than a description of something that runs — the ETA bias figure the
-third one needs only started existing with §10.4's metric grid:
+**No acceptance spec exists yet.** These are §11's simulation-backed properties, and the tag
+to reach for when they're written is the `:slow` mechanism above — pooling enough days to
+trust a ±15% or ±45s tolerance is exactly the "real parameter, real cost" case it exists for.
+Written down here as a target rather than a description of something that runs — the ETA
+bias figure the third one needs only started existing with §10.4's metric grid:
 
 - Small-order p90 wait is flat (±15%) across large-order rates 0%–12%, under DRR, at 3
   stations, default demand.

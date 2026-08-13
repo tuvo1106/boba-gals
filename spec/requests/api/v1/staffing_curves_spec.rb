@@ -20,8 +20,22 @@ RSpec.describe "POST /api/v1/admin/staffing_curves (§10.5 #3)" do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  # This spec is about routing, auth, and response shape — `StaffingCurve`'s
+  # own spec already covers the real 1–8 range end to end (as `:slow`,
+  # docs/testing.md). Narrowed here for the same reason that file's mechanism
+  # examples are: a low station count under this file's default 1.6x demand
+  # is itself expensive — benchmarked at 3.16s for 1 station against 0.14s
+  # for 3 — so demand drops too, to a level no assertion here depends on the
+  # realism of.
   context "signed in" do
-    before { sign_in }
+    before do
+      sign_in
+      stub_const("Simulator::StaffingCurve::STATIONS_TRIED", (1..3))
+    end
+
+    def curve(**params)
+      post "/api/v1/admin/staffing_curves", params: { demand_multiplier: 0.5, **params }, as: :json
+    end
 
     it "returns one entry per open hour, ascending" do
       curve(seed: 7)
@@ -42,7 +56,7 @@ RSpec.describe "POST /api/v1/admin/staffing_curves (§10.5 #3)" do
       curve(seed: 7, seeds: 2, target_seconds: 300)
 
       expect(body).to include(
-        "seed" => 7, "seeds" => 2, "demand_multiplier" => 1.6, "target_seconds" => 300.0
+        "seed" => 7, "seeds" => 2, "demand_multiplier" => 0.5, "target_seconds" => 300.0
       )
     end
 
