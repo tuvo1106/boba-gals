@@ -38,7 +38,13 @@ Rails.application.configure do
   # the two probes to prevent. Excluding them keeps them answering with their
   # own status.
   config.ssl_options = {
-    redirect: { exclude: ->(request) { request.path.in?(%w[/up /readyz]) } }
+    # /metrics joins /up and /readyz for the same reason (§14.3, ADR-0008):
+    # Prometheus scrapes the ClusterIP Service directly, bypassing the ingress
+    # and its TLS termination entirely, so this request looks exactly like the
+    # kubelet's — no X-Forwarded-Proto — and force_ssl would redirect every
+    # scrape to https instead of ever collecting data, with nothing anywhere
+    # to say so.
+    redirect: { exclude: ->(request) { request.path.in?(%w[/up /readyz /metrics]) } }
   }
 
   # ActionCable's origin check defaults to same-origin *over https*, derived

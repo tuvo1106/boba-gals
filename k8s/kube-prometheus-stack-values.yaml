@@ -1,0 +1,74 @@
+# Values for the third-party kube-prometheus-stack chart (§15, §14.2 — Helm
+# is for exactly this kind of dependency, never for this app's own manifests).
+#
+# Trimmed for a kind cluster that lives on a laptop and is deleted with
+# `kind delete cluster` — the same reasoning `k8s/base/redis.yaml` gives for
+# skipping persistence there: every value here is reconstructible by
+# reinstalling the chart, so paying for a PVC buys nothing. Not applied in CI
+# (`bin/k8s-up` skips this whole install when `$CI` is set) — issue tracked
+# separately if that ever needs to change.
+
+alertmanager:
+  # No alert rules are defined yet, so there is nothing for it to route.
+  # Carrying the pod anyway would be resource cost for a feature not in use.
+  enabled: false
+
+grafana:
+  persistence:
+    enabled: false
+  # Dev-only, unmistakably fake per CLAUDE.md's convention — this cluster is
+  # deleted with `kind delete cluster`, never a real deploy.
+  adminPassword: dev-only-not-a-real-password
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+  # Loads any ConfigMap labeled grafana_dashboard: "1" in any namespace —
+  # k8s/monitoring/grafana-dashboard.yaml, applied separately after this
+  # chart (its CRDs and this sidecar have to exist first).
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 512Mi }
+    storageSpec: {}
+    # Off, so this app's own ServiceMonitor (k8s/monitoring/service-monitor.yaml,
+    # applied separately) doesn't have to carry a `release: <helm-release-name>`
+    # label the chart's default selector would otherwise require — that name is
+    # an install-time choice, not something this app's manifests should know.
+    serviceMonitorSelectorNilUsesHelmValues: false
+
+prometheusOperator:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+kubeStateMetrics:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 128Mi }
+
+nodeExporter:
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 64Mi }
+
+# This app owns no CRDs and needs none of the chart's bundled rule/dashboard
+# defaults about etcd, the scheduler, or the kubelet — a kind node runs all
+# of Kubernetes in one container, and those panels have nothing to show.
+defaultRules:
+  create: false
+
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false

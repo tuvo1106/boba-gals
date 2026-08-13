@@ -220,16 +220,28 @@ jobs:
           kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/readyz | grep -q '"database":true'
           kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/readyz | grep -q '"redis":true'
 
+      # kube-prometheus-stack itself is not installed in CI (bin/k8s-up skips
+      # it when $CI is set — real memory weight for no proof this job needs).
+      # This is the app-side half of §15 instead: the gauges are computed
+      # fresh from Postgres on every scrape (config/initializers/yabeda.rb),
+      # so a real number here — not just a 200 — is what proves that query
+      # path actually works against the seeded database, not just in a spec.
+      - name: /metrics serves real data
+        run: |
+          kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/metrics \
+            | grep -q '^boba_gals_queue_depth{store="1"} '
+
       # force_ssl (§14.5) redirects plain http, and the kubelet reaches the pod
       # directly with no X-Forwarded-Proto — so without the exclusion in
       # config/environments/production.rb both probes would answer 301. The
       # kubelet counts a 3xx as success, which would leave /readyz reporting
       # healthy with the database down and quietly undo ADR-0008. Asserting the
       # status code, because a redirect is exactly what a passing probe would
-      # look like.
-      - name: The probes are excluded from the https redirect
+      # look like. /metrics joins the list for the same reason — Prometheus
+      # reaches the Service the same direct way (§15).
+      - name: The probes and /metrics are excluded from the https redirect
         run: |
-          for path in up readyz; do
+          for path in up readyz metrics; do
             code=$(kubectl -n boba-gals exec deploy/web -- \
               curl -s -o /dev/null -w '%{http_code}' "localhost:3000/$path")
             echo "/$path over plain http: $code"

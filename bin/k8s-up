@@ -12,6 +12,7 @@ TAG=dev
 HOST=boba.localtest.me
 PORT=8443
 CERT_MANAGER_VERSION=v1.16.2
+KUBE_PROMETHEUS_STACK_VERSION=88.3.0
 
 cd "$ROOT"
 
@@ -89,6 +90,27 @@ kubectl -n "$NAMESPACE" rollout restart deployment/web deployment/worker deploym
 kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
 kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=300s
 
+# §15. Skipped in CI: the full chart (Prometheus, Grafana, kube-state-metrics,
+# node-exporter) is real memory weight on top of everything else the cluster
+# job already runs, and CI's smoke test only needs to prove the app side works
+# — that /metrics serves real data — not that Prometheus is scraping it.
+# Verified locally instead; not part of the automated suite.
+if [ -z "${CI:-}" ]; then
+  step "Installing kube-prometheus-stack"
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null
+  helm repo update prometheus-community >/dev/null
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring --create-namespace \
+    --version "$KUBE_PROMETHEUS_STACK_VERSION" \
+    -f k8s/kube-prometheus-stack-values.yaml \
+    --wait --timeout 5m
+
+  # A CRD from that chart, so this can only apply now that it exists — never
+  # part of k8s/base or k8s/overlays/* (see the comment in each file).
+  step "Applying monitoring manifests"
+  kubectl apply -f k8s/monitoring/
+fi
+
 step "Ready"
 kubectl -n "$NAMESPACE" get pods
 
@@ -113,3 +135,9 @@ case "$(uname -s)" in
 esac
 printf '\nNo sudo needed for scripts — point curl at the CA directly:\n\n'
 printf '  \033[2mcurl --cacert tmp/boba-ca.crt https://%s:%s/api/v1/health\033[0m\n' "$HOST" "$PORT"
+
+if [ -z "${CI:-}" ]; then
+  printf '\nGrafana (§15) has no Ingress rule — port-forward to reach it:\n\n'
+  printf '  \033[2mkubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3001:80\033[0m\n'
+  printf '  then http://localhost:3001 — admin / dev-only-not-a-real-password\n'
+fi
