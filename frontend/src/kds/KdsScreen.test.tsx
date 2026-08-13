@@ -35,7 +35,7 @@ vi.mock('../api/cable', () => ({
 function drink(overrides: Partial<KdsItem> = {}): KdsItem {
   return {
     id: 1, label: 'Classic Milk Tea, 50%, LESS ICE', status: 'queued', prep_seconds: 45,
-    pickup_code: 'A1B2', position: 1, order_size: 1, remake: false,
+    pickup_code: 'A1B2', position: 1, order_size: 1, remake: false, quality_breach: false,
     station_id: null, started_at: null, ...overrides,
   }
 }

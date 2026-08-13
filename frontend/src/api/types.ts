@@ -152,6 +152,13 @@ export interface KdsItem {
   position: number
   order_size: number
   remake: boolean
+  /**
+   * Staff-visible marker prompting a check-in or a proactive remake (§9.4,
+   * §9.6) — never shown to the customer (§9.5). Rides on a still-visible
+   * sibling drink, since the drink that actually went stale has already
+   * left the queue by the time this is true.
+   */
+  quality_breach: boolean
   station_id: number | null
   started_at: string | null
 }

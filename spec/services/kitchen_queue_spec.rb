@@ -79,6 +79,31 @@ RSpec.describe KitchenQueue do
     expect(card_for(described_class.call(store), remake)).to include(remake: true)
   end
 
+  # §9.4, §9.6: a fully-finished order has no KDS row at all (ADR-0005), so a
+  # breach on a finished drink has to surface on whatever's left of its order.
+  describe "the quality-breach marker" do
+    it "flags a still-visible sibling of a drink that logged a breach" do
+      order = create(:order, store: store)
+      stale = create(:order_item, order: order, menu_item: menu_item, sequence: 1, status: "finished",
+                                  started_at: 400.seconds.ago, finished_at: 320.seconds.ago)
+      sibling = create(:order_item, order: order, menu_item: menu_item, sequence: 2, status: "queued")
+      SchedulerEvent.record!(store: store, event_type: "quality_breach", order_item: stale)
+
+      payload = described_class.call(store)
+
+      expect(card_for(payload, sibling)).to include(quality_breach: true)
+    end
+
+    it "leaves an order with no logged breach unmarked" do
+      order = create(:order, store: store)
+      item = create(:order_item, order: order, menu_item: menu_item, sequence: 1, status: "queued")
+
+      payload = described_class.call(store)
+
+      expect(card_for(payload, item)).to include(quality_breach: false)
+    end
+  end
+
   # §13.5, and the KDS is a broadcast payload like any other.
   it "never carries customer_phone" do
     order = create(:order, :web, store: store, customer_phone: "+15555550123")

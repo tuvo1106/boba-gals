@@ -14,4 +14,13 @@ Rails.application.config.after_initialize do
     cron: "*/30 * * * * *",
     class: "RecomputeAllEtasJob"
   )
+
+  Sidekiq::Cron::Job.create(
+    name: "quality-breach-sweep",
+    # Same cadence as the ETA idle tick: nothing else fires while a finished
+    # drink just sits on the counter, so this is what notices it crossing
+    # quality_limit_seconds (default 300s) (§9.6).
+    cron: "*/30 * * * * *",
+    class: "SweepQualityBreachesJob"
+  )
 end
