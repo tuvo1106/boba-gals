@@ -460,6 +460,11 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Security
+- **The public API throttles by IP** (§13.2): 10 orders/minute, 60 pickup-code lookups/minute,
+  10 KDS PIN attempts/minute. A four-digit barista PIN is the one place brute force was
+  genuinely cheap; a busy Saturday from the store's own kiosk is exempted by a `KIOSK_IPS`
+  safelist rather than raising the limit for everyone. Counters live in Redis, not in-process
+  memory — `web` runs 2 pods (§14.2), and a per-pod counter would silently double every limit.
 - **The cluster is served over TLS, and only over TLS** (§14.5). The admin sign-in cookie is
   marked secure, which means a browser refuses to store it from a plain-http address — so
   signing in to the admin screens worked when scripted and silently did nothing in a real

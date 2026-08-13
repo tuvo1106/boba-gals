@@ -27,6 +27,11 @@ gem "bcrypt", "~> 3.1.7"
 # The React app is served from a different origin in development (Vite on 5173).
 gem "rack-cors", "~> 3.0"
 
+# Throttling (§13.2). Backed by Redis, not the default in-process store — `web`
+# runs 2 pods from the start (§14.2), and a per-process counter would let each
+# pod grant its own 10/min instead of enforcing one limit across both.
+gem "rack-attack", "~> 6.7"
+
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
