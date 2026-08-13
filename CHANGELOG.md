@@ -21,6 +21,14 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The dashboard can find how much demand a config can actually take** (§10.5). One click
+  raises demand from 0.5x to 3x and reports the first point where the typical customer's
+  wait crosses 15 minutes (5 and 10 are also selectable) — the shop's real capacity under
+  that many stations, not just whether large orders are being treated fairly. A config that
+  still holds at 3x is reported honestly as "not reached" rather than guessed at. ADR-0021
+  has the reasoning for reading overall wait rather than the fairness headline, and for why
+  the search stops at 3x: dispatch cost rises worse than linearly with demand once queues
+  get deep, so a run at 5x costs about 80 seconds where 0.5x costs 30 milliseconds.
 - **The dashboard can turn a day's simulation into a shift schedule** (§10.5). One click runs
   every open hour at one to eight stations and reports the fewest that keep that hour's p90
   under a target you pick — 5, 10, or 15 minutes. An hour that still misses target at eight
@@ -264,6 +272,11 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The quantum sweep chart now marks what its lines are actually worth in seconds**
+  (§10.5). It shipped with only the caption stating each series' range in words — reading
+  a point's height meant hovering it one at a time. Both sweep charts now carry reference
+  lines with values on them, so the shape of a curve is legible at a glance instead of only
+  its endpoints.
 - **Undoing a mistap on the kitchen display no longer teaches the board a drink was faster
   than it is** (§5.2, §7.3). Tapping Done on the wrong card and undoing it still counted
   that non-drink toward how long the drink takes — and because a mistap is nearly always

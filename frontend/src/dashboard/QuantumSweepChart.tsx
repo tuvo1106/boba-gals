@@ -48,6 +48,16 @@ function yFor(value: number, [min, max]: [number, number]): number {
   return PAD_TOP + (1 - t) * PLOT_H
 }
 
+/** Top, middle, and bottom of the plot area — enough to read the shape of a
+ *  ten-point sweep without crowding two independently-scaled axes. */
+const GRID_FRACTIONS = [ 0, 0.5, 1 ]
+
+/** The value at a fraction down from the top of a range — the inverse of the
+ *  `yFor` calculation above, so a gridline's label matches where it's drawn. */
+function valueAt(fraction: number, [min, max]: [number, number]): number {
+  return max - fraction * (max - min)
+}
+
 function seriesFrom(sweep: QuantumSweep, sizeClass: '1-2' | '7+'): SeriesPoint[] {
   return sweep.points.map((p) => {
     const row = p.metrics.by_size_class[sizeClass]
@@ -121,6 +131,32 @@ export function QuantumSweepChart({ sweep }: { sweep: QuantumSweep }) {
         </text>
 
         <line x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={axisY} y2={axisY} stroke="currentColor" className="text-neutral-800" />
+
+        {/* Three reference lines, each labelled on both scales at once — the
+            caption above states the endpoints in words, this is what lets a
+            reader place a point's *height* without hovering it. Top label sits
+            below its line (the space above is the default-quantum marker's);
+            the rest sit above theirs. */}
+        {GRID_FRACTIONS.map((f) => {
+          const y = PAD_TOP + f * PLOT_H
+
+          return (
+            <g key={f}>
+              {f !== 1 && (
+                <line
+                  x1={PAD_LEFT} x2={WIDTH - PAD_RIGHT} y1={y} y2={y}
+                  stroke="currentColor" strokeDasharray="1,3" className="text-neutral-900"
+                />
+              )}
+              <text x={PAD_LEFT} y={f === 0 ? y + 10 : y - 3} textAnchor="start" className="fill-amber-500/70 tabular-nums" fontSize={8}>
+                {secs(valueAt(f, smallRange))}
+              </text>
+              <text x={WIDTH - PAD_RIGHT} y={f === 0 ? y + 10 : y - 3} textAnchor="end" className="fill-neutral-500 tabular-nums" fontSize={8}>
+                {secs(valueAt(f, largeRange))}
+              </text>
+            </g>
+          )
+        })}
 
         {sweep.points.map((p) => (
           <text
