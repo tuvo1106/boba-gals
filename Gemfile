@@ -32,12 +32,17 @@ gem "rack-cors", "~> 3.0"
 # pod grant its own 10/min instead of enforcing one limit across both.
 gem "rack-attack", "~> 6.7"
 
-# Metrics (§15), scraped from /metrics by kube-prometheus-stack. yabeda-sidekiq
-# is deliberately not here yet — it needs a metrics server running inside the
-# worker process too, which is infra plumbing for a later PR, not this one.
+# Metrics (§15), scraped from /metrics by kube-prometheus-stack. `web` gets
+# that route for free from config/routes.rb; `worker` runs no HTTP server at
+# all, so yabeda-sidekiq's metrics need a standalone exporter thread started
+# inside the worker process — see config/initializers/yabeda_sidekiq.rb and
+# ADR-0026. `rackup`/`webrick` are what that standalone server runs on
+# (Yabeda::Prometheus::Exporter.start_metrics_server!, not Puma).
 gem "yabeda", "~> 0.16"
 gem "yabeda-rails", "~> 0.11"
 gem "yabeda-prometheus", "~> 0.9"
+gem "yabeda-sidekiq", "~> 0.12"
+gem "webrick", "~> 1.8"
 
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false

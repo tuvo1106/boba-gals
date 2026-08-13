@@ -231,6 +231,16 @@ jobs:
           kubectl -n boba-gals exec deploy/web -- curl -fsS localhost:3000/metrics \
             | grep -q '^boba_gals_queue_depth{store="1"} '
 
+      # `worker` has no Puma process — this is its own standalone exporter
+      # thread (ADR-0026), on its own port, proven the same way as `web`'s: a
+      # real number from yabeda-sidekiq, not just a 200. `sidekiq_active_processes`
+      # is always >= 1 here since it's read from the very process answering
+      # the scrape.
+      - name: worker's standalone exporter serves real data
+        run: |
+          kubectl -n boba-gals exec deploy/worker -- curl -fsS localhost:9394/metrics \
+            | grep -q '^sidekiq_active_processes '
+
       # force_ssl (§14.5) redirects plain http, and the kubelet reaches the pod
       # directly with no X-Forwarded-Proto — so without the exclusion in
       # config/environments/production.rb both probes would answer 301. The

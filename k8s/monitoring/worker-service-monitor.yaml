@@ -1,0 +1,19 @@
+# Tells Prometheus where to scrape `worker`'s standalone exporter (§15,
+# ADR-0026) — yabeda-sidekiq's job/queue metrics, which have no other route
+# out since `worker` runs no Puma process for config/routes.rb's /metrics to
+# ride along with. Same CRD-applied-after-the-chart caveat as
+# k8s/monitoring/service-monitor.yaml: never part of k8s/base or
+# k8s/overlays/*.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: worker
+  namespace: boba-gals
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
