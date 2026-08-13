@@ -21,15 +21,17 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
-- **The KDS flags a drink that's been sitting too long** (§9.4, §9.6). A periodic sweep finds
-  finished drinks past `quality_limit_seconds` (default 5 minutes) and logs one breach per
-  drink to `scheduler_events`; the marker then rides on whatever's left of that order still on
-  the display, since a fully-finished order has no KDS row at all (ADR-0005) by the time the
-  breach is caught. This closes a gap from build step 8: `quality_breach` was reserved as an
-  event type and `quality_limit_seconds` as a config key, but nothing live ever produced one —
-  the only breach detection that existed was the simulator's. Measured against `now` rather
-  than an actual pickup, since pickup was never tracked live either (ADR-0005); ADR-0024 has
-  the reasoning and what changes if that ever does.
+- **The KDS flags a drink that's been sitting too long while the rest of its order is still
+  being made** (§9.4, §9.6). A periodic sweep finds finished drinks past `quality_limit_seconds`
+  (default 5 minutes) whose order is still waiting on a sibling and logs one breach per drink
+  to `scheduler_events`; the marker then rides on whatever's left of that order still on the
+  display, since a fully-finished order has no KDS row at all (ADR-0005) by the time the breach
+  is caught. This closes a gap from build step 8: `quality_breach` was reserved as an event type
+  and `quality_limit_seconds` as a config key, but nothing live ever produced one — the only
+  breach detection that existed was the simulator's. Deliberately scoped narrower than the
+  simulator's own metric: without a live pickup signal (ADR-0005), a finished drink whose order
+  has already reached `ready` might already be collected, so this only ever flags the case it
+  can be sure about. ADR-0024 has the reasoning.
 - **The dashboard can push a policy change to the live store** (§10.6). "Apply to store" sits
   in its own labelled box, separate from the simulator controls above it, and shows the diff
   — live policy versus what's on the rail — before writing anything; nothing is sent until

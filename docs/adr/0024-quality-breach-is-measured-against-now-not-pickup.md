@@ -25,18 +25,34 @@ to count.
 
 ## Decision
 
-Measure sitting time against `Time.current` instead of a pickup event. A drink still
-`finished` `quality_limit_seconds` or more ago has gone stale whether or not someone collected
-it in the meantime — the live half of the timer answers "has this drink been sitting too
-long", and unlike the simulator it cannot also answer "did it stop sitting when the customer
-walked up", because nothing tells it that.
+Measure sitting time against `Time.current` instead of a pickup event, and **only while the
+drink's order is still `partially_ready`** — waiting on at least one sibling. A barista does
+not hand over half an order, so a finished drink whose order has not yet reached `ready`
+cannot have been collected: "still sitting" is a fact there, not a guess.
+
+Once every drink in an order finishes and the order reaches `ready`, this stops checking it.
+At that point whether it's still sitting or already gone is unknowable without a pickup
+signal, and kiosk/web pickup delays (§10.3, means of 100s/180s) are usually well under the
+300s default limit — flagging a `ready` order would mostly measure how fast people walk up,
+not how long a drink actually sat. That was the first cut of this decision, caught before
+merge: scoping to *any* finished drink past the limit, regardless of order status, flags a
+real chunk of orders that were collected fine (rough tail estimate off the exponential model:
+~5% kiosk, ~19% web) alongside the genuine melted-first-drink cases, with no way to tell them
+apart after the fact. Narrowing to `partially_ready` trades recall for precision: it misses
+every single-drink order entirely (which never passes through `partially_ready` — it goes
+straight from `in_progress` to `ready`) and any multi-drink order whose last sibling finishes
+before the sweep catches the earlier breach, but everything it does flag is real.
+
+This also matches language already in the codebase: the dashboard's own hint text calls a lone
+drink's wait "just the customer walking over, which no schedule can improve" — the single-drink
+case was never this feature's target.
 
 A periodic sweep (`SweepQualityBreachesJob`, `sidekiq-cron`, 30s — the same cadence as the
 §7.2 ETA idle tick, for the same reason: nothing else fires while a finished drink just sits
-there) finds `finished` items older than the threshold with no prior `quality_breach` event
-for that item, and logs exactly one. The existing `scheduler_events` row *is* the "already
-flagged" check — no new column, no separate state to keep in sync with the audit trail that
-already exists for this.
+there) finds `finished` items in a `partially_ready` order, older than the threshold, with no
+prior `quality_breach` event for that item, and logs exactly one. The existing
+`scheduler_events` row *is* the "already flagged" check — no new column, no separate state to
+keep in sync with the audit trail that already exists for this.
 
 **The KDS marker rides on a still-visible sibling, not the breached drink itself.** A fully
 `finished` order already has no KDS row at all (ADR-0005) — the breach is discovered exactly
@@ -50,20 +66,22 @@ proactive remake or a check-in is still possible.
 | Option | Why not |
 |---|---|
 | Track `picked_up_at` live, then measure to it as specified | ADR-0005 rejected this for the whole app — no handoff surface, no dedicated expo person, little depends on it. Reopening it for one metric contradicts a decision already made and re-litigated there, not here. |
+| Flag any finished drink past the limit, regardless of order status | The first cut of this decision. Correct while the order is still assembling, noisy once it's `ready` — no way to tell a genuinely forgotten drink from one collected in the last 5 minutes, and pickup delays being usually shorter than the limit makes that noise the majority case for `ready` orders, not the exception. |
 | A `quality_breached` boolean column on `order_items` | Duplicates what `scheduler_events` already records. The event log is append-only and already the source of truth for "did this happen"; a column just adds a second thing that could drift from it. |
 | Compute the marker live from `finished_at` + threshold, no sweep, no logged event | Cheaper per read, but nothing would ever repaint the KDS when a drink crosses the threshold — broadcasts only fire on drink transitions (§9.2), and a drink sitting quietly finished causes none. The board would show the marker only by coincidence, whenever the next unrelated transition happened to redraw it. |
 | Fold the check into the existing ETA idle tick rather than a second job | Different failure domains and different consumers — one recomputes ETAs and publishes to the board and order screens, the other logs an audit event and repaints the KDS. Merging them means an ETA-only bug taking the breach check down with it, and vice versa. |
 
 ## Consequences
 
-`quality_breach_rate` (§10.4) goes from a simulator-only metric to one with a live production
-analogue for the first time, closing the gap §15 needs to emit it as a counter.
-
-The live rate is not directly comparable to the simulator's: the simulator's is measured to an
-actual pickup delay per §10.3, and this one is a lower bound — a drink flagged here was stale
-for at least `quality_limit_seconds`, but a drink collected quickly after finishing never
-breaches at all, matching what the simulator would also report for it. Both answer "how often
-does a drink sit too long", from different denominators the same way ADR-0005 already flagged.
+Production gets a `quality_breach` signal for the first time, but it is **not** the same
+quantity as the simulator's `quality_breach_rate` (§10.4), and should not be compared to it or
+promoted to it directly. The simulator counts every drink that sat past the limit, measured to
+an actual generated pickup (§10.3); this counts only the subset caught while a sibling was
+still being made. It undercounts the true live rate on purpose — every drink it flags is real,
+but real breaches on single-drink orders and on drinks whose last sibling finished first are
+invisible to it entirely. Framed as an operational signal rather than a research metric: it
+answers "is the melted-first-drink problem happening right now", not "what fraction of drinks
+go stale."
 
 30s sweep granularity means a breach is logged and the marker appears up to 30 seconds after
 the drink actually crossed the threshold — imperceptible against a 300s default limit, same
@@ -73,5 +91,6 @@ tradeoff the ETA idle tick already accepted.
 
 A real pickup signal exists (a KDS handoff section, or a POS that settles at collection) —
 ADR-0005 already names this trigger. When it does, the live quality timer should switch to
-measuring against it, which brings the live and simulated rates onto the same definition and
-makes the marker clearable, so it's noticeable the moment the order was actually collected.
+measuring against it and drop the `partially_ready` restriction, which brings the live rate
+onto the same definition as the simulator's for the first time and makes the marker clearable,
+so it's noticeable the moment the order was actually collected.

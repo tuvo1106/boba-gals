@@ -4,15 +4,19 @@ RSpec.describe SweepQualityBreachesJob do
   let(:store) { create(:store, :with_stations, scheduler_config: { "quality_limit_seconds" => 300 }) }
   let(:menu_item) { create(:menu_item, store: store) }
 
+  # A finished drink only breaches while its order is still `partially_ready`
+  # (ADR-0024) — a sibling has to still be making for "still sitting" to be a
+  # fact rather than a guess.
   def stale_order
-    order = create(:order, store: store)
-    create(:order_item, order: order, menu_item: menu_item, status: "finished",
+    order = create(:order, store: store, status: "partially_ready")
+    create(:order_item, order: order, menu_item: menu_item, sequence: 1, status: "finished",
                         started_at: 400.seconds.ago, finished_at: 301.seconds.ago)
     order
   end
 
   it "logs a breach for a drink that has gone stale" do
-    stale_order
+    order = stale_order
+    create(:order_item, order: order, menu_item: menu_item, sequence: 2, status: "in_progress")
 
     described_class.perform_now
 
