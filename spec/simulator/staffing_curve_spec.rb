@@ -7,33 +7,29 @@ RSpec.describe Simulator::StaffingCurve do
 
   def at(hours, hour) = hours.find { |h| h[:hour] == hour }
 
-  it "covers §10.3's arrival profile, one entry per open hour, ascending" do
-    hours = curve.map { |h| h[:hour] }
-
-    expect(hours).to eq((10..20).to_a)
-  end
-
-  # The one example that runs the real 1–8 range end to end, so a bug that
-  # only shows up at a station count nothing else here tries would still be
-  # seen. Every example below narrows the range instead — the mechanism they
-  # check does not depend on how wide it is.
-  it "reports each hour's chosen stations, its p90, and whether the target was met" do
-    row = at(curve, 16)
-
-    expect(row).to include(:stations, :achieved, :p90, :orders, :p90_meaningful)
-    expect(described_class::STATIONS_TRIED).to cover(row[:stations])
-  end
-
-  it "needs no more stations at the quietest hour than at the busiest one" do
-    # §10.3's profile: hour 10 (index 0) is the quietest bucket at 12/hr, hour
-    # 16 (index 6) is the lunch-adjacent peak at 52/hr — far enough apart that
-    # one day settles it.
+  # The one example that runs the real 1–8 range end to end (docs/testing.md's
+  # two-tier convention — `:slow`, so it costs nothing by default and runs
+  # deliberately with `SLOW=1`), so a bug that only shows up at a station
+  # count nothing else here tries would still be seen. Every example below
+  # narrows the range instead — the mechanism they check does not depend on
+  # how wide it is. Three properties share the one real call rather than
+  # paying for it three times: §10.3's arrival profile, a row's shape, and
+  # the quiet-hour-needs-no-more-than-the-busy-hour relationship (hour 10 is
+  # the quietest bucket at 12/hr, hour 16 the lunch-adjacent peak at 52/hr —
+  # far enough apart that one day settles it).
+  it "covers the real range end to end", :slow do
     rows = curve
 
-    expect(at(rows, 10)[:stations]).to be <= at(rows, 16)[:stations]
+    expect(rows.map { |h| h[:hour] }).to eq((10..20).to_a)
+
+    row = at(rows, 16)
+    expect(row).to include(:stations, :achieved, :p90, :orders, :p90_meaningful)
+    expect(described_class::STATIONS_TRIED).to cover(row[:stations])
+
+    expect(at(rows, 10)[:stations]).to be <= row[:stations]
   end
 
-  it "asks for more stations as demand rises, at the same hour" do
+  it "asks for more stations as demand rises, at the same hour", :slow do
     light = at(curve(demand_multiplier: 0.8), 16)[:stations]
     heavy = at(curve(demand_multiplier: 2.4), 16)[:stations]
 
@@ -41,10 +37,18 @@ RSpec.describe Simulator::StaffingCurve do
   end
 
   # Everything below only cares about the mechanism (clamping, reproducing,
-  # falling back), never about where in 1..8 the answer lands, so a 3-wide
-  # range proves the same thing for a third of the runs.
+  # falling back), never about where in 1..8 the answer lands or at what
+  # demand, so a 3-wide range proves the same thing for a fraction of the
+  # cost — and cheaply, not just narrowly: a low station count under this
+  # file's realistic 1.6x demand is itself expensive (§6.2's aging deepens
+  # the queue, more dispatch cycles, more of the priority ring to scan each
+  # one), benchmarked at 3.16s for 1 station against 0.14s for 3 — so
+  # `curve` here also drops to a demand no assertion below depends on the
+  # realism of.
   context "with a narrowed station range" do
     before { stub_const("#{described_class}::STATIONS_TRIED", (1..3)) }
+
+    def curve(**overrides) = described_class.call(seed: 7, demand_multiplier: 0.5, **overrides)
 
     # target_seconds: 1 is unreachable at any station count, so this doesn't
     # need multiple days to be unambiguous.

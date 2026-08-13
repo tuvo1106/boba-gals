@@ -17,12 +17,12 @@ RSpec.describe Simulator::BreakingPoint do
   end
 
   # The one example that runs the real, unstubbed range end to end (CLAUDE.md
-  # "keep simulator specs lean"). Costed deliberately: at seed 7 and 3
-  # stations, overall p90 crosses 900s between 1.5x and 1.75x, so one pooled
-  # day settles it — this is not a borderline reading that would need extra
-  # days to trust. Every example below narrows `POINTS` instead; none of them
-  # care where in the range the answer lands.
-  it "sweeps the real points, ascending, and reports the capacity it finds" do
+  # "keep simulator specs lean"; `:slow`, docs/testing.md). Costed
+  # deliberately: at seed 7 and 3 stations, overall p90 crosses 900s between
+  # 1.5x and 1.75x, so one pooled day settles it — this is not a borderline
+  # reading that would need extra days to trust. Every example below narrows
+  # `POINTS` instead; none of them care where in the range the answer lands.
+  it "sweeps the real points, ascending, and reports the capacity it finds", :slow do
     result = sweep
 
     expect(result[:points].map { |p| p[:demand_multiplier] }).to eq(described_class::POINTS)

@@ -20,10 +20,16 @@ RSpec.describe "POST /api/v1/admin/quantum_sweeps (§10.5)" do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  # This spec is about routing, auth, and response shape — `QuantumSweep`'s
+  # own spec already covers the real ten-point range end to end (as `:slow`,
+  # docs/testing.md). Narrowed here for the same reason.
   context "signed in" do
-    before { sign_in }
+    before do
+      sign_in
+      stub_const("Simulator::QuantumSweep::POINTS", [ 30, 400 ])
+    end
 
-    it "returns §10.5's ten points, ascending" do
+    it "returns the swept points, ascending" do
       sweep(seed: 7)
 
       expect(response).to have_http_status(:ok)

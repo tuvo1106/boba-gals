@@ -97,6 +97,19 @@ RSpec.configure do |config|
   # triggering implicit auto-inclusion in groups with matching metadata.
   config.shared_context_metadata_behavior = :apply_to_host_groups
 
+  # Two tiers for the §10.5 simulator specs (docs/testing.md, ADR-0023): CI
+  # and a local `bin/rspec` run get the fast tier, every real-parameter,
+  # unstubbed experiment run is tagged `:slow` and excluded unless asked for.
+  #
+  #   SLOW=1 bin/rspec              the full suite, including every :slow example
+  #   SLOW=1 bin/rspec spec/simulator/staffing_curve_spec.rb   one file's slow examples
+  #
+  # This is a coverage trade, not a free lunch: `:slow` examples exist because
+  # they are the ones that exercise a real parameter range end to end, so the
+  # default tier does not catch a regression only visible there. Run the slow
+  # tier deliberately before a release or when touching `app/simulator/**`.
+  config.filter_run_excluding :slow unless ENV["SLOW"]
+
 # The settings below are suggested to provide a good initial experience
 # with RSpec, but feel free to customize to your heart's content.
 =begin

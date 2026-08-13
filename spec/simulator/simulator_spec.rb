@@ -357,7 +357,11 @@ RSpec.describe Simulator do
       expect(measured).to be_within(measured * 0.10).of(predicted)
     end
 
-    it "holds tightly once the shop is busy enough to reach steady state" do
+    # `:slow` (docs/testing.md): six pooled days at 2.5x demand, needed to
+    # reduce the identity's noise enough for a 3% tolerance — cheaper
+    # parameters would either fail spuriously or not actually test steady
+    # state.
+    it "holds tightly once the shop is busy enough to reach steady state", :slow do
       measured, predicted = little(2.5).transpose.map { |v| v.sum / v.size }
 
       expect(measured).to be_within(measured * 0.03).of(predicted)
