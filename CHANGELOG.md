@@ -21,6 +21,12 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **`web` autoscales on CPU, with a disruption budget guaranteeing at least one pod stays up
+  during a drain or rollout** (§14.5, ADR-0027). `minReplicas: 2` keeps the two-pod floor
+  §14.2 has always required; `maxReplicas: 6` is sized off Postgres' connection ceiling, not
+  a traffic guess. `metrics-server` joins the local kind cluster (`bin/k8s-up`) so the
+  autoscaler has real CPU numbers to read, the same way `kube-prometheus-stack` was added
+  for Prometheus.
 - **`worker` now exports its own Prometheus metrics** (§15, ADR-0026): job counts, queue
   latency, and retry/dead totals from `yabeda-sidekiq`, on a standalone exporter thread
   since `worker` runs no HTTP server of its own to mount `/metrics` on the way `web` does.

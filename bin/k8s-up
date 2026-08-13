@@ -13,6 +13,7 @@ HOST=boba.localtest.me
 PORT=8443
 CERT_MANAGER_VERSION=v1.16.2
 KUBE_PROMETHEUS_STACK_VERSION=88.3.0
+METRICS_SERVER_VERSION=v0.7.2
 
 cd "$ROOT"
 
@@ -43,11 +44,28 @@ if ! kubectl get namespace cert-manager >/dev/null 2>&1; then
   kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
 fi
 
+# metrics-server (§14.5, ADR-0027) — not bundled with kind, but genuinely
+# needed, not just here: the `web` HPA (k8s/base/web.yaml) reads pod CPU from
+# it, and any real cluster running that HPA needs this same component from
+# somewhere. `--kubelet-insecure-tls` is the one kind-specific patch: kind's
+# kubelets don't carry certs signed by a CA metrics-server trusts by default,
+# and without this the HPA's `TARGETS` column reads `<unknown>` forever with
+# nothing else pointing at why.
+if ! kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; then
+  step "Installing metrics-server"
+  kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
+  kubectl patch deployment metrics-server -n kube-system --type=json \
+    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+fi
+
 # `rollout status`, not `wait --for=condition=Ready pod`: the pod does not exist
 # for a moment after apply, and `wait` fails outright on an empty selector
 # rather than waiting for something to match it.
 step "Waiting for ingress-nginx"
 kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
+
+step "Waiting for metrics-server"
+kubectl -n kube-system rollout status deployment/metrics-server --timeout=300s
 
 # All three, not just the controller. The webhook is the one that matters here:
 # it validates every Certificate and Issuer, and applying the manifests while it

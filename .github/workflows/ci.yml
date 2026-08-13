@@ -187,6 +187,32 @@ jobs:
           echo "readyReplicas=$ready"
           [ "$ready" = "2" ]
 
+      # §14.5, ADR-0027. A real percentage in `status.currentMetrics`, not just
+      # a clean `apply`, is what proves metrics-server is actually feeding the
+      # autoscaler — an HPA object can exist and still be blind if the metrics
+      # pipeline is broken, which reads identically to "nothing to scale" until
+      # something checks. A few scrape cycles have to land first, hence the
+      # retry loop rather than asserting once.
+      - name: The web HPA reads real CPU metrics
+        run: |
+          utilization=""
+          for _ in $(seq 1 30); do
+            utilization=$(kubectl -n boba-gals get hpa/web -o jsonpath='{.status.currentMetrics[0].resource.current.averageUtilization}' 2>/dev/null)
+            [ -n "$utilization" ] && break
+            sleep 5
+          done
+          echo "web HPA current CPU utilization: ${utilization:-<unset>}%"
+          [ -n "$utilization" ] || { echo "::error::HPA never read a real CPU value — metrics-server isn't feeding it"; exit 1; }
+
+      # §14.5, ADR-0027. The value, not just the object's existence — a PDB
+      # applied with the wrong minAvailable would still be present and protect
+      # nothing.
+      - name: The web PodDisruptionBudget guarantees one pod stays up
+        run: |
+          min=$(kubectl -n boba-gals get pdb/web -o jsonpath='{.spec.minAvailable}')
+          echo "web PDB minAvailable=$min"
+          [ "$min" = "1" ]
+
       # Every request from here down validates against the CA cert-manager
       # minted, and there is no `-k` anywhere. `-k` would make these steps pass
       # against the fake certificate ingress-nginx serves when issuance fails,
