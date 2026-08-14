@@ -4,8 +4,9 @@
 # Terminal and Stripe integrations are integration work, not design work, and
 # sit behind this port so they can arrive after the scheduler is proven.
 #
-# Nothing in the scheduler depends on payment state, which is also what defers
-# the payment-failure open question in §16.
+# Authorized when the order is placed, not at collection (§9.3, #55) —
+# `CreateOrder` calls `#authorize` inside the same transaction that creates the
+# order and queues its items, so a declined payment rolls both back.
 module PaymentProvider
   Result = Struct.new(:success?, :reference, :error, keyword_init: true)
 

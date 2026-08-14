@@ -311,6 +311,12 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The order status screen no longer tells a waiting customer to "pay at the counter"**
+  (§9.3, #55). §9.3 now documents that payment is authorized when the order is placed, not
+  at collection, so restating it as a pending action on the screen shown *after* placement
+  contradicted the spec. Now reads "paid". The checkout screen's own "Pay at the counter."
+  is unchanged and still correct — it's shown at the moment of placing the order, which is
+  when payment actually happens.
 - **The dashboard's sign-out control reads as account chrome again, instead of sitting mid-row
   next to the simulator's Run button** (§13.4, issue #63). It now shares a top row with the
   page title, at the far right, with the seed/policy/window/find-order/Run controls forming
