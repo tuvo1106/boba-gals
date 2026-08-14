@@ -7,22 +7,33 @@ RSpec.describe "Rate limiting (§13.2)", type: :request do
 
   # Every example here counts requests up to a limit inside one throttle period,
   # and Rack::Attack's periods are **fixed windows aligned to the epoch**, not
-  # sliding ones — the cache key is `"#{name}:#{Time.now.to_i / period}:#{ip}"`.
-  # So a run that straddles a wall-clock minute boundary starts counting again
-  # partway through: six requests land in one window, the remaining five in the
-  # next, and the request that should be the 11th is only the 5th of its window
-  # and comes back 201 instead of 429.
+  # sliding ones. The cache key is
+  # `"rack::attack:#{epoch_time / period}:#{name}:#{discriminator}"`
+  # (`Cache#key_and_expiry`), so the counter resets on wall-clock minute
+  # boundaries. A run that straddles one starts counting again partway through:
+  # six requests land in one window, the remaining five in the next, and the
+  # request that should be the 11th is only the 5th of its window and comes back
+  # 201 instead of 429.
   #
   # That is a genuine flake, not a slow machine — it depends on *when* the
-  # example starts, not how long it takes. It first bit on CI in a run where the
-  # suite happened to reach this file near a minute boundary. Freezing the clock
-  # removes the dependency entirely: with `Time.now` fixed, all eleven requests
-  # are in the same window by construction.
+  # example starts, not how long it takes.
   #
-  # Reproduced deliberately before fixing, by putting six requests at
-  # `Time.at(1_755_183_659)` and five at `+2s`: the eleventh returned 201, and
-  # with the clock frozen it returns 429 every time.
-  around { |example| travel_to(Time.current) { example.run } }
+  # **Freezing the clock alone is not enough, which is the subtle part.** The
+  # window index in the key is frozen, but the Redis counter still carries a
+  # *real-time* TTL, computed once from the frozen second:
+  #
+  #     expires_in = period - (epoch_time % period) + 1
+  #
+  # and applied with `EXPIRE … NX`, so later increments never extend it. Freeze
+  # at second 59 and the counter is given **two real seconds** to live while the
+  # logical window never advances — an example slower than that loses its count
+  # mid-run and fails exactly the same way.
+  #
+  # So freeze to the **start** of a window, where `expires_in` takes its maximum
+  # of 61s. Verified both directions: frozen at second 59 with a 2.5s delay the
+  # eleventh request returns 201; frozen at the window start the same delay
+  # still returns 429.
+  around { |example| travel_to(Time.at(Time.current.to_i / 60 * 60)) { example.run } }
 
   def order_payload
     { order: { source: "kiosk", customer_first_name: "Sam", items: [ { menu_item_id: menu_item.id } ] } }
