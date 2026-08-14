@@ -10,7 +10,9 @@ FROM docker.io/library/node:$NODE_VERSION-slim AS build
 WORKDIR /frontend
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# --legacy-peer-deps: openapi-typescript's peerDependencies caps at
+# typescript ^5.x and hasn't caught up to this repo's ~6.0.2 yet (ADR-0030).
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 RUN npm run build

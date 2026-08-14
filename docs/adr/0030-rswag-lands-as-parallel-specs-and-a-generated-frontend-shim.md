@@ -48,15 +48,19 @@ narrower, since the server refuses `rr`/`sjf`), so no schema is the right source
 
 **Discovered, not decided, but worth recording:** `openapi-typescript@7.13.0`'s
 `peerDependencies` caps at `typescript ^5.x`, and this repo is on `~6.0.2`. `npm install`
-and `npm ci` both need `--legacy-peer-deps` as a result. That flag also makes npm's
-resolver silently drop `@testing-library/dom` — an implicit peer of
-`@testing-library/react`, not a direct dependency — rather than warning, which broke every
-frontend test suite (`Cannot find package '@testing-library/dom'`) with a passing install
-and no error until `vitest run`. Fixed by pinning `@testing-library/dom` directly in
-`package.json` so it survives regardless of peer-resolution mode. Caught by running the
-*true* clean baseline (`git stash -u && npm ci`) after the first broken attempt looked
-clean — the first attempt's "pre-existing" typecheck errors were actually caused by the
-same install, just not yet visibly connected to it.
+and `npm ci` both need `--legacy-peer-deps` as a result — **everywhere `npm ci` runs**,
+which turned out to be three places, not the one this ADR's first draft fixed: the
+`frontend` CI job, `frontend/Dockerfile` (caught only when the `cluster` CI job's image
+build failed after the first push, since local `bin/k8s-up` testing wasn't run against
+this PR), and local dev. That flag also makes npm's resolver silently drop
+`@testing-library/dom` — an implicit peer of `@testing-library/react`, not a direct
+dependency — rather than warning, which broke every frontend test suite (`Cannot find
+package '@testing-library/dom'`) with a passing install and no error until `vitest run`.
+Fixed by pinning `@testing-library/dom` directly in `package.json` so it survives
+regardless of peer-resolution mode. Caught by running the *true* clean baseline
+(`git stash -u && npm ci`) after the first broken attempt looked clean — the first
+attempt's "pre-existing" typecheck errors were actually caused by the same install, just
+not yet visibly connected to it.
 
 **One schema was nearly loosened incorrectly, which is the point of doing this at all.**
 The first `orders_swagger_spec.rb` fixture built a bare `Order` via `create(:order, ...)`
@@ -99,6 +103,7 @@ still-small API surface justifies.
 ## Revisit when
 
 `openapi-typescript` ships a release whose `peerDependencies` accepts `typescript ^6.x` —
-drop `--legacy-peer-deps` from both `npm install` usage and the `frontend` CI job's
-`npm ci` step at that point, and confirm `@testing-library/dom` still resolves correctly
-with the flag gone before removing its explicit pin.
+drop `--legacy-peer-deps` from all three places it landed (`frontend/Dockerfile`, the
+`frontend` CI job's `npm ci` step, and local `npm install` usage) at that point, and
+confirm `@testing-library/dom` still resolves correctly with the flag gone before removing
+its explicit pin.
