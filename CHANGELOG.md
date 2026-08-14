@@ -311,6 +311,10 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The dashboard's sign-out control reads as account chrome again, instead of sitting mid-row
+  next to the simulator's Run button** (§13.4, issue #63). It now shares a top row with the
+  page title, at the far right, with the seed/policy/window/find-order/Run controls forming
+  their own row underneath — matching where a back-office user actually looks for it.
 - **The scheduler no longer livelocks a drink whose arrival clock reading is ahead of the
   dispatching clock** (§6.2, issue #49). `quantum_for`'s aging multiplier could go negative
   if `now` preceded a flow's `arrived_at` — not reachable in production today (§6.5 only

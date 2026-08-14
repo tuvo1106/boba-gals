@@ -345,122 +345,133 @@ function Dashboard({
 
   return (
     <main className="min-h-screen bg-neutral-950 p-6 text-neutral-200">
-      <header className="mb-5 flex flex-wrap items-baseline gap-x-6 gap-y-2 border-b border-neutral-800 pb-3">
-        <h1 className="font-mono text-sm tracking-widest text-neutral-500 uppercase">Station lanes</h1>
+      <header className="mb-5 border-b border-neutral-800 pb-3">
+        {/* Who, and a way out — top-right of the page, above the run controls,
+            which is where a back-office user looks for it (issue #63). A
+            dashboard that can change live scheduler behaviour (§10.6) should
+            not be left signed in on a back-office machine because there was
+            no button to leave it.
 
-        {/* "Every run must display its seed" (§10.6). */}
-        <label className="font-mono text-xs text-neutral-500">
-          seed{' '}
-          <input
-            type="number" value={seed} aria-label="seed"
-            onChange={(e) => setSeed(Number(e.target.value))}
-            className="w-16 border-b border-neutral-700 bg-transparent tabular-nums text-neutral-200 focus:border-amber-500 focus:outline-none"
-          />
-        </label>
+            Its own row rather than folded into the controls row below: that
+            row reflows as the window narrows, which used to carry sign-out
+            down onto its own line anyway, floating at the right with nothing
+            beside it — this makes that the deliberate layout instead of a
+            wrap accident. */}
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="font-mono text-sm tracking-widest text-neutral-500 uppercase">Station lanes</h1>
 
-        {/* §6.3's control arm, selectable — seeing FIFO next to DRR is the
-            comparison the whole design rests on. */}
-        {/* §6.3's arms. RR is DRR without the deficit and SJF is the mean-wait
-            floor; both are simulator-only — `UpdateSchedulerConfig` refuses
-            them, because SJF starves large orders whenever drink cost tracks
-            order size. */}
-        <div className="flex gap-1 font-mono text-xs" role="group" aria-label="policy">
-          {POLICIES.map(({ id: p, title }) => (
+          {/* One group: as two siblings the identity and its control land on
+              different lines the moment the window is narrow, and a bare
+              "sign out" under the title reads as a heading. */}
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-xs text-neutral-600" title={admin.email}>
+              {admin.email}
+            </span>
             <button
-              key={p}
-              onClick={() => { setPolicy(p); setConfirmingApply(false); setApplyError(null); go(seed, p) }}
-              title={title}
-              className={`px-2 py-0.5 uppercase ${policy === p ? 'bg-amber-600 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'}`}
+              onClick={onSignOut}
+              className="font-mono text-xs text-neutral-500 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-300"
             >
-              {p}
+              sign out
             </button>
-          ))}
+          </div>
         </div>
 
-        <label className="font-mono text-xs text-neutral-500">
-          showing{' '}
-          <select
-            value={span} aria-label="window"
-            onChange={(e) => { const v = Number(e.target.value); setSpan(v); go(seed, policy, v) }}
-            className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
-          >
-            <option value={300}>5 min</option>
-            <option value={1200}>20 min</option>
-            <option value={3600}>1 hour</option>
-            <option value={10800}>3 hours</option>
-          </select>
-        </label>
-
-        <div className="flex items-end gap-2">
-          <DayScrubber
-            from={from} span={span}
-            onChange={(v) => { setFrom(v); go(seed, policy, span, v) }}
-          />
-          <span className="font-mono text-xs tabular-nums text-neutral-400">
-            {shopClock(from)}–{shopClock(from + span)}
-          </span>
-        </div>
-
-        {/* Ids are the only stable handle on an order — the board shows first
-            name and code (§3), and the ribbon shows colour, so a number is how
-            you say "that one" out loud. */}
-        <form
-          className="font-mono text-xs text-neutral-500"
-          onSubmit={(e) => { e.preventDefault(); const id = Number(find); if (id > 0) locate(id) }}
-        >
-          <label>
-            find order{' '}
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          {/* "Every run must display its seed" (§10.6). */}
+          <label className="font-mono text-xs text-neutral-500">
+            seed{' '}
             <input
-              type="number" min={1} value={find} aria-label="find order"
-              onChange={(e) => setFind(e.target.value)}
+              type="number" value={seed} aria-label="seed"
+              onChange={(e) => setSeed(Number(e.target.value))}
               className="w-16 border-b border-neutral-700 bg-transparent tabular-nums text-neutral-200 focus:border-amber-500 focus:outline-none"
             />
           </label>
-          {/* Explicit, not just Enter: a bare number field does not advertise
-              that it is submittable. */}
-          <button type="submit" className="ml-1 text-neutral-500 hover:text-amber-500">go</button>
-          {pinned !== null && (
-            <button
-              type="button" onClick={() => { setPinned(null); setFind('') }}
-              className="ml-2 text-amber-500 hover:text-amber-400"
+
+          {/* §6.3's control arm, selectable — seeing FIFO next to DRR is the
+              comparison the whole design rests on. */}
+          {/* §6.3's arms. RR is DRR without the deficit and SJF is the mean-wait
+              floor; both are simulator-only — `UpdateSchedulerConfig` refuses
+              them, because SJF starves large orders whenever drink cost tracks
+              order size. */}
+          <div className="flex gap-1 font-mono text-xs" role="group" aria-label="policy">
+            {POLICIES.map(({ id: p, title }) => (
+              <button
+                key={p}
+                onClick={() => { setPolicy(p); setConfirmingApply(false); setApplyError(null); go(seed, p) }}
+                title={title}
+                className={`px-2 py-0.5 uppercase ${policy === p ? 'bg-amber-600 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'}`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+          <label className="font-mono text-xs text-neutral-500">
+            showing{' '}
+            <select
+              value={span} aria-label="window"
+              onChange={(e) => { const v = Number(e.target.value); setSpan(v); go(seed, policy, v) }}
+              className="border-b border-neutral-700 bg-neutral-950 text-neutral-200 focus:border-amber-500 focus:outline-none"
             >
-              clear
-            </button>
-          )}
-        </form>
+              <option value={300}>5 min</option>
+              <option value={1200}>20 min</option>
+              <option value={3600}>1 hour</option>
+              <option value={10800}>3 hours</option>
+            </select>
+          </label>
 
-        <button
-          onClick={() => setExplain((on) => !on)}
-          aria-pressed={explain}
-          title="Explain what each figure measures"
-          className={`ml-auto border px-2 py-1 font-mono text-xs ${explain ? 'border-amber-500 text-amber-500' : 'border-neutral-700 text-neutral-500 hover:text-neutral-300'}`}
-        >
-          ?
-        </button>
+          <div className="flex items-end gap-2">
+            <DayScrubber
+              from={from} span={span}
+              onChange={(v) => { setFrom(v); go(seed, policy, span, v) }}
+            />
+            <span className="font-mono text-xs tabular-nums text-neutral-400">
+              {shopClock(from)}–{shopClock(from + span)}
+            </span>
+          </div>
 
-        <button
-          onClick={() => go()} disabled={busy}
-          className="border border-neutral-700 px-3 py-1 font-mono text-xs uppercase hover:border-amber-500 disabled:opacity-40"
-        >
-          {busy ? 'Running…' : 'Run'}
-        </button>
-
-        {/* Who, and a way out. A dashboard that can change live scheduler
-            behaviour (§10.6) should not be left signed in on a back-office
-            machine because there was no button to leave it.
-
-            One group, because the header wraps: as two siblings the identity
-            and its control land on different lines the moment the window is
-            narrow, and a bare "sign out" under the title reads as a heading. */}
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-xs text-neutral-600" title={admin.email}>
-            {admin.email}
-          </span>
-          <button
-            onClick={onSignOut}
-            className="font-mono text-xs text-neutral-500 underline decoration-neutral-700 underline-offset-4 hover:text-neutral-300"
+          {/* Ids are the only stable handle on an order — the board shows first
+              name and code (§3), and the ribbon shows colour, so a number is how
+              you say "that one" out loud. */}
+          <form
+            className="font-mono text-xs text-neutral-500"
+            onSubmit={(e) => { e.preventDefault(); const id = Number(find); if (id > 0) locate(id) }}
           >
-            sign out
+            <label>
+              find order{' '}
+              <input
+                type="number" min={1} value={find} aria-label="find order"
+                onChange={(e) => setFind(e.target.value)}
+                className="w-16 border-b border-neutral-700 bg-transparent tabular-nums text-neutral-200 focus:border-amber-500 focus:outline-none"
+              />
+            </label>
+            {/* Explicit, not just Enter: a bare number field does not advertise
+                that it is submittable. */}
+            <button type="submit" className="ml-1 text-neutral-500 hover:text-amber-500">go</button>
+            {pinned !== null && (
+              <button
+                type="button" onClick={() => { setPinned(null); setFind('') }}
+                className="ml-2 text-amber-500 hover:text-amber-400"
+              >
+                clear
+              </button>
+            )}
+          </form>
+
+          <button
+            onClick={() => setExplain((on) => !on)}
+            aria-pressed={explain}
+            title="Explain what each figure measures"
+            className={`border px-2 py-1 font-mono text-xs ${explain ? 'border-amber-500 text-amber-500' : 'border-neutral-700 text-neutral-500 hover:text-neutral-300'}`}
+          >
+            ?
+          </button>
+
+          <button
+            onClick={() => go()} disabled={busy}
+            className="border border-neutral-700 px-3 py-1 font-mono text-xs uppercase hover:border-amber-500 disabled:opacity-40"
+          >
+            {busy ? 'Running…' : 'Run'}
           </button>
         </div>
       </header>
