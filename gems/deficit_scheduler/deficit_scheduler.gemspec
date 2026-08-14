@@ -11,7 +11,11 @@ Gem::Specification.new do |spec|
     access, no I/O — so a simulator can run the production scheduler unmodified.
   TEXT
   spec.homepage = "https://github.com/tuvo1106/boba-gals"
-  spec.license  = "MIT"
+
+  # No `license` field on purpose: the repository carries no LICENSE file, and
+  # claiming one in metadata that nothing in the tree backs up would be a false
+  # claim on a public repo. Set it — and add the file — if this is ever
+  # published (ADR-0033's "revisit when").
 
   spec.required_ruby_version = ">= 3.2"
 

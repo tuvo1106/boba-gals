@@ -67,9 +67,9 @@ group :development, :test do
 end
 
 group :test do
-  # Mutation testing over app/scheduler/** only (ADR-0002). 100% coverage on a
-  # pure function proves nothing on its own — a surviving mutant is the real
-  # signal. Free for public repositories, which is what unblocked it.
+  # Mutation testing over gems/deficit_scheduler only (ADR-0002, ADR-0033).
+  # 100% coverage on a pure function proves nothing on its own — a surviving
+  # mutant is the real signal. Free for public repositories, which unblocked it.
   gem "mutant", "~> 0.13", require: false
   gem "mutant-rspec", "~> 0.13", require: false
 

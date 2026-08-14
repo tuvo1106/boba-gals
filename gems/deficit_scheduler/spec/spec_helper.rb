@@ -7,7 +7,22 @@
 #
 # It also keeps these specs in milliseconds, which matters: they are the ones
 # `mutant` runs hundreds of times over (ADR-0002).
-unless ENV["COVERAGE"] == "0"
+GEM_ROOT = File.expand_path("..", __dir__)
+
+# Only when this suite is being run *as itself*, from the gem root.
+#
+# Run from the repo root instead (`bundle exec rspec gems/deficit_scheduler/spec`,
+# or mutant, which invokes rspec from there), the repo's own `.rspec` has already
+# loaded the application's `spec/spec_helper.rb` and started SimpleCov with
+# `SimpleCov.root` at the repo root. Starting a second time here does not scope
+# anything to this gem — it re-points the *existing* run and applies
+# `minimum_coverage 100` to the whole application, which then fails at ~7%.
+#
+# Guarded on the working directory rather than on a "has SimpleCov started"
+# probe because this is the actual intent: the gem's strict gate belongs to the
+# gem's own suite. From anywhere else, the application's 90% gate is the right
+# one and this file should keep out of its way.
+unless ENV["COVERAGE"] == "0" || Dir.pwd != GEM_ROOT
   require "simplecov"
 
   SimpleCov.start do
@@ -83,5 +98,10 @@ module SchedulerBuilders
 end
 
 RSpec.configure do |config|
-  config.include SchedulerBuilders
+  # Scoped rather than global, and the reason predates the extraction: included
+  # everywhere, `item` collides with `subject(:item)` in the application's
+  # `spec/models/order_item_spec.rb`, and every shoulda matcher there starts
+  # asserting against a scheduler Item. The two suites do not share a process
+  # and the collision is not obvious enough to rediscover cheaply.
+  config.include SchedulerBuilders, absolute_file_path: %r{/gems/deficit_scheduler/spec/}
 end

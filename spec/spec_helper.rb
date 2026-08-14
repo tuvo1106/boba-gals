@@ -43,7 +43,13 @@ unless ENV["COVERAGE"] == "0"
     #
     # A partial run (`bin/rspec spec/models`) can't meet a whole-project floor,
     # so only a full-suite run is gated. CI always runs the full suite.
-    full_run = ARGV.none? { |a| a.start_with?("spec/") }
+    #
+    # `gems/` is listed alongside `spec/` because the scheduler's suite lives
+    # there now (ADR-0033): `bundle exec rspec gems/deficit_scheduler/spec` from
+    # the repo root is a partial run of ~24% of the app, but without this it
+    # reads as a full one and fails the 90% floor. The gem's own 100% gate is
+    # what covers those files, and it only engages from the gem's directory.
+    full_run = ARGV.none? { |a| a.start_with?("spec/", "gems/") }
     minimum_coverage(line: 90) if full_run
   end
 end

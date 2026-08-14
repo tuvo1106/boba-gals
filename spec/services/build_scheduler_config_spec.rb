@@ -31,11 +31,19 @@ RSpec.describe BuildSchedulerConfig do
       expect(described_class.call(cohesion_boost: 0.5).staleness_boost).to eq(0.5)
     end
 
-    it "drops the §6.6 keys the scheduler must not read" do
-      config = described_class.call("quality_limit_seconds" => 300, "eta_safety_factor" => 1.15)
+    # Asserting `not_to respond_to(:quality_limit_seconds)` would prove nothing:
+    # `Config` builds its readers from `DEFAULTS`, so that is true however the
+    # adapter behaves. What actually needs holding is that these keys cannot
+    # reach a scheduler setting *under some other name* — a `KEY_MAP` typo
+    # pointing `quality_limit_seconds` at `deadline_buffer` would be silent
+    # otherwise.
+    it "drops the §6.6 keys the scheduler must not read, rather than rerouting them" do
+      config = described_class.call("quality_limit_seconds" => 999, "eta_safety_factor" => 9.99)
 
-      expect(config).not_to respond_to(:quality_limit_seconds)
-      expect(config.to_h).not_to include(:eta_safety_factor) if config.respond_to?(:to_h)
+      DeficitScheduler::Config::DEFAULTS.each do |key, default|
+        expect(config.public_send(key)).to eq(default),
+          "#{key} became #{config.public_send(key).inspect}; a non-scheduler key leaked into it"
+      end
     end
   end
 
@@ -45,7 +53,7 @@ RSpec.describe BuildSchedulerConfig do
   # dashboard showed the operator's setting. These make that unmergeable.
   describe "the map is total, so the two vocabularies cannot drift apart" do
     it "feeds every setting the scheduler actually reads" do
-      translated = Store::SCHEDULER_DEFAULTS.keys.map { |k| described_class::KEY_MAP.fetch(k, k.to_sym) }
+      translated = Store::SCHEDULER_DEFAULTS.keys.map { |k| described_class::KEY_MAP.fetch(k.to_s, k.to_sym) }
 
       expect(DeficitScheduler::Config::DEFAULTS.keys - translated).to be_empty,
         "the scheduler reads settings nothing in Store::SCHEDULER_DEFAULTS feeds it"
@@ -54,7 +62,7 @@ RSpec.describe BuildSchedulerConfig do
     it "sends every §6.6 setting somewhere the scheduler recognises" do
       unroutable = Store::SCHEDULER_DEFAULTS.keys.reject do |key|
         NON_SCHEDULER_KEYS.include?(key) ||
-          DeficitScheduler::Config::DEFAULTS.key?(described_class::KEY_MAP.fetch(key, key.to_sym))
+          DeficitScheduler::Config::DEFAULTS.key?(described_class::KEY_MAP.fetch(key.to_s, key.to_sym))
       end
 
       expect(unroutable).to be_empty,

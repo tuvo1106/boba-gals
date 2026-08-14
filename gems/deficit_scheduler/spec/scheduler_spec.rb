@@ -389,7 +389,16 @@ RSpec.describe DeficitScheduler do
     # half of this guarantee — this catches the case where someone reaches for
     # a constant Ruby happens to provide anyway.
     it "reads the clock only through the injected argument" do
-      Dir[File.expand_path("../lib/**/*.rb", __dir__)].each do |path|
+      paths = Dir[File.expand_path("../lib/**/*.rb", __dir__)]
+
+      # Without this the example passes green if the glob ever matches nothing —
+      # a renamed directory, a moved spec file — which is structurally the same
+      # "matched nothing, therefore enforced nothing" failure ADR-0033 deleted
+      # from the application's coverage hook. Six files today: the entry point
+      # plus five.
+      expect(paths.size).to be >= 6, "the purity glob matched #{paths.size} files; it should match every lib file"
+
+      paths.each do |path|
         # Comments stripped: these files *discuss* ActiveRecord and the clock at
         # length, and matching prose would fire the guard on its own rationale.
         code = File.read(path).lines.grep_v(/^\s*#/).join

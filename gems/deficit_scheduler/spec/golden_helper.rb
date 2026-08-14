@@ -13,7 +13,7 @@ require_relative "spec_helper"
 #
 # To regenerate deliberately:
 #
-#     REGENERATE_GOLDEN=1 bin/rspec spec/scheduler/golden_spec.rb
+#     cd gems/deficit_scheduler && REGENERATE_GOLDEN=1 bundle exec rspec spec/golden_spec.rb
 #
 module GoldenSupport
   # Constant lookup is lexical, so `T0` inside this module would not find
@@ -171,7 +171,8 @@ module GoldenSupport
 
     unless File.exist?(path)
       raise "missing golden fixture #{path}. Generate it with " \
-            "REGENERATE_GOLDEN=1 bin/rspec spec/scheduler/golden_spec.rb, then read the diff."
+            "cd gems/deficit_scheduler && REGENERATE_GOLDEN=1 bundle exec rspec " \
+            "spec/golden_spec.rb, then read the diff."
     end
 
     expect(actual).to eq(File.read(path)),
