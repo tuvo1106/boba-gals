@@ -20,7 +20,7 @@ const PAD_BOTTOM = 24
 const PLOT_W = WIDTH - PAD_LEFT - PAD_RIGHT
 const PLOT_H = HEIGHT - PAD_TOP - PAD_BOTTOM
 
-/** §6.6's shipped default (`Scheduler::Config::DEFAULTS[:quantum]`) — the
+/** §6.6's shipped default (`DeficitScheduler::Config::DEFAULTS[:quantum]`) — the
  *  reference every other point on the sweep is read against. */
 const DEFAULT_QUANTUM = 60
 

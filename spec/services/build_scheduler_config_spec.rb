@@ -2,9 +2,13 @@ require "rails_helper"
 
 RSpec.describe BuildSchedulerConfig do
   # §6.6 keys that are deliberately not scheduler settings: they belong to the
-  # quality timer (§9.6) and the ETA projection (§7.1), and `Scheduler::Config`
-  # has never carried them.
-  NON_SCHEDULER_KEYS = %w[quality_limit_seconds eta_safety_factor].freeze
+  # quality timer (§9.6) and the ETA projection (§7.1), and the scheduler's
+  # `Config` has never carried them.
+  #
+  # A `let`, not a constant: a constant assigned inside `RSpec.describe`'s block
+  # is defined on `Object`, not on the example group, so it would be visible to
+  # every other spec file in the suite and collide with any that reused the name.
+  let(:non_scheduler_keys) { %w[quality_limit_seconds eta_safety_factor] }
 
   describe "the translation" do
     it "maps this shop's §6.6 settings onto the scheduler's own vocabulary" do
@@ -61,7 +65,7 @@ RSpec.describe BuildSchedulerConfig do
 
     it "sends every §6.6 setting somewhere the scheduler recognises" do
       unroutable = Store::SCHEDULER_DEFAULTS.keys.reject do |key|
-        NON_SCHEDULER_KEYS.include?(key) ||
+        non_scheduler_keys.include?(key) ||
           DeficitScheduler::Config::DEFAULTS.key?(described_class::KEY_MAP.fetch(key.to_s, key.to_sym))
       end
 
