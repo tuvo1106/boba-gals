@@ -327,7 +327,8 @@ module Simulator
           queue: queued.map { |d| Scheduler::Item.new(id: d.id, prep_seconds: d.prep_seconds, enqueued_at: order.arrived_at, remake: d.remake?) },
           made_count: order.items.count(&:finished_at),
           total_items: order.items.size,
-          deficit: carried.fetch(order.id, 0)
+          deficit: carried.fetch(order.id, 0),
+          first_ready_at: order.first_ready_at
         )
       end
 

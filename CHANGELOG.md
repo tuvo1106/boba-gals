@@ -245,6 +245,15 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Changed
+- **The cohesion boost's trigger was rebuilt and re-measured, and still ships off by
+  default** (§6.2, §6.4, ADR-0014, ADR-0032, issue #31). The original trigger fired once an
+  order was half made regardless of whether anything was actually sitting; it now fires on
+  how long the earliest finished drink has actually been waiting, the same way aging already
+  does. Measured over 20 seeds at real load, the corrected trigger no longer makes
+  `cohesion_spread` worse anywhere — the original problem — and improves it substantially for
+  large orders. That improvement isn't free: typical orders wait a little longer and a few
+  more customers walk out. Nothing changes for any store today; the finding and the full
+  numbers are in ADR-0032 for whoever picks this back up.
 - **The kitchen-display quality-breach marker now scales with order size instead of using
   one flat 300-second limit for every order** (§9.6, ADR-0014, ADR-0031, issue #80). A
   3+ drink order's first drink typically sits several times longer than 300s just from the

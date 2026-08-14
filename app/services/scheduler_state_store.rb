@@ -82,7 +82,8 @@ class SchedulerStateStore
         # the order is *done*, and finished drinks have left the queue (§6.4).
         made_count: order.order_items.count { |i| i.status == "finished" },
         total_items: order.order_items.count { |i| i.status != "cancelled" },
-        promised_at: order.promised_at
+        promised_at: order.promised_at,
+        first_ready_at: order.first_ready_at
       )
     end
   end

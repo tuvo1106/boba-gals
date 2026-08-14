@@ -40,14 +40,15 @@ module SchedulerBuilders
 
   # @param drinks [Integer] how many undispatched drinks the order has
   def flow(id:, arrived_at: T0, drinks: 1, prep_seconds: 60, made_count: 0,
-           total_items: nil, promised_at: nil, deficit: 0, remake: false)
+           total_items: nil, promised_at: nil, deficit: 0, remake: false, first_ready_at: nil)
     queue = Array.new(drinks) do
       item(prep_seconds: prep_seconds, enqueued_at: arrived_at, remake: remake)
     end
 
     Scheduler::Flow.new(
       id: id, arrived_at: arrived_at, queue: queue, made_count: made_count,
-      total_items: total_items, promised_at: promised_at, deficit: deficit
+      total_items: total_items, promised_at: promised_at, deficit: deficit,
+      first_ready_at: first_ready_at
     )
   end
 

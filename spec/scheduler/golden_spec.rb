@@ -97,7 +97,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   it "matches with cohesion enabled" do
     half_made = Scheduler::Flow.new(
       id: "half-made", arrived_at: at(0), made_count: 2, total_items: 4,
-      promised_at: nil, deficit: 0,
+      promised_at: nil, deficit: 0, first_ready_at: at(0),
       queue: Array.new(2) { |n| Scheduler::Item.new(id: 40 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
     )
     untouched = Scheduler::Flow.new(
@@ -114,7 +114,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
     # `> 2`: the small order whose first drink is already sitting and melting.
     pair = Scheduler::Flow.new(
       id: "pair", arrived_at: at(0), made_count: 1, total_items: 2,
-      promised_at: nil, deficit: 0,
+      promised_at: nil, deficit: 0, first_ready_at: at(0),
       queue: [ Scheduler::Item.new(id: 70, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
     )
 
@@ -127,7 +127,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   it "matches with cohesion disabled" do
     half_made = Scheduler::Flow.new(
       id: "half-made", arrived_at: at(0), made_count: 2, total_items: 4,
-      promised_at: nil, deficit: 0,
+      promised_at: nil, deficit: 0, first_ready_at: at(0),
       queue: Array.new(2) { |n| Scheduler::Item.new(id: 40 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
     )
     untouched = Scheduler::Flow.new(
@@ -142,7 +142,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
     )
     pair = Scheduler::Flow.new(
       id: "pair", arrived_at: at(0), made_count: 1, total_items: 2,
-      promised_at: nil, deficit: 0,
+      promised_at: nil, deficit: 0, first_ready_at: at(0),
       queue: [ Scheduler::Item.new(id: 70, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
     )
 
