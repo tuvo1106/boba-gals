@@ -8,7 +8,7 @@
 # This replaces `NaiveEta`'s `total_work / stations` (build step 3, ADR-0004),
 # which has no idea that fair queuing reorders work: it quotes by queue position
 # and so drifts the moment the quantum changes. Running the real
-# `Scheduler.pick_next` is the only method that stays correct when scheduler
+# `DeficitScheduler.pick_next` is the only method that stays correct when scheduler
 # parameters move, because the parameters are inputs to it rather than
 # assumptions baked into a formula. It is the same rule §10.1 imposes on the
 # simulator — project with the production scheduler or you are projecting a
@@ -108,9 +108,9 @@ class ProjectEta
   # the two answers is the one the customer should hear.
   def order_ahead(projected)
     flows_by_id.each do |id, flow|
-      next if flow.promised_at.nil?
+      next if flow.deadline.nil?
 
-      projected[id] = [ projected[id], flow.promised_at ].compact.max
+      projected[id] = [ projected[id], flow.deadline ].compact.max
     end
 
     projected
@@ -147,11 +147,11 @@ class ProjectEta
       index = free_at.each_index.min_by { |i| free_at[i] }
       clock = free_at[index]
 
-      picked = Scheduler.pick_next(state, clock)
+      picked = DeficitScheduler.pick_next(state, clock)
       break if picked.nil?
 
       record(picked, clock)
-      free_at[index] = clock + prep_seconds_for(picked[:item])
+      free_at[index] = clock + prep_seconds_for(picked[:item].id, picked[:item].cost)
     end
   end
 
@@ -162,21 +162,21 @@ class ProjectEta
 
   # @return [Boolean] whether this order was placed for a chosen pickup time
   def promised?(order_id)
-    !flows_by_id[order_id]&.promised_at.nil?
+    !flows_by_id[order_id]&.deadline.nil?
   end
 
   def seed_in_progress
     in_progress_items.each do |item|
       start_at = item.started_at || @now
 
-      @item_projection[item.id] = { start_at: start_at, ready_at: [ start_at + prep_seconds_for(item), @now ].max }
+      @item_projection[item.id] = { start_at: start_at, ready_at: [ start_at + prep_seconds_for(item.id, item.prep_seconds), @now ].max }
       @order_id_by_item[item.id] = item.order_id
     end
   end
 
   def record(picked, clock)
     item_id = picked[:item].id
-    ready = clock + prep_seconds_for(picked[:item])
+    ready = clock + prep_seconds_for(picked[:item].id, picked[:item].cost)
 
     @item_projection[item_id] = { start_at: clock, ready_at: ready }
     @order_id_by_item[item_id] = picked[:flow].id
@@ -196,7 +196,7 @@ class ProjectEta
       item = busy[station.id]
       next @now if item.nil? || item.started_at.nil?
 
-      [ item.started_at + prep_seconds_for(item), @now ].max
+      [ item.started_at + prep_seconds_for(item.id, item.prep_seconds), @now ].max
     end
   end
 
@@ -230,13 +230,22 @@ class ProjectEta
   # Keyed by menu item, so a drink's estimate improves as the shop makes more of
   # that drink rather than more drinks in general.
   #
-  # `Scheduler::Item` carries no `menu_item_id` — the scheduler is plain Ruby
+  # `DeficitScheduler::Item` carries no `menu_item_id` — the scheduler is plain Ruby
   # that must not know what a menu is (§6.2) — but its `id` is the `OrderItem`
   # id, so the mapping is a lookup here rather than a new field there.
   #
-  # @param item [OrderItem, Scheduler::Item]
-  def prep_seconds_for(item)
-    learned_seconds[menu_item_ids[item.id]] || item.prep_seconds
+  # **Takes the fallback rather than the object, deliberately** (ADR-0033). This
+  # is called with both an `OrderItem` and a `DeficitScheduler::Item`, and it
+  # used to read `item.prep_seconds` off either — which worked only because the
+  # two types happened to share that name. They no longer do: the gem speaks
+  # `cost`. Passing the number in means the caller, which knows what it is
+  # holding, resolves that; duck-typing across a package boundary is exactly the
+  # coupling extracting the gem was meant to remove.
+  #
+  # @param id [Integer] an OrderItem id, either way
+  # @param fallback [Numeric] `item.prep_seconds` or `item.cost` per the caller
+  def prep_seconds_for(id, fallback)
+    learned_seconds[menu_item_ids[id]] || fallback
   end
 
   # Two queries for the whole projection rather than two per drink: a 400-drink

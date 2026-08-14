@@ -7,7 +7,7 @@ module Simulator
   # over its items**, multiplied by `eta_safety_factor`."
   #
   # This is `ProjectEta` with the ActiveRecord taken out — same algorithm, same
-  # `Scheduler.pick_next`, driven by the simulator's own structures. It exists
+  # `DeficitScheduler.pick_next`, driven by the simulator's own structures. It exists
   # separately because `ProjectEta` reaches for `OrderItem`, `PrepTimeStat` and
   # `SchedulerStateStore`, none of which a simulated shop has; the parts that
   # must not diverge are the loop below and §7.1's max-over-items rule.
@@ -58,7 +58,7 @@ module Simulator
     #   the one being quoted — a customer's own drinks are part of their wait
     # @param stations [Array<Hash>] the world's stations, with `busy_until`
     # @param now [Float] the simulated clock
-    # @param config [Scheduler::Config]
+    # @param config [DeficitScheduler::Config]
     # @param safety_factor [Float] §7.1's `eta_safety_factor`
     # @param target [Object, nil] quote only this order, and stop as soon as its
     #   answer is final. `ProjectEta` has no equivalent because the board wants
@@ -127,10 +127,10 @@ module Simulator
           break
         end
 
-        picked = Scheduler.pick_next(state, clock)
+        picked = DeficitScheduler.pick_next(state, clock)
         break if picked.nil?
 
-        finish = clock + picked[:item].prep_seconds
+        finish = clock + picked[:item].cost
         free_at[index] = finish
 
         # §7.1: "Order ETA = max over its items."
@@ -217,19 +217,18 @@ module Simulator
         queued = order.items.reject(&:started_at)
         next if queued.empty?
 
-        Scheduler::Flow.new(
-          id: order.id, arrived_at: order.arrived_at, promised_at: order.promised_at,
+        DeficitScheduler::Flow.new(
+          id: order.id, arrived_at: order.arrived_at, deadline: order.promised_at,
           queue: queued.map do |drink|
-            Scheduler::Item.new(id: drink.id, prep_seconds: drink.prep_seconds,
-                                enqueued_at: order.arrived_at, remake: drink.remake?)
+            DeficitScheduler::Item.new(id: drink.id, cost: drink.prep_seconds,
+                                       enqueued_at: order.arrived_at, expedited: drink.remake?)
           end,
-          made_count: order.items.count(&:finished_at),
           total_items: order.items.size,
-          first_ready_at: order.first_ready_at
+          first_output_at: order.first_ready_at
         )
       end
 
-      Scheduler::State.new(flows: flows, config: @config)
+      DeficitScheduler::State.new(flows: flows, config: @config)
     end
   end
 end

@@ -72,9 +72,16 @@ module Simulator
       { name: "Brown Sugar Pearl", prep_seconds: 95, weight: 2 }
     ].freeze
 
-    # @return [Scheduler::Config]
+    # @return [DeficitScheduler::Config]
+    # Scenarios are written in this shop's §6.6 vocabulary — the ablation arms
+    # say `cohesion_enabled`, and so does the dashboard — so they go through the
+    # same translation the live store does (ADR-0033).
+    #
+    # No `DEFAULTS.merge` any more: `Config.new` already merges them, so doing it
+    # here was redundant, and doing it with the *gem's* key names would have
+    # quietly mixed two vocabularies in one hash.
     def config
-      Scheduler::Config.from_store(Scheduler::Config::DEFAULTS.merge(@scheduler_config))
+      BuildSchedulerConfig.call(@scheduler_config)
     end
 
     # @return [Float] orders per second during the given simulated hour

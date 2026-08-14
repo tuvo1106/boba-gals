@@ -85,9 +85,21 @@ jobs:
       - name: Prepare database
         run: bin/rails db:test:prepare
 
+      # The scheduler gem's suite, run from its own directory so its `.rspec`
+      # and its own SimpleCov root apply — that is what enforces its 100% line
+      # and branch gate (ADR-0002, ADR-0033). Run before the app suite because
+      # it takes milliseconds and its failures are the more fundamental ones.
+      #
+      # Deliberately a separate step rather than folding the gem's specs into
+      # the root `rspec` run: two SimpleCov roots in one process cannot both be
+      # measured, and the gem's strict gate is the one that would be lost.
+      - name: Scheduler gem specs
+        working-directory: gems/deficit_scheduler
+        run: bundle exec rspec
+
       # Coverage gates are enforced in-process by SimpleCov (spec/spec_helper.rb):
-      # 90% overall, 100% line and branch on app/scheduler/**. A shortfall exits
-      # non-zero here — there is no separate gate step to keep in sync.
+      # 90% overall for the app. A shortfall exits non-zero here — there is no
+      # separate gate step to keep in sync.
       - name: Specs
         run: bundle exec rspec
 
@@ -97,10 +109,11 @@ jobs:
       # regeneration nobody committed) fails here instead of drifting silently
       # the way the pre-rswag comments in CLAUDE.md and types.ts describe.
       # COVERAGE=0: rswag:specs:swaggerize runs only the *_swagger_spec.rb
-      # files, which trips SimpleCov's app/scheduler/** gate on this partial
-      # run and exits non-zero before `git diff` below ever gets to run — a
-      # false failure with nothing to do with drift. The "Specs" step above
-      # already proved the real gate holds against the full suite.
+      # files, so instrumenting that partial run costs time and reports a
+      # coverage figure nobody should read. It also used to trip the scheduler
+      # gate that lived here before ADR-0033 moved it into the gem, exiting
+      # non-zero before `git diff` below ever ran — a false failure with nothing
+      # to do with drift. The "Specs" step above proves the real gate.
       - name: OpenAPI doc matches the request specs
         run: |
           COVERAGE=0 bundle exec rails rswag:specs:swaggerize

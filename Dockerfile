@@ -41,7 +41,14 @@ FROM build-deps AS development
 
 ENV RAILS_ENV="development"
 
+# The gemspec has to land before `bundle install`, because `deficit_scheduler`
+# is a path gem (ADR-0033) and bundler resolves it by reading that file — with
+# only the Gemfile copied it fails outright with "the path ... does not exist".
+# Just the gemspec, not the whole gem: it is written to evaluate without its own
+# sources present (no `git ls-files`, no version file), so the layer cache still
+# breaks on dependency changes rather than on every edit to the scheduler.
 COPY Gemfile Gemfile.lock ./
+COPY gems/deficit_scheduler/deficit_scheduler.gemspec gems/deficit_scheduler/
 RUN bundle install
 
 EXPOSE 3000
@@ -55,7 +62,11 @@ ENV RAILS_ENV="production" \
     BUNDLE_DEPLOYMENT="1" \
     BUNDLE_WITHOUT="development:test"
 
+# Same reason as the development stage above — and stricter here, because
+# BUNDLE_DEPLOYMENT=1 freezes the lockfile, so a path gem bundler cannot read is
+# a hard failure rather than a re-resolve.
 COPY Gemfile Gemfile.lock ./
+COPY gems/deficit_scheduler/deficit_scheduler.gemspec gems/deficit_scheduler/
 RUN bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git && \
     bundle exec bootsnap precompile -j 1 --gemfile

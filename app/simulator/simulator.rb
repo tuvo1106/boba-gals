@@ -1,7 +1,7 @@
 # Discrete-event simulation of a shift (DESIGN.md §10.1, §10.2).
 #
 # **The one rule (§10.1): this runs the production scheduler, not a
-# reimplementation of it.** `Scheduler.pick_next` is called here exactly as
+# reimplementation of it.** `DeficitScheduler.pick_next` is called here exactly as
 # `ClaimNextDrink` calls it, with a simulated clock instead of `Time.current`.
 # Otherwise you are tuning a model of your system rather than your system, and
 # every conclusion the dashboard draws is about the model.
@@ -132,7 +132,7 @@ module Simulator
       @next_order_id = 0
       skills = @rng.stream(:stations)
       @stations = Array.new(scenario.stations) { |i| { index: i, busy_until: nil, skill: skills.between(0.85, 1.20) } }
-      @state = Scheduler::State.new(flows: [], config: scenario.config)
+      @state = DeficitScheduler::State.new(flows: [], config: scenario.config)
 
       schedule_arrivals
     end
@@ -306,7 +306,7 @@ module Simulator
         break if station.nil?
 
         rebuild_state
-        picked = Scheduler.pick_next(@state, @clock)
+        picked = DeficitScheduler.pick_next(@state, @clock)
         break if picked.nil?
 
         start_drink(picked, station)
@@ -322,17 +322,16 @@ module Simulator
         queued = order.items.reject(&:started_at)
         next if queued.empty?
 
-        Scheduler::Flow.new(
-          id: order.id, arrived_at: order.arrived_at, promised_at: order.promised_at,
-          queue: queued.map { |d| Scheduler::Item.new(id: d.id, prep_seconds: d.prep_seconds, enqueued_at: order.arrived_at, remake: d.remake?) },
-          made_count: order.items.count(&:finished_at),
+        DeficitScheduler::Flow.new(
+          id: order.id, arrived_at: order.arrived_at, deadline: order.promised_at,
+          queue: queued.map { |d| DeficitScheduler::Item.new(id: d.id, cost: d.prep_seconds, enqueued_at: order.arrived_at, expedited: d.remake?) },
           total_items: order.items.size,
           deficit: carried.fetch(order.id, 0),
-          first_ready_at: order.first_ready_at
+          first_output_at: order.first_ready_at
         )
       end
 
-      @state = Scheduler::State.new(flows: flows, config: @scenario.config,
+      @state = DeficitScheduler::State.new(flows: flows, config: @scenario.config,
                                     pointer: @state.pointer, granted_to: @state.granted_to)
     end
 

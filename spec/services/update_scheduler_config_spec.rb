@@ -86,12 +86,12 @@ RSpec.describe UpdateSchedulerConfig do
       expect(apply("policy" => "lifo")).not_to be_success
     end
 
-    # §6.3's comparison arms exist in `Scheduler::Config::POLICIES` and run in
+    # §6.3's comparison arms exist in `DeficitScheduler::Config::POLICIES` and run in
     # the simulator. SJF minimises mean wait by starving large orders — the
     # failure §1 exists to prevent — so the store must refuse it even though the
     # scheduler can execute it.
     it "refuses the simulator-only comparison arms" do
-      expect(Scheduler::Config::POLICIES).to include(:rr, :sjf)
+      expect(DeficitScheduler::Config::POLICIES).to include(:rr, :sjf)
 
       expect(apply("policy" => "rr")).not_to be_success
       expect(apply("policy" => "sjf")).not_to be_success

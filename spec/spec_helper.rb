@@ -28,40 +28,29 @@ unless ENV["COVERAGE"] == "0"
     skip %r{^/config/}
     skip %r{^/db/}
 
-    group "Scheduler", "app/scheduler"
-
+    # The scheduler's own 100% line-and-branch gate does not live here any more.
+    # It moved with the code into `gems/deficit_scheduler` (ADR-0033), where the
+    # package *is* the strict part and SimpleCov's built-in
+    # `minimum_coverage line: 100, branch: 100` enforces it directly.
+    #
+    # The hand-rolled `at_exit` hook that used to sit here was deleted rather
+    # than repointed, on purpose. It selected files by the substring
+    # `"/app/scheduler/"` and then did `unless scheduler.empty?` — so once the
+    # code moved it would have matched nothing, skipped the check, and gone
+    # green while enforcing nothing at all. A gate that silently stops gating is
+    # worse than no gate, and its `unless empty?` was documented in a way that
+    # read as intentional. ADR-0002's policy is unchanged; only its location is.
+    #
     # A partial run (`bin/rspec spec/models`) can't meet a whole-project floor,
     # so only a full-suite run is gated. CI always runs the full suite.
-    full_run = ARGV.none? { |a| a.start_with?("spec/") }
+    #
+    # `gems/` is listed alongside `spec/` because the scheduler's suite lives
+    # there now (ADR-0033): `bundle exec rspec gems/deficit_scheduler/spec` from
+    # the repo root is a partial run of ~24% of the app, but without this it
+    # reads as a full one and fails the 90% floor. The gem's own 100% gate is
+    # what covers those files, and it only engages from the gem's directory.
+    full_run = ARGV.none? { |a| a.start_with?("spec/", "gems/") }
     minimum_coverage(line: 90) if full_run
-  end
-
-  # SimpleCov has no per-directory minimum, and `app/scheduler/**` is held to a
-  # stricter bar than the rest of the app: it is pure, has no I/O, and is the
-  # code the whole design rests on (DESIGN.md §6.2, §10.1). The `unless empty?`
-  # below is what let this ship before the scheduler existed; it stays because a
-  # partial run that touches no scheduler file should not fail on its absence.
-  SimpleCov.at_exit do
-    result = SimpleCov.result
-    result.format!
-
-    scheduler = result.files.select { |f| f.filename.include?("/app/scheduler/") }
-    unless scheduler.empty?
-      offenders = scheduler.reject do |f|
-        f.covered_percent == 100.0 && (f.branches.empty? || f.branches_coverage_percent == 100.0)
-      end
-
-      if offenders.any?
-        warn "\napp/scheduler/** must be at 100% line and branch coverage (ADR-0002):"
-        offenders.each do |f|
-          warn format("  %-50s line %.1f%%  branch %.1f%%",
-                      f.filename.sub("#{SimpleCov.root}/", ""),
-                      f.covered_percent,
-                      f.branches.empty? ? 100.0 : f.branches_coverage_percent)
-        end
-        exit 1
-      end
-    end
   end
 end
 

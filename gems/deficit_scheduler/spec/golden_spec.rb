@@ -11,7 +11,7 @@ require "fileutils"
 # The scenarios below are chosen so that each one puts a different part of §6
 # on the critical path. A change to aging should not be able to pass by leaving
 # the mixed-day fixture untouched.
-RSpec.describe "Scheduler golden dispatch sequences" do
+RSpec.describe "DeficitScheduler golden dispatch sequences" do
   # The ordinary case: §10.3's size mix and menu spread over a busy stretch.
   it "matches on a mixed day" do
     flows = golden_flows(seed: 1, orders: 20)
@@ -44,7 +44,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   # §6.4's priority floor: a remake outranks same-age ordinary work regardless
   # of how long that work has waited.
   it "matches when remakes are in the mix" do
-    flows = golden_flows(seed: 11, orders: 20, remake_rate: 25)
+    flows = golden_flows(seed: 11, orders: 20, expedited_rate: 25)
 
     expect_golden("remakes", golden_run(flows))
   end
@@ -60,20 +60,20 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   # aged for thirty minutes. `1 + 0.15 x 30 = 5.5` beats the remake's `1 + 4.0
   # = 5.0` on quantum alone, so only the tier puts the remake first.
   it "matches when a fresh remake meets a heavily aged order" do
-    aged = Scheduler::Flow.new(
-      id: "aged-30min", arrived_at: at(-1800), made_count: 0, total_items: 2,
-      promised_at: nil, deficit: 0,
-      queue: Array.new(2) { |n| Scheduler::Item.new(id: 10 + n, prep_seconds: 45, enqueued_at: at(-1800), remake: false) }
+    aged = DeficitScheduler::Flow.new(
+      id: "aged-30min", arrived_at: at(-1800), total_items: 2,
+      deadline: nil, deficit: 0,
+      queue: Array.new(2) { |n| DeficitScheduler::Item.new(id: 10 + n, cost: 45, enqueued_at: at(-1800), expedited: false) }
     )
-    fresh_remake = Scheduler::Flow.new(
-      id: "remake-fresh", arrived_at: at(0), made_count: 1, total_items: 2,
-      promised_at: nil, deficit: 0,
-      queue: [ Scheduler::Item.new(id: 20, prep_seconds: 45, enqueued_at: at(0), remake: true) ]
+    fresh_remake = DeficitScheduler::Flow.new(
+      id: "remake-fresh", arrived_at: at(0), total_items: 2,
+      deadline: nil, deficit: 0,
+      queue: [ DeficitScheduler::Item.new(id: 20, cost: 45, enqueued_at: at(0), expedited: true) ]
     )
-    ordinary = Scheduler::Flow.new(
-      id: "ordinary", arrived_at: at(-60), made_count: 0, total_items: 3,
-      promised_at: nil, deficit: 0,
-      queue: Array.new(3) { |n| Scheduler::Item.new(id: 30 + n, prep_seconds: 70, enqueued_at: at(-60), remake: false) }
+    ordinary = DeficitScheduler::Flow.new(
+      id: "ordinary", arrived_at: at(-60), total_items: 3,
+      deadline: nil, deficit: 0,
+      queue: Array.new(3) { |n| DeficitScheduler::Item.new(id: 30 + n, cost: 70, enqueued_at: at(-60), expedited: false) }
     )
 
     expect_golden("remake_floor", golden_run([ aged, fresh_remake, ordinary ], stations: 1))
@@ -82,7 +82,7 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   # §6.2's backward scheduling. These flows are ineligible until their promise
   # approaches, so this fixture pins the eligibility boundary.
   it "matches with order-ahead orders in the queue" do
-    flows = golden_flows(seed: 5, orders: 18, promised_rate: 30)
+    flows = golden_flows(seed: 5, orders: 18, deadline_rate: 30)
 
     expect_golden("order_ahead", golden_run(flows))
   end
@@ -95,59 +95,59 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   # out byte-identical to `mixed_day`. A fixture that cannot differ from another
   # fixture is not pinning anything.
   it "matches with cohesion enabled" do
-    half_made = Scheduler::Flow.new(
-      id: "half-made", arrived_at: at(0), made_count: 2, total_items: 4,
-      promised_at: nil, deficit: 0, first_ready_at: at(0),
-      queue: Array.new(2) { |n| Scheduler::Item.new(id: 40 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
+    half_made = DeficitScheduler::Flow.new(
+      id: "half-made", arrived_at: at(0), total_items: 4,
+      deadline: nil, deficit: 0, first_output_at: at(0),
+      queue: Array.new(2) { |n| DeficitScheduler::Item.new(id: 40 + n, cost: 70, enqueued_at: at(0), expedited: false) }
     )
-    untouched = Scheduler::Flow.new(
-      id: "untouched", arrived_at: at(0), made_count: 0, total_items: 4,
-      promised_at: nil, deficit: 0,
-      queue: Array.new(4) { |n| Scheduler::Item.new(id: 50 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
+    untouched = DeficitScheduler::Flow.new(
+      id: "untouched", arrived_at: at(0), total_items: 4,
+      deadline: nil, deficit: 0,
+      queue: Array.new(4) { |n| DeficitScheduler::Item.new(id: 50 + n, cost: 70, enqueued_at: at(0), expedited: false) }
     )
-    solo = Scheduler::Flow.new(
-      id: "solo", arrived_at: at(0), made_count: 0, total_items: 1,
-      promised_at: nil, deficit: 0,
-      queue: [ Scheduler::Item.new(id: 60, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
+    solo = DeficitScheduler::Flow.new(
+      id: "solo", arrived_at: at(0), total_items: 1,
+      deadline: nil, deficit: 0,
+      queue: [ DeficitScheduler::Item.new(id: 60, cost: 45, enqueued_at: at(0), expedited: false) ]
     )
     # §6.4's motivating case, and the reason the threshold is `> 1` rather than
     # `> 2`: the small order whose first drink is already sitting and melting.
-    pair = Scheduler::Flow.new(
-      id: "pair", arrived_at: at(0), made_count: 1, total_items: 2,
-      promised_at: nil, deficit: 0, first_ready_at: at(0),
-      queue: [ Scheduler::Item.new(id: 70, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
+    pair = DeficitScheduler::Flow.new(
+      id: "pair", arrived_at: at(0), total_items: 2,
+      deadline: nil, deficit: 0, first_output_at: at(0),
+      queue: [ DeficitScheduler::Item.new(id: 70, cost: 45, enqueued_at: at(0), expedited: false) ]
     )
 
     expect_golden("cohesion_enabled",
-                  golden_run([ untouched, half_made, solo, pair ], stations: 1, cohesion_enabled: true))
+                  golden_run([ untouched, half_made, solo, pair ], stations: 1, staleness_enabled: true))
   end
 
   # The same three orders with cohesion off, so the pair of fixtures is the
   # difference the flag makes rather than two unrelated sequences.
   it "matches with cohesion disabled" do
-    half_made = Scheduler::Flow.new(
-      id: "half-made", arrived_at: at(0), made_count: 2, total_items: 4,
-      promised_at: nil, deficit: 0, first_ready_at: at(0),
-      queue: Array.new(2) { |n| Scheduler::Item.new(id: 40 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
+    half_made = DeficitScheduler::Flow.new(
+      id: "half-made", arrived_at: at(0), total_items: 4,
+      deadline: nil, deficit: 0, first_output_at: at(0),
+      queue: Array.new(2) { |n| DeficitScheduler::Item.new(id: 40 + n, cost: 70, enqueued_at: at(0), expedited: false) }
     )
-    untouched = Scheduler::Flow.new(
-      id: "untouched", arrived_at: at(0), made_count: 0, total_items: 4,
-      promised_at: nil, deficit: 0,
-      queue: Array.new(4) { |n| Scheduler::Item.new(id: 50 + n, prep_seconds: 70, enqueued_at: at(0), remake: false) }
+    untouched = DeficitScheduler::Flow.new(
+      id: "untouched", arrived_at: at(0), total_items: 4,
+      deadline: nil, deficit: 0,
+      queue: Array.new(4) { |n| DeficitScheduler::Item.new(id: 50 + n, cost: 70, enqueued_at: at(0), expedited: false) }
     )
-    solo = Scheduler::Flow.new(
-      id: "solo", arrived_at: at(0), made_count: 0, total_items: 1,
-      promised_at: nil, deficit: 0,
-      queue: [ Scheduler::Item.new(id: 60, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
+    solo = DeficitScheduler::Flow.new(
+      id: "solo", arrived_at: at(0), total_items: 1,
+      deadline: nil, deficit: 0,
+      queue: [ DeficitScheduler::Item.new(id: 60, cost: 45, enqueued_at: at(0), expedited: false) ]
     )
-    pair = Scheduler::Flow.new(
-      id: "pair", arrived_at: at(0), made_count: 1, total_items: 2,
-      promised_at: nil, deficit: 0, first_ready_at: at(0),
-      queue: [ Scheduler::Item.new(id: 70, prep_seconds: 45, enqueued_at: at(0), remake: false) ]
+    pair = DeficitScheduler::Flow.new(
+      id: "pair", arrived_at: at(0), total_items: 2,
+      deadline: nil, deficit: 0, first_output_at: at(0),
+      queue: [ DeficitScheduler::Item.new(id: 70, cost: 45, enqueued_at: at(0), expedited: false) ]
     )
 
     expect_golden("cohesion_disabled",
-                  golden_run([ untouched, half_made, solo, pair ], stations: 1, cohesion_enabled: false))
+                  golden_run([ untouched, half_made, solo, pair ], stations: 1, staleness_enabled: false))
   end
 
   # §6.3's control arm. The fairness claim is measured against this, so it has
@@ -165,11 +165,11 @@ RSpec.describe "Scheduler golden dispatch sequences" do
   it "matches when nothing distinguishes the orders" do
     flows = Array.new(6) do |i|
       queue = Array.new(3) do |n|
-        Scheduler::Item.new(id: (i + 1) * 100 + n, prep_seconds: 60, enqueued_at: at(0), remake: false)
+        DeficitScheduler::Item.new(id: (i + 1) * 100 + n, cost: 60, enqueued_at: at(0), expedited: false)
       end
 
-      Scheduler::Flow.new(id: format("tie-%02d", i + 1), arrived_at: at(0), queue: queue,
-                          made_count: 0, total_items: 3, promised_at: nil, deficit: 0)
+      DeficitScheduler::Flow.new(id: format("tie-%02d", i + 1), arrived_at: at(0), queue: queue,
+                          total_items: 3, deadline: nil, deficit: 0)
     end
 
     expect_golden("ties", golden_run(flows))

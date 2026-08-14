@@ -1,8 +1,13 @@
-# Mutation testing, scoped to the scheduler (ADR-0002).
+# Mutation testing, scoped to the scheduler (ADR-0002, ADR-0033).
 #
-# Only app/scheduler/** is covered. It is pure, its specs run in milliseconds,
-# and it is the code the whole design rests on — mutant runs the suite once per
-# mutant, which is affordable there and nowhere else in this app.
+# Only the `deficit_scheduler` gem is covered. It is pure, its specs run in
+# milliseconds, and it is the code the whole design rests on — mutant runs the
+# suite once per mutant, which is affordable there and nowhere else in this app.
+#
+# Run from the repo root, against the gem's own suite:
+#
+#   COVERAGE=0 bundle exec mutant run
+#
 ---
 # The repo is public, which is exactly what this usage type is for and what
 # ADR-0002 was waiting on.
@@ -11,12 +16,14 @@ usage: opensource
 integration:
   name: rspec
   arguments:
-    - spec/scheduler
+    - gems/deficit_scheduler/spec
 requires:
   - ./config/mutant_boot.rb
 matcher:
   subjects:
-    - Scheduler*
+    # Matches by constant, not by path, so this survived the extraction
+    # untouched apart from the rename.
+    - DeficitScheduler*
 coverage_criteria:
   timeout: false
   test_result: true

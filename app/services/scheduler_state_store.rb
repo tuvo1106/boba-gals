@@ -1,4 +1,4 @@
-# Rebuilds Scheduler::State from Postgres and Redis, and writes back what
+# Rebuilds DeficitScheduler::State from Postgres and Redis, and writes back what
 # survives between dispatch cycles (DESIGN.md §6.5).
 #
 # There is no queue table. The flow set is rebuilt from
@@ -18,22 +18,22 @@ class SchedulerStateStore
     @store = store
   end
 
-  # @return [Scheduler::State]
+  # @return [DeficitScheduler::State]
   def load
     flows = build_flows
     deficits = read_deficits(flows.map(&:id))
 
     flows.each { |flow| flow.deficit = deficits.fetch(flow.id, 0) }
 
-    Scheduler::State.new(
+    DeficitScheduler::State.new(
       flows: flows,
-      config: Scheduler::Config.from_store(@store.effective_scheduler_config),
+      config: BuildSchedulerConfig.call(@store.effective_scheduler_config),
       pointer: resume_pointer(flows),
       granted_to: read_granted_to
     )
   end
 
-  # @param state [Scheduler::State]
+  # @param state [DeficitScheduler::State]
   # @return [void]
   def save(state)
     BobaGals::REDIS.with do |redis|
@@ -74,26 +74,25 @@ class SchedulerStateStore
                      .includes(:order)
 
     items.group_by(&:order).sort_by { |order, _| [ order.placed_at, order.id ] }.map do |order, queued|
-      Scheduler::Flow.new(
+      DeficitScheduler::Flow.new(
         id: order.id,
         arrived_at: order.placed_at,
         queue: queued.map { |item| build_item(item) },
-        # Counted from the order, not from the queue: cohesion asks how much of
-        # the order is *done*, and finished drinks have left the queue (§6.4).
-        made_count: order.order_items.count { |i| i.status == "finished" },
+        # Counted from the order, not from the queue: finished drinks have left
+        # the queue, and the staleness boost needs the order's true size (§6.4).
         total_items: order.order_items.count { |i| i.status != "cancelled" },
-        promised_at: order.promised_at,
-        first_ready_at: order.first_ready_at
+        deadline: order.promised_at,
+        first_output_at: order.first_ready_at
       )
     end
   end
 
   def build_item(item)
-    Scheduler::Item.new(
+    DeficitScheduler::Item.new(
       id: item.id,
-      prep_seconds: item.prep_seconds,
+      cost: item.prep_seconds,
       enqueued_at: item.queued_at,
-      remake: item.remake?
+      expedited: item.remake?
     )
   end
 

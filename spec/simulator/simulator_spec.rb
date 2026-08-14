@@ -122,8 +122,8 @@ RSpec.describe Simulator do
   end
 
   describe "the one rule (§10.1)" do
-    it "dispatches through Scheduler.pick_next" do
-      expect(Scheduler).to receive(:pick_next).at_least(20).times.and_call_original
+    it "dispatches through DeficitScheduler.pick_next" do
+      expect(DeficitScheduler).to receive(:pick_next).at_least(20).times.and_call_original
 
       run(seed: 2, hours: 2)
     end

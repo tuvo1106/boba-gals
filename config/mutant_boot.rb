@@ -1,12 +1,12 @@
 # Loads the scheduler for mutant without booting Rails.
 #
-# `app/scheduler/**` must not require Rails (CLAUDE.md, §6.2). Booting it here
-# would make every mutant pay Rails' load time and would quietly hide a
-# violation of that constraint.
-root = File.expand_path("../app/scheduler", __dir__)
+# The scheduler must not require Rails (ADR-0033). Booting it here would make
+# every mutant pay Rails' load time and would quietly hide a violation of that
+# constraint.
+#
+# The gem's `lib/` is added explicitly rather than relying on bundler, because
+# mutant is invoked from the repo root against a gem that is not otherwise on
+# the load path at boot time.
+$LOAD_PATH.unshift File.expand_path("../gems/deficit_scheduler/lib", __dir__)
 
-require "#{root}/scheduler/config"
-require "#{root}/scheduler/item"
-require "#{root}/scheduler/flow"
-require "#{root}/scheduler/state"
-require "#{root}/scheduler"
+require "deficit_scheduler"

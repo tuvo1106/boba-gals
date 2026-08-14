@@ -13,7 +13,7 @@ RSpec.describe Simulator::Projection do
     Array.new(count) { |i| { index: i, busy_until: busy[i] } }
   end
 
-  def project(orders, count: 1, now: 0.0, safety: 1.0, target: nil, config: Scheduler::Config.new(aging_enabled: false))
+  def project(orders, count: 1, now: 0.0, safety: 1.0, target: nil, config: DeficitScheduler::Config.new(aging_enabled: false))
     described_class.new(orders: orders, stations: stations(count), now: now,
                         config: config, safety_factor: safety, target: target)
   end
@@ -36,7 +36,7 @@ RSpec.describe Simulator::Projection do
     it "waits for a busy station rather than assuming every one is free" do
       described = described_class.new(
         orders: [ order(1, [ drink("a") ]) ], stations: stations(1, busy: [ 100.0 ]),
-        now: 0.0, config: Scheduler::Config.new, safety_factor: 1.0
+        now: 0.0, config: DeficitScheduler::Config.new, safety_factor: 1.0
       )
 
       expect(described.call.fetch(1)).to eq(160.0)

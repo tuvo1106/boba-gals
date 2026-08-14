@@ -1,3 +1,8 @@
+PATH
+  remote: gems/deficit_scheduler
+  specs:
+    deficit_scheduler (0.1.0)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -393,6 +398,7 @@ DEPENDENCIES
   brakeman
   bundler-audit
   debug
+  deficit_scheduler!
   factory_bot_rails (~> 6.5)
   mutant (~> 0.13)
   mutant-rspec (~> 0.13)

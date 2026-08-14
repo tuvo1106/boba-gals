@@ -1,16 +1,15 @@
 require "spec_helper"
 require "benchmark"
 
-# Like spec/scheduler_helper.rb, this deliberately does not load Rails. The
+# Like the gem's own spec_helper, this deliberately does not load Rails. The
 # simulator is pure Ruby over the pure scheduler (§10.1), and a run of thousands
 # of shifts must not pay Rails' boot cost.
 root = File.expand_path("..", __dir__)
 
-require "#{root}/app/scheduler/scheduler/config"
-require "#{root}/app/scheduler/scheduler/item"
-require "#{root}/app/scheduler/scheduler/flow"
-require "#{root}/app/scheduler/scheduler/state"
-require "#{root}/app/scheduler/scheduler"
+# One `require` instead of five hand-ordered paths: the gem's entry point owns
+# its own load order now (ADR-0033), and bundler puts it on the load path.
+require "deficit_scheduler"
+require "#{root}/app/services/build_scheduler_config"
 require "#{root}/app/simulator/simulator/rng"
 require "#{root}/app/simulator/simulator/scenario"
 require "#{root}/app/simulator/simulator/event_queue"

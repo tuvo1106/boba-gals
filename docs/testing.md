@@ -37,11 +37,17 @@ Enforced by SimpleCov in CI. A PR that drops below fails.
 | Scope | Line | Branch | Enforced by |
 |---|---|---|---|
 | Overall | 90% | — | `minimum_coverage` in `spec/spec_helper.rb` |
-| `app/scheduler/**` | 100% | 100% | a `SimpleCov.at_exit` hook — SimpleCov has no per-directory minimum |
+| `gems/deficit_scheduler` | 100% | 100% | `minimum_coverage line: 100, branch: 100` in the gem's own `spec/spec_helper.rb` |
 
 Both fail `rspec` in-process rather than in a separate CI step, and the overall gate is
 skipped on a partial run (`bin/rspec spec/models`) because a subset cannot meet a
 whole-project floor.
+
+The scheduler gate runs in the gem's **own** suite, not the root one (ADR-0033) — two
+SimpleCov roots cannot both be measured in one process. The hand-rolled `at_exit` hook that
+used to enforce it at the root was deleted rather than repointed: it matched files by the
+substring `"/app/scheduler/"` and skipped itself when that matched nothing, so after the
+extraction it would have gone green while enforcing nothing.
 
 There is deliberately **no separate gate on `app/services/**`.** An earlier version of this
 table listed one at 95% that nothing enforced, which is the same failure as a guard that
@@ -184,7 +190,7 @@ same tag rather than a bespoke `--tag acceptance` mechanism.
 ## Golden tests
 
 Fixed seeds producing byte-identical dispatch sequences. They live in
-`spec/scheduler/golden/` as committed fixtures.
+`gems/deficit_scheduler/spec/golden/` as committed fixtures.
 
 - They exist so the scheduler can be refactored without fear.
 - A diff in a golden file is a **behavior change** and must be justified in the PR body.
@@ -192,7 +198,7 @@ Fixed seeds producing byte-identical dispatch sequences. They live in
 - Regenerate deliberately, and read the diff before committing it:
 
   ```bash
-  REGENERATE_GOLDEN=1 bin/rspec spec/scheduler/golden_spec.rb
+  cd gems/deficit_scheduler && REGENERATE_GOLDEN=1 bundle exec rspec spec/golden_spec.rb
   ```
 
 - **A fixture that cannot differ from another fixture is pinning nothing.** Both of these
