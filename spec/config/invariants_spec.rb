@@ -64,6 +64,22 @@ RSpec.describe "design invariants" do
     end
   end
 
+  # Sidekiq only runs the `configure_server` block registered below when the
+  # process is an actual Sidekiq server (`Sidekiq.server?`), which the test
+  # process is not — so this reads the initializer's content rather than its
+  # effect, the same reason the ActiveJob adapter check above reads
+  # application.rb rather than the runtime queue adapter.
+  describe "broadcast trailing flush latency (§9.2, issue #40)" do
+    it "pins Sidekiq's scheduled-set poll interval instead of leaving it to scale with worker replica count" do
+      initializer = Rails.root.join("config/initializers/sidekiq.rb").read
+
+      expect(initializer).to match(/config\[:poll_interval_average\]\s*=\s*1\b/),
+        "the board/order broadcast trailing flush (ADR-0016) depends on this poll " \
+        "interval staying tight — see ADR-0029 and issue #40 for what regresses " \
+        "without it (a ~7s trailing edge instead of ~1-2.5s)"
+    end
+  end
+
   describe "migrations do not run on container boot (§14.2)" do
     # Migrations belong to the `migrate` Job applied before each rollout. With 2
     # web replicas, a boot-time migration means two pods racing the same schema
