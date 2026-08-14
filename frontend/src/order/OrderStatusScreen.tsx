@@ -97,9 +97,14 @@ export function OrderStatusScreen({
           ))}
         </section>
 
+        {/* "Paid", not "pay at the counter" — §9.3 now says payment is
+            authorized when the order is placed, and this screen only ever
+            renders after that has already happened. Restating it as a
+            pending action here would claim the opposite of what §9.3 now
+            documents. */}
         {order && (
           <p className="font-mono text-sm text-neutral-500">
-            {formatPrice(order.total_cents)} — pay at the counter
+            {formatPrice(order.total_cents)} — paid
           </p>
         )}
 
