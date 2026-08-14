@@ -311,6 +311,15 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The board and a customer's order screen now update within about a second or two of a
+  drink finishing, instead of sometimes sitting on a stale frame for as long as 7 seconds**
+  (§9.2, issue #40). The trailing edge of the once-per-second broadcast throttle is a
+  Sidekiq job scheduled with `wait: 1.second`, but Sidekiq only notices a scheduled job once
+  its own poller sweeps for it — which defaulted to about once every 5 seconds, with up to
+  7.5 seconds of jitter, on `worker`'s single replica. Two drinks finishing in the same
+  second meant the second one's update could sit unseen for that whole stretch, even though
+  the database already said `ready`. The poll interval is now pinned to ~1s. ADR-0029 has
+  the full reasoning.
 - **The quantum sweep chart now marks what its lines are actually worth in seconds**
   (§10.5). It shipped with only the caption stating each series' range in words — reading
   a point's height meant hovering it one at a time. Both sweep charts now carry reference
