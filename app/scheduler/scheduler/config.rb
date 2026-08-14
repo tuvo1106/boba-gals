@@ -6,11 +6,6 @@ module Scheduler
   # quality timer (§9.6) and the ETA projection (§7.1); the scheduler must not
   # grow opinions about either.
   class Config
-    # An order is "past half made" at exactly half, not beyond it. A 2-drink
-    # order with one drink done qualifies, which is the case §6.4 cares about
-    # most — the first drink is already sitting.
-    COHESION_THRESHOLD = 0.5
-
     # §6.3. `drr` and `fifo` are selectable on a store; `rr` and `sjf` exist for
     # the simulator's comparison arms and are rejected by `UpdateSchedulerConfig`
     # — SJF starves large orders by construction, which is the failure §1 exists

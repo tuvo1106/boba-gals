@@ -91,60 +91,63 @@ RSpec.describe Scheduler do
     end
   end
 
-  # Off by default since ADR-0014 measured it making spread worse, so these
-  # enable it explicitly. They are kept, and still assert the mechanism does
-  # what §6.2 says: the knob has to keep working for the finding to stay
-  # reproducible, and for a re-triggered version to have somewhere to land.
+  # Off by default since ADR-0014 measured the original fraction_made trigger
+  # making spread worse, so these enable it explicitly. Re-triggered on how
+  # long the earliest finished drink has actually sat, shaped like aging below
+  # (#31, ADR-0032) — kept and still asserted so the knob keeps working for
+  # whichever finding the re-trigger produces.
   describe "cohesion (§6.4, §9.6), enabled explicitly" do
-    # §6.4's motivating case is the small multi-drink order whose first drink
-    # sits and melts. A `> 1` that drifted to `> 2` would silently exclude it.
-    it "boosts a two-drink order with one drink already made" do
-      pair = flow(id: :pair, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0))
-      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
+    # §6.4's motivating case: a multi-drink order whose first drink is already
+    # sitting grows its quantum the longer that drink waits.
+    it "boosts a multi-drink order the longer its first drink has sat" do
+      pair = flow(id: :pair, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0), first_ready_at: at(0))
+      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true, cohesion_boost: 0.2)
 
-      expect(described_class.quantum_for(pair, at(0), config)).to eq(config.quantum * 2)
+      # 5 minutes × 0.2/min = +1.0 → 2.0 quanta
+      expect(described_class.quantum_for(pair, at(300), config)).to eq(config.quantum * 2.0)
     end
 
-    # Every other cohesion example sits exactly on the threshold, which lets an
-    # `>=` degrade to an equality test unnoticed — an order at 75% made would
-    # silently lose its boost.
-    it "keeps boosting past the threshold, not only at it" do
-      mostly = flow(id: :mostly, drinks: 1, total_items: 4, made_count: 3, arrived_at: at(0))
-      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
+    it "does not boost while nothing in the order has finished yet" do
+      untouched = flow(id: :untouched, drinks: 2, total_items: 2, made_count: 0, arrived_at: at(0), first_ready_at: nil)
+      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true, cohesion_boost: 0.2)
 
-      expect(described_class.quantum_for(mostly, at(0), config)).to eq(config.quantum * 2)
+      expect(described_class.quantum_for(untouched, at(300), config)).to eq(config.quantum)
     end
 
-    # Kills the `made_count / total_items` → `made_count` mutant: a raw count of
-    # 1 clears a 0.5 threshold, a ratio of 1/4 does not.
-    it "measures the fraction made, not the number made" do
-      quarter = flow(id: :quarter, drinks: 3, total_items: 4, made_count: 1, arrived_at: at(0))
-      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
+    # A single-drink order reaches `ready` the same instant it reaches
+    # `first_ready_at` in production and the simulator, leaving the flow set
+    # before the next rebuild — but nothing here guarantees a caller obeys
+    # that, so this stays a real, reachable guard rather than an assumption.
+    it "does not boost a single-drink order even with first_ready_at set" do
+      single = flow(id: :single, drinks: 1, total_items: 1, made_count: 1, arrived_at: at(0), first_ready_at: at(0))
+      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true, cohesion_boost: 0.2)
 
-      expect(described_class.quantum_for(quarter, at(0), config)).to eq(config.quantum)
-    end
-
-    it "puts an order past half made ahead of an equal-age order at zero" do
-      half_made = flow(id: :half_made, drinks: 2, total_items: 4, made_count: 2, arrived_at: at(0))
-      untouched = flow(id: :untouched, drinks: 4, total_items: 4, made_count: 0, arrived_at: at(0))
-      s = state([ untouched, half_made ], cohesion_enabled: true)
-
-      expect(dispatch_all(s, now: at(0)).first).to eq(:half_made)
-    end
-
-    it "does not boost a single-drink order, which cannot have a melting first drink" do
-      single = flow(id: :single, drinks: 1, total_items: 1, made_count: 1, arrived_at: at(0))
-
-      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true)
-
-      expect(described_class.quantum_for(single, at(0), config)).to eq(config.quantum)
+      expect(described_class.quantum_for(single, at(300), config)).to eq(config.quantum)
     end
 
     it "can be switched off" do
-      half_made = flow(id: :half_made, drinks: 2, total_items: 4, made_count: 2, arrived_at: at(0))
-      config = Scheduler::Config.new(cohesion_enabled: false, aging_enabled: false)
+      pair = flow(id: :pair, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0), first_ready_at: at(0))
+      config = Scheduler::Config.new(cohesion_enabled: false, aging_enabled: false, cohesion_boost: 0.2)
 
-      expect(described_class.quantum_for(half_made, at(0), config)).to eq(config.quantum)
+      expect(described_class.quantum_for(pair, at(300), config)).to eq(config.quantum)
+    end
+
+    # Not reachable via §6.5's flow-building (a drink cannot finish before its
+    # order arrives), but the same clock-skew possibility aging guards against
+    # (issue #49) applies here too.
+    it "clamps sitting time at zero for a first_ready_at somehow after now" do
+      pair = flow(id: :pair, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0), first_ready_at: at(100))
+      config = Scheduler::Config.new(aging_enabled: false, cohesion_enabled: true, cohesion_boost: 0.2)
+
+      expect(described_class.quantum_for(pair, at(0), config)).to eq(config.quantum)
+    end
+
+    it "puts a flow whose first drink has sat longer ahead of an equal-age flow with nothing finished" do
+      sitting = flow(id: :sitting, drinks: 1, total_items: 2, made_count: 1, arrived_at: at(0), first_ready_at: at(0))
+      untouched = flow(id: :untouched, drinks: 2, total_items: 2, made_count: 0, arrived_at: at(0), first_ready_at: nil)
+      s = state([ untouched, sitting ], cohesion_enabled: true, cohesion_boost: 0.2)
+
+      expect(dispatch_all(s, now: at(300)).first).to eq(:sitting)
     end
   end
 
@@ -456,7 +459,7 @@ RSpec.describe Scheduler do
       # in, the arm would no longer isolate the deficit.
       it "ignores aging, cohesion and the remake floor" do
         old = flow(id: :old, drinks: 2, arrived_at: at(-3600))
-        half = flow(id: :half, drinks: 2, made_count: 2, total_items: 4)
+        half = flow(id: :half, drinks: 2, made_count: 2, total_items: 4, first_ready_at: at(-600))
         remade = flow(id: :remade, drinks: 2, remake: true)
         s = state([ old, half, remade ], policy: :rr, aging_rate: 5.0, cohesion_boost: 10.0, remake_multiplier: 50.0)
 

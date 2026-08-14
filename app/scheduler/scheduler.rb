@@ -178,16 +178,22 @@ module Scheduler
       multiplier += config.aging_rate * waited_minutes
     end
 
-    # Cohesion: once an order is half made, finish it rather than let the first
-    # drinks sit and melt (§6.4, §9.6).
+    # Cohesion: the earliest finished drink accrues quantum the longer it sits,
+    # rather than the order accruing it once past half made — shaped exactly
+    # like aging above (§6.4, §9.6, #31, ADR-0032).
     #
-    # Off by default — measured, it makes `cohesion_spread` monotonically worse
-    # at every load and order size (ADR-0014). Kept because the knob is what
-    # made that measurable, and because the idea is sound if re-triggered on how
-    # long a drink has actually been sitting rather than on fraction made.
-    if config.cohesion_enabled && flow.total_items > 1 &&
-       flow.fraction_made >= Config::COHESION_THRESHOLD
-      multiplier += config.cohesion_boost
+    # ADR-0014's original trigger (`fraction_made >= 0.5`) measured the wrong
+    # quantity: an order can be 90% made with nothing sitting, or 30% made with
+    # a drink going stale. It made `cohesion_spread` monotonically worse at
+    # every load and order size. `total_items > 1` guards a case aging doesn't
+    # need to: a single-drink order reaches `ready` the same instant it reaches
+    # `first_ready_at` and leaves the flow set before the next rebuild, so real
+    # callers never produce `total_items == 1` with `first_ready_at` set — but
+    # nothing in this file guarantees that, so the guard stays reachable and
+    # tested rather than assumed.
+    if config.cohesion_enabled && flow.total_items > 1 && flow.first_ready_at
+      sitting_minutes = [ (now - flow.first_ready_at) / 60.0, 0 ].max
+      multiplier += config.cohesion_boost * sitting_minutes
     end
 
     # Remake: extra throughput once a remake is being served. The *ordering*

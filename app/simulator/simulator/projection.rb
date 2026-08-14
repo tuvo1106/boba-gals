@@ -224,7 +224,8 @@ module Simulator
                                 enqueued_at: order.arrived_at, remake: drink.remake?)
           end,
           made_count: order.items.count(&:finished_at),
-          total_items: order.items.size
+          total_items: order.items.size,
+          first_ready_at: order.first_ready_at
         )
       end
 
