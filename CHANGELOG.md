@@ -21,6 +21,14 @@ Categories, in this order:
 ## [Unreleased]
 
 ### Added
+- **The API contract between Rails and the frontend is now generated, not maintained by
+  hand in two places** (§9.1, §11, ADR-0002, ADR-0030). `docs/api/openapi.yaml` is
+  generated from the request specs via `rswag`; `frontend/src/api/generated.ts` is
+  generated from that in turn, and the ~30 types the ordering app, kitchen display, board,
+  and dashboard import all now come from it. CI regenerates both and fails if either
+  drifts from what's committed, closing a gap ADR-0002 planned for at build step 4 but
+  didn't land until now (issue #70) — a field renamed on one side used to be caught only
+  if a test happened to exercise it.
 - **`web` autoscales on CPU, with a disruption budget guaranteeing at least one pod stays up
   during a drain or rollout** (§14.5, ADR-0027). `minReplicas: 2` keeps the two-pod floor
   §14.2 has always required; `maxReplicas: 6` is sized off Postgres' connection ceiling, not
