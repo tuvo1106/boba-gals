@@ -5,6 +5,25 @@ RSpec.describe "Rate limiting (§13.2)", type: :request do
   let!(:menu_item) { create(:menu_item, :thai_tea, store: store) }
   let!(:station) { create(:station, store: store) }
 
+  # Every example here counts requests up to a limit inside one throttle period,
+  # and Rack::Attack's periods are **fixed windows aligned to the epoch**, not
+  # sliding ones — the cache key is `"#{name}:#{Time.now.to_i / period}:#{ip}"`.
+  # So a run that straddles a wall-clock minute boundary starts counting again
+  # partway through: six requests land in one window, the remaining five in the
+  # next, and the request that should be the 11th is only the 5th of its window
+  # and comes back 201 instead of 429.
+  #
+  # That is a genuine flake, not a slow machine — it depends on *when* the
+  # example starts, not how long it takes. It first bit on CI in a run where the
+  # suite happened to reach this file near a minute boundary. Freezing the clock
+  # removes the dependency entirely: with `Time.now` fixed, all eleven requests
+  # are in the same window by construction.
+  #
+  # Reproduced deliberately before fixing, by putting six requests at
+  # `Time.at(1_755_183_659)` and five at `+2s`: the eleventh returned 201, and
+  # with the clock frozen it returns 429 every time.
+  around { |example| travel_to(Time.current) { example.run } }
+
   def order_payload
     { order: { source: "kiosk", customer_first_name: "Sam", items: [ { menu_item_id: menu_item.id } ] } }
   end

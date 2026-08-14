@@ -337,6 +337,11 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **A rate-limiting test could fail for no reason depending on the time of day** (§13.2).
+  Rack::Attack counts requests in fixed windows aligned to the clock, so a test making eleven
+  requests could have them split across two windows and see the limit never reached. Nothing
+  about the actual rate limiting was wrong — only the test. The clock is now frozen for those
+  examples, which makes the split impossible rather than unlikely.
 - **The order status screen no longer tells a waiting customer to "pay at the counter"**
   (§9.3, #55). §9.3 now documents that payment is authorized when the order is placed, not
   at collection, so restating it as a pending action on the screen shown *after* placement
