@@ -1,0 +1,1371 @@
+---
+openapi: 3.0.3
+info:
+  title: Boba Shop API
+  version: v1
+  description: The shared API surface (DESIGN.md §9.1) for the kiosk/web ordering
+    app, the kitchen display, the customer board, and the admin dashboard. Generated
+    from spec/requests/api/v1/*_swagger_spec.rb — never hand-edit.
+paths:
+  "/api/v1/admin/ablations":
+    post:
+      summary: The same day scheduled four ways — FIFO, RR, DRR (+ aging, + cohesion),
+        SJF (§6.3, §10.5)
+      tags:
+      - Admin — simulation
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: six arms, in §6.3 order
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Ablation"
+        '401':
+          description: no admin session — four runs per seed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                seeds:
+                  type: integer
+                stations:
+                  type: integer
+                demand_multiplier:
+                  type: number
+                quantum:
+                  type: integer
+  "/api/v1/admin/session":
+    post:
+      summary: Signs in (§13.4) — identical response for a wrong password or an unknown
+        email
+      tags:
+      - Admin
+      parameters: []
+      responses:
+        '200':
+          description: signed in
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AdminUser"
+        '401':
+          description: wrong email or password
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+              required:
+              - email
+              - password
+    get:
+      summary: Who is signed in — the dashboard's first paint
+      tags:
+      - Admin
+      security:
+      - admin_session: []
+      responses:
+        '200':
+          description: the signed-in admin
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AdminUser"
+        '401':
+          description: no session
+    delete:
+      summary: Signs out
+      tags:
+      - Admin
+      security:
+      - admin_session: []
+      responses:
+        '204':
+          description: signed out
+  "/api/v1/admin/scheduler_config":
+    get:
+      summary: The store's effective scheduler config (§6.6, §10.6) — every key present,
+        defaults included
+      tags:
+      - Admin
+      security:
+      - admin_session: []
+      responses:
+        '200':
+          description: effective config
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SchedulerConfigResponse"
+    patch:
+      summary: Applies a scheduler config change and returns what is now live (§10.6)
+      tags:
+      - Admin
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: now live
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SchedulerConfigResponse"
+        '422':
+          description: an invalid or unknown key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scheduler_config:
+                  type: object
+                  description: A subset of UpdateSchedulerConfig::SCHEMA keys — merged,
+                    not replaced
+              required:
+              - scheduler_config
+  "/api/v1/admin/prep_time_stats":
+    get:
+      summary: The learned prep time (§7.3) beside the seeded guess, per menu item
+      tags:
+      - Admin
+      security:
+      - admin_session: []
+      responses:
+        '200':
+          description: prep time stats
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PrepTimeStats"
+  "/api/v1/board":
+    get:
+      summary: 'The customer board: making + ready, first names and codes only (§9.5,
+        §13.1)'
+      tags:
+      - Board
+      responses:
+        '200':
+          description: board snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/BoardUpdate"
+  "/api/v1/admin/breaking_points":
+    post:
+      summary: 'Raises demand until overall p90 crosses target — the shop''s real
+        capacity (§10.5 #4)'
+      tags:
+      - Admin — simulation
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: the swept points, ascending, and the capacity they found
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/BreakingPoint"
+        '401':
+          description: no admin session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                seeds:
+                  type: integer
+                stations:
+                  type: integer
+                target_seconds:
+                  type: number
+  "/api/v1/kds/session":
+    post:
+      summary: Exchanges a barista PIN and station for a station token (§13.3)
+      tags:
+      - Kitchen display
+      parameters: []
+      responses:
+        '201':
+          description: session issued
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/KdsSession"
+        '401':
+          description: wrong PIN or unknown station — identical either way, so the
+            response cannot enumerate stations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                barista_pin:
+                  type: string
+                station_id:
+                  type: integer
+              required:
+              - barista_pin
+              - station_id
+  "/api/v1/kds/queue":
+    get:
+      summary: 'The scheduler-ordered queue: in-progress work, next-up, and depth
+        (§9.4)'
+      tags:
+      - Kitchen display
+      security:
+      - kds_token: []
+      responses:
+        '200':
+          description: queue snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/QueueUpdate"
+        '401':
+          description: no station token
+  "/api/v1/kds/items/start":
+    post:
+      summary: Claims the oldest queued drink — no id, the server decides (§6.2)
+      tags:
+      - Kitchen display
+      security:
+      - kds_token: []
+      responses:
+        '200':
+          description: claimed drink
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/KdsItem"
+        '404':
+          description: nothing queued
+  "/api/v1/kds/items/{id}/finish":
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    post:
+      summary: Finishes a drink
+      tags:
+      - Kitchen display
+      security:
+      - kds_token: []
+      responses:
+        '200':
+          description: finished drink
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/KdsItem"
+        '422':
+          description: the drink was never started
+  "/api/v1/kds/items/{id}/fail":
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    post:
+      summary: Fails a drink for a reason and returns the remake (§9.4)
+      tags:
+      - Kitchen display
+      security:
+      - kds_token: []
+      parameters: []
+      responses:
+        '200':
+          description: the remake, not the failed drink
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/KdsItem"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  "$ref": "#/components/schemas/FailReason"
+              required:
+              - reason
+  "/api/v1/kds/items/{id}/undo":
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    post:
+      summary: Reverts the last transition within the 60s window (§9.4)
+      tags:
+      - Kitchen display
+      security:
+      - kds_token: []
+      responses:
+        '200':
+          description: reverted drink
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/KdsItem"
+  "/api/v1/menu":
+    get:
+      summary: Returns the available menu
+      tags:
+      - Ordering
+      responses:
+        '200':
+          description: menu
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Menu"
+  "/api/v1/health":
+    get:
+      summary: Kiosk connectivity probe (§9.3)
+      tags:
+      - Ordering
+      responses:
+        '200':
+          description: store health
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Health"
+  "/api/v1/orders":
+    post:
+      summary: Places an order (§9.1) — payment is authorized in the same transaction
+        (§9.3)
+      tags:
+      - Ordering
+      parameters: []
+      responses:
+        '201':
+          description: order placed
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PlacedOrder"
+        '422':
+          description: no items
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order:
+                  type: object
+                  properties:
+                    source:
+                      type: string
+                      enum:
+                      - kiosk
+                      - web
+                    customer_first_name:
+                      type: string
+                    customer_phone:
+                      type: string
+                    items:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          menu_item_id:
+                            type: integer
+                          option_ids:
+                            type: array
+                            items:
+                              type: integer
+                        required:
+                        - menu_item_id
+                  required:
+                  - source
+                  - items
+              required:
+              - order
+  "/api/v1/orders/{pickup_code}":
+    parameters:
+    - name: pickup_code
+      in: path
+      description: The 4-character unambiguous pickup code (§13.1) — the capability
+        token, not an id
+      required: true
+      schema:
+        type: string
+    get:
+      summary: Order status and ETA (§9.1) — public, the code is the token
+      tags:
+      - Ordering
+      responses:
+        '200':
+          description: order status
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/PlacedOrder"
+        '404':
+          description: unknown code
+  "/api/v1/admin/quantum_sweeps":
+    post:
+      summary: 'The same day run at ten quantum values, so the crossover can be read
+        off the chart (§10.5 #2)'
+      tags:
+      - Admin — simulation
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: the swept points, ascending
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/QuantumSweep"
+        '401':
+          description: no admin session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                seeds:
+                  type: integer
+                stations:
+                  type: integer
+                demand_multiplier:
+                  type: number
+  "/api/v1/admin/simulations":
+    post:
+      summary: Runs a scenario server-side and returns metrics plus the lane-ribbon
+        timeline (§10.1, §10.6)
+      tags:
+      - Admin — simulation
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: a day's metrics and timeline
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SimulationRun"
+        '401':
+          description: no admin session — a run is unbounded compute
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                stations:
+                  type: integer
+                demand_multiplier:
+                  type: number
+                large_order_rate:
+                  type: number
+                window_from:
+                  type: number
+                window_seconds:
+                  type: number
+                scheduler_config:
+                  type: object
+                  description: A subset of UpdateSchedulerConfig::SCHEMA keys
+  "/api/v1/admin/staffing_curves":
+    post:
+      summary: 'For each open hour, the fewest stations that hold p90 under target
+        (§10.5 #3)'
+      tags:
+      - Admin — simulation
+      security:
+      - admin_session: []
+      parameters: []
+      responses:
+        '200':
+          description: one entry per open hour, ascending
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/StaffingCurve"
+        '401':
+          description: no admin session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                seeds:
+                  type: integer
+                demand_multiplier:
+                  type: number
+                target_seconds:
+                  type: number
+components:
+  schemas:
+    MakingRow:
+      type: object
+      properties:
+        first_name:
+          type: string
+          nullable: true
+        pickup_code:
+          type: string
+        items:
+          type: array
+          items:
+            type: string
+        eta_seconds:
+          type: number
+      required:
+      - first_name
+      - pickup_code
+      - items
+      - eta_seconds
+    ReadyRow:
+      type: object
+      properties:
+        first_name:
+          type: string
+          nullable: true
+        pickup_code:
+          type: string
+        ready_since_seconds:
+          type: number
+        picked_up_seconds_ago:
+          type: number
+          nullable: true
+      required:
+      - first_name
+      - pickup_code
+      - ready_since_seconds
+      - picked_up_seconds_ago
+    BoardUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - board_update
+        store_id:
+          type: integer
+        making:
+          type: array
+          items:
+            "$ref": "#/components/schemas/MakingRow"
+        ready:
+          type: array
+          items:
+            "$ref": "#/components/schemas/ReadyRow"
+      required:
+      - type
+      - store_id
+      - making
+      - ready
+    TimelineDrink:
+      type: object
+      properties:
+        order_id:
+          type: integer
+        drink_id:
+          type: string
+        station:
+          type: integer
+        started_at:
+          type: number
+        finished_at:
+          type: number
+          nullable: true
+        prep_seconds:
+          type: number
+        remake:
+          type: boolean
+        order_size:
+          type: integer
+      required:
+      - order_id
+      - drink_id
+      - station
+      - started_at
+      - finished_at
+      - prep_seconds
+      - remake
+      - order_size
+    SchedulerConfig:
+      type: object
+      properties:
+        policy:
+          type: string
+          enum:
+          - drr
+          - fifo
+        quantum:
+          type: number
+        aging_enabled:
+          type: boolean
+        aging_rate:
+          type: number
+        cohesion_enabled:
+          type: boolean
+        cohesion_boost:
+          type: number
+        remake_multiplier:
+          type: number
+        promise_buffer:
+          type: number
+        quality_limit_seconds:
+          type: number
+        eta_safety_factor:
+          type: number
+      required:
+      - policy
+      - quantum
+      - aging_enabled
+      - aging_rate
+      - cohesion_enabled
+      - cohesion_boost
+      - remake_multiplier
+      - promise_buffer
+      - quality_limit_seconds
+      - eta_safety_factor
+    SchedulerConfigResponse:
+      type: object
+      properties:
+        store_id:
+          type: integer
+        scheduler_config:
+          "$ref": "#/components/schemas/SchedulerConfig"
+        editable:
+          type: array
+          items:
+            type: string
+      required:
+      - store_id
+      - scheduler_config
+      - editable
+    SimulationMetrics:
+      type: object
+      properties:
+        orders:
+          type: integer
+        drinks:
+          type: integer
+        station_utilisation:
+          type: number
+        reneged:
+          type: integer
+        remakes:
+          type: integer
+        wait_by_drink_cost:
+          type: object
+          properties:
+            cheap:
+              type: object
+              properties:
+                orders:
+                  type: integer
+                p90:
+                  type: number
+              required:
+              - orders
+              - p90
+            dear:
+              type: object
+              properties:
+                orders:
+                  type: integer
+                p90:
+                  type: number
+              required:
+              - orders
+              - p90
+            comparable:
+              type: boolean
+            ratio:
+              type: number
+          required:
+          - cheap
+          - dear
+          - comparable
+          - ratio
+        eta_accuracy:
+          type: object
+          properties:
+            orders:
+              type: integer
+            capped:
+              type: integer
+            measurable:
+              type: boolean
+            p50_abs:
+              type: number
+            p90_abs:
+              type: number
+            bias:
+              type: number
+          required:
+          - orders
+          - capped
+          - measurable
+          - p50_abs
+          - p90_abs
+          - bias
+        quality_breach_rate:
+          type: number
+        quality_breach_rate_multi:
+          type: number
+        wait_seconds:
+          type: object
+          properties:
+            p50:
+              type: number
+            p90:
+              type: number
+            p99:
+              type: number
+          required:
+          - p50
+          - p90
+          - p99
+        by_size_class:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              orders:
+                type: integer
+              p90_meaningful:
+                type: boolean
+              p50:
+                type: number
+              p90:
+                type: number
+              p99:
+                type: number
+            required:
+            - orders
+            - p90_meaningful
+            - p50
+            - p90
+            - p99
+      required:
+      - orders
+      - drinks
+      - station_utilisation
+      - reneged
+      - remakes
+      - wait_by_drink_cost
+      - eta_accuracy
+      - quality_breach_rate
+      - quality_breach_rate_multi
+      - wait_seconds
+      - by_size_class
+    SimulationRun:
+      type: object
+      properties:
+        seed:
+          type: integer
+        stations:
+          type: integer
+        window:
+          type: object
+          properties:
+            from:
+              type: number
+            to:
+              type: number
+          required:
+          - from
+          - to
+        timeline:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TimelineDrink"
+        order_spans:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 4
+            maxItems: 4
+        metrics:
+          "$ref": "#/components/schemas/SimulationMetrics"
+      required:
+      - seed
+      - stations
+      - window
+      - timeline
+      - order_spans
+      - metrics
+    KdsItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+          - queued
+          - in_progress
+          - finished
+        prep_seconds:
+          type: number
+        pickup_code:
+          type: string
+        position:
+          type: integer
+        order_size:
+          type: integer
+        remake:
+          type: boolean
+        quality_breach:
+          type: boolean
+        station_id:
+          type: integer
+          nullable: true
+        started_at:
+          type: string
+          nullable: true
+      required:
+      - id
+      - label
+      - status
+      - prep_seconds
+      - pickup_code
+      - position
+      - order_size
+      - remake
+      - quality_breach
+      - station_id
+      - started_at
+    QueueUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - queue_update
+        in_progress:
+          type: array
+          items:
+            "$ref": "#/components/schemas/KdsItem"
+        next_up:
+          type: array
+          items:
+            "$ref": "#/components/schemas/KdsItem"
+        depth:
+          type: integer
+        oldest_waiting_seconds:
+          type: number
+      required:
+      - type
+      - in_progress
+      - next_up
+      - depth
+      - oldest_waiting_seconds
+    FailReason:
+      type: string
+      enum:
+      - spill
+      - wrong_order
+      - quality
+    KdsSession:
+      type: object
+      properties:
+        token:
+          type: string
+        expires_in:
+          type: number
+        barista:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+          required:
+          - id
+          - name
+        station:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+          required:
+          - id
+          - name
+        store:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+          required:
+          - id
+          - name
+      required:
+      - token
+      - expires_in
+      - barista
+      - station
+      - store
+    MenuOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        price_cents:
+          type: integer
+        prep_seconds_delta:
+          type: number
+      required:
+      - id
+      - name
+      - price_cents
+      - prep_seconds_delta
+    OptionGroup:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        min_select:
+          type: integer
+        max_select:
+          type: integer
+        options:
+          type: array
+          items:
+            "$ref": "#/components/schemas/MenuOption"
+      required:
+      - id
+      - name
+      - min_select
+      - max_select
+      - options
+    MenuItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        price_cents:
+          type: integer
+        base_prep_seconds:
+          type: number
+        option_groups:
+          type: array
+          items:
+            "$ref": "#/components/schemas/OptionGroup"
+      required:
+      - id
+      - name
+      - category
+      - price_cents
+      - base_prep_seconds
+      - option_groups
+    Menu:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/MenuItem"
+      required:
+      - items
+    OrderStatus:
+      type: string
+      enum:
+      - draft
+      - placed
+      - in_progress
+      - partially_ready
+      - ready
+      - picked_up
+      - abandoned
+      - cancelled
+    DrinkStatus:
+      type: string
+      enum:
+      - queued
+      - in_progress
+      - finished
+      - failed
+      - cancelled
+    PlacedOrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        status:
+          "$ref": "#/components/schemas/DrinkStatus"
+        prep_seconds:
+          type: number
+        sequence:
+          type: integer
+        remake:
+          type: boolean
+      required:
+      - id
+      - label
+      - status
+      - prep_seconds
+      - sequence
+      - remake
+    PlacedOrder:
+      type: object
+      properties:
+        pickup_code:
+          type: string
+        status:
+          "$ref": "#/components/schemas/OrderStatus"
+        source:
+          type: string
+          enum:
+          - kiosk
+          - web
+        customer_first_name:
+          type: string
+          nullable: true
+        placed_at:
+          type: string
+        promised_at:
+          type: string
+          nullable: true
+        ready_at:
+          type: string
+          nullable: true
+        total_cents:
+          type: integer
+        quoted_wait_seconds:
+          type: number
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PlacedOrderItem"
+      required:
+      - pickup_code
+      - status
+      - source
+      - customer_first_name
+      - placed_at
+      - promised_at
+      - ready_at
+      - total_cents
+      - quoted_wait_seconds
+      - items
+    OrderUpdate:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - order_update
+        pickup_code:
+          type: string
+        status:
+          "$ref": "#/components/schemas/OrderStatus"
+        eta_seconds:
+          type: number
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              label:
+                type: string
+              status:
+                "$ref": "#/components/schemas/DrinkStatus"
+            required:
+            - id
+            - label
+            - status
+      required:
+      - type
+      - pickup_code
+      - status
+      - eta_seconds
+      - items
+    AdminUser:
+      type: object
+      properties:
+        email:
+          type: string
+      required:
+      - email
+    Health:
+      type: object
+      properties:
+        accepting_orders:
+          type: boolean
+        store_name:
+          type: string
+        server_time:
+          type: string
+      required:
+      - accepting_orders
+      - store_name
+      - server_time
+    PrepTimeStatItem:
+      type: object
+      properties:
+        menu_item_id:
+          type: integer
+        name:
+          type: string
+        seeded_prep_seconds:
+          type: number
+        ewma_seconds:
+          type: number
+          nullable: true
+        ewma_variance:
+          type: number
+          nullable: true
+        sample_count:
+          type: integer
+        confident:
+          type: boolean
+        minimum_samples:
+          type: integer
+      required:
+      - menu_item_id
+      - name
+      - seeded_prep_seconds
+      - ewma_seconds
+      - ewma_variance
+      - sample_count
+      - confident
+      - minimum_samples
+    PrepTimeStats:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PrepTimeStatItem"
+      required:
+      - items
+    AblationArm:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - control
+          - rung
+          - bound
+        label:
+          type: string
+        blurb:
+          type: string
+        arrived:
+          type: integer
+        metrics:
+          "$ref": "#/components/schemas/SimulationMetrics"
+      required:
+      - id
+      - kind
+      - label
+      - blurb
+      - arrived
+      - metrics
+    Ablation:
+      type: object
+      properties:
+        seed:
+          type: integer
+        seeds:
+          type: integer
+        stations:
+          type: integer
+        demand_multiplier:
+          type: number
+        quantum:
+          type: number
+          nullable: true
+        arms:
+          type: array
+          items:
+            "$ref": "#/components/schemas/AblationArm"
+      required:
+      - seed
+      - seeds
+      - stations
+      - demand_multiplier
+      - quantum
+      - arms
+    QuantumSweepPoint:
+      type: object
+      properties:
+        quantum:
+          type: number
+        arrived:
+          type: integer
+        metrics:
+          "$ref": "#/components/schemas/SimulationMetrics"
+      required:
+      - quantum
+      - arrived
+      - metrics
+    QuantumSweep:
+      type: object
+      properties:
+        seed:
+          type: integer
+        seeds:
+          type: integer
+        stations:
+          type: integer
+        demand_multiplier:
+          type: number
+        points:
+          type: array
+          items:
+            "$ref": "#/components/schemas/QuantumSweepPoint"
+      required:
+      - seed
+      - seeds
+      - stations
+      - demand_multiplier
+      - points
+    StaffingCurveHour:
+      type: object
+      properties:
+        hour:
+          type: integer
+        stations:
+          type: integer
+        achieved:
+          type: boolean
+        p90:
+          type: number
+        orders:
+          type: integer
+        p90_meaningful:
+          type: boolean
+      required:
+      - hour
+      - stations
+      - achieved
+      - p90
+      - orders
+      - p90_meaningful
+    StaffingCurve:
+      type: object
+      properties:
+        seed:
+          type: integer
+        seeds:
+          type: integer
+        demand_multiplier:
+          type: number
+        target_seconds:
+          type: number
+        hours:
+          type: array
+          items:
+            "$ref": "#/components/schemas/StaffingCurveHour"
+      required:
+      - seed
+      - seeds
+      - demand_multiplier
+      - target_seconds
+      - hours
+    BreakingPointPoint:
+      type: object
+      properties:
+        demand_multiplier:
+          type: number
+        arrived:
+          type: integer
+        metrics:
+          "$ref": "#/components/schemas/SimulationMetrics"
+      required:
+      - demand_multiplier
+      - arrived
+      - metrics
+    BreakingPoint:
+      type: object
+      properties:
+        seed:
+          type: integer
+        seeds:
+          type: integer
+        stations:
+          type: integer
+        target_seconds:
+          type: number
+        points:
+          type: array
+          items:
+            "$ref": "#/components/schemas/BreakingPointPoint"
+        capacity:
+          type: number
+          nullable: true
+      required:
+      - seed
+      - seeds
+      - stations
+      - target_seconds
+      - points
+      - capacity
+  securitySchemes:
+    kds_token:
+      type: http
+      scheme: bearer
+    admin_session:
+      type: apiKey
+      in: cookie
+      name: _boba_gals_admin
+servers:
+- url: http://localhost:3000
+  description: Local development

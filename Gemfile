@@ -66,4 +66,9 @@ group :test do
 
   gem "shoulda-matchers", "~> 8.0"
   gem "simplecov", "~> 1.0", require: false
+
+  # Generates docs/api/openapi.yaml from the request specs below (ADR-0002,
+  # ADR-0030). rswag-api/rswag-ui are deliberately not added — nothing here
+  # serves the docs, this repo only generates them.
+  gem "rswag-specs", "~> 2.16"
 end
