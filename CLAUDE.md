@@ -111,17 +111,18 @@ Full conventions: `docs/testing.md`. The short version:
 - **Vitest + React Testing Library** for the frontend.
 - Coverage gates (SimpleCov, enforced in-process so `rspec` itself fails — see ADR-0002):
   - Overall line coverage **≥ 90%**
-  - `app/scheduler/**` — **100% line and branch.** This is the load-bearing code and it is
-    pure, so there is no excuse.
+  - `gems/deficit_scheduler` — **100% line and branch**, enforced by the gem's own suite
+    (`cd gems/deficit_scheduler && bundle exec rspec`), not by the root run. This is the
+    load-bearing code and it is pure, so there is no excuse (ADR-0033).
 - The §11 scheduler test list is a **required checklist**, not a suggestion. Ship it as
   pending specs (`skip "not yet implemented"`) so RSpec reports the gaps on every run, and
   every case must be a real named example before DRR merges.
-- **Mutation testing** (`mutant`) covers `app/scheduler/**` only. 100% coverage on a pure
+- **Mutation testing** (`mutant`) covers `gems/deficit_scheduler` only. 100% coverage on a pure
   function proves nothing on its own — a surviving mutant is the real signal. ADR-0002
   deferred this until the repo went public *or* the scheduler landed; both are now true, so
   it ships with build step 5. Nothing left to defer it behind.
 - **Golden tests** (fixed seed → byte-identical dispatch sequence) live in
-  `spec/scheduler/golden/`. Regenerate them deliberately, never casually — a changed
+  `gems/deficit_scheduler/spec/golden/`. Regenerate them deliberately, never casually — a changed
   golden file must be explained in the PR body.
 - Write the test that would have caught the bug before fixing the bug.
 
@@ -305,8 +306,14 @@ someone reading the diff:
 - Match the surrounding code. Rails conventions where Rails has one.
 - Service objects are single-public-method classes in `app/services/`, named as verbs
   (`ClaimNextDrink`, `RecomputeEta`).
-- The scheduler core lives in `app/scheduler/` as plain Ruby — **it must not require
+- The scheduler core lives in `gems/deficit_scheduler` as a path gem — **it must not require
   Rails to load.** If you find yourself reaching for `Time.current` there, inject a clock.
+  Its gemspec declares zero runtime dependencies and that is deliberate: adding one is how the
+  boundary gets broken, so it should feel like the deliberate act it is (ADR-0033).
+  The gem speaks a domain-neutral vocabulary — `cost`, `expedited`, `deadline`, not
+  `prep_seconds`, `remake`, `promised_at`. `BuildSchedulerConfig` is the *only* place the two
+  vocabularies meet; §6.6's key names are unchanged everywhere else, including the database
+  and the published API.
 - No broadcasts, jobs, or HTTP calls inside a database transaction. Use `after_commit` (§8).
 - Frontend: function components, hooks, no class components. TypeScript strict mode.
 

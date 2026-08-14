@@ -31,16 +31,18 @@ RSpec.describe SchedulerStateStore do
       expect(described_class.new(store).load.flows.first.queue.size).to eq(1)
     end
 
-    # Cohesion asks how much of the order is *done*, and finished drinks have
-    # left the queue — so made_count cannot be derived from it (§6.4).
-    it "counts finished drinks for cohesion even though they left the queue" do
+    # The staleness boost only applies to flows of more than one item, and a
+    # finished drink has already left the queue — so the flow's size has to come
+    # from the order rather than from what is still queued, or a two-drink order
+    # with one drink done would look like a single and lose the boost (§6.4).
+    it "sizes the flow from the whole order, including drinks that left the queue" do
       order = order_with(drinks: 1)
       create(:order_item, :finished, order: order, menu_item: menu_item)
 
       flow = described_class.new(store).load.flows.first
 
-      expect(flow.made_count).to eq(1)
-      expect(flow.total_items).to eq(2)
+      expect(flow.queue.size).to eq(1), "only the undispatched drink is queued"
+      expect(flow.total_items).to eq(2), "but the flow knows the order is a pair"
     end
 
     it "excludes other stores and terminal orders" do
@@ -114,7 +116,7 @@ RSpec.describe SchedulerStateStore do
     it "restores which flow has already been granted this round" do
       order = order_with(drinks: 2)
       state = described_class.new(store).load
-      Scheduler.pick_next(state, Time.current)
+      DeficitScheduler.pick_next(state, Time.current)
 
       described_class.new(store).save(state)
 

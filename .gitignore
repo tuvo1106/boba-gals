@@ -12,6 +12,10 @@
 
 # Test artifacts
 /coverage
+
+# The scheduler gem runs its own suite, so it produces its own coverage report
+# (ADR-0033).
+/gems/*/coverage
 /spec/examples.txt
 /tmp/screenshots
 

@@ -155,7 +155,7 @@ RSpec.describe ProjectEta do
     end
   end
 
-  # The projection runs `Scheduler.pick_next`, which mutates the state it is
+  # The projection runs `DeficitScheduler.pick_next`, which mutates the state it is
   # given — drawing down deficits, advancing the ring pointer, shifting items
   # off queues (§6.2). Those mutations must stay in the loaded copy. If they
   # ever reached Redis, quoting a customer an ETA would consume the real

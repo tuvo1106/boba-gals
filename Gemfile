@@ -4,6 +4,15 @@ gem "rails", "~> 8.1.3", ">= 8.1.3.1"
 gem "pg", "~> 1.1"
 gem "puma", ">= 5.0"
 
+# The DRR scheduler (§6), extracted from app/scheduler in ADR-0033. A path gem
+# rather than a published one: the only consumer is this app plus its simulator,
+# and the payoff is the boundary rather than reuse — the gemspec declares zero
+# runtime dependencies, which enforces "the scheduler must not require Rails"
+# at the packaging level instead of by convention. It speaks a domain-neutral
+# vocabulary (cost, expedited, deadline); `BuildSchedulerConfig` maps this app's
+# persisted key names onto it.
+gem "deficit_scheduler", path: "gems/deficit_scheduler"
+
 # Redis is load-bearing, not a cache (DESIGN.md Rails 8 note): scheduler deficits
 # and ring pointer (§6.5), the ETA debounce lock (§7.2), and ActionCable pub/sub
 # across pods (§14.4). This is why the Solid defaults are skipped.

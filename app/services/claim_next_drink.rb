@@ -2,7 +2,7 @@
 #
 # Selection and claiming are deliberately separate concerns:
 #
-# - **Which drink** is decided by `Scheduler.pick_next` — a pure function over a
+# - **Which drink** is decided by `DeficitScheduler.pick_next` — a pure function over a
 #   snapshot, with no locks held and no database access of its own (§6.2).
 # - **Whether this station gets it** is decided by one conditional UPDATE, which
 #   Postgres makes atomic. Two baristas tapping at the same instant resolve
@@ -36,7 +36,7 @@ class ClaimNextDrink
 
     MAX_ATTEMPTS.times do |attempt|
       state = state_store.load
-      picked = Scheduler.pick_next(state, Time.current)
+      picked = DeficitScheduler.pick_next(state, Time.current)
 
       return nil if picked.nil?
 

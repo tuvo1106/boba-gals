@@ -1,4 +1,4 @@
-require "scheduler_helper"
+require_relative "spec_helper"
 
 # Support for the golden dispatch sequences (docs/testing.md).
 #
@@ -71,33 +71,32 @@ module GoldenSupport
   # @param seed [Integer]
   # @param orders [Integer] how many orders arrive
   # @param spacing [Integer] mean seconds between arrivals
-  # @return [Array<Scheduler::Flow>]
-  def golden_flows(seed:, orders:, spacing: 45, remake_rate: 0, promised_rate: 0)
+  # @return [Array<DeficitScheduler::Flow>]
+  def golden_flows(seed:, orders:, spacing: 45, expedited_rate: 0, deadline_rate: 0)
     rng = Lcg.new(seed)
     arrived = 0
 
     Array.new(orders) do |i|
       arrived += rng.int(spacing * 2)
       size = rng.pick(SIZES)
-      remake = remake_rate.positive? && rng.int(100) < remake_rate
-      promised = promised_rate.positive? && rng.int(100) < promised_rate
+      expedited = expedited_rate.positive? && rng.int(100) < expedited_rate
+      has_deadline = deadline_rate.positive? && rng.int(100) < deadline_rate
 
       queue = Array.new(size) do |n|
-        Scheduler::Item.new(
+        DeficitScheduler::Item.new(
           id: (i + 1) * 100 + n,
-          prep_seconds: rng.pick(MENU),
+          cost: rng.pick(MENU),
           enqueued_at: T0 + arrived,
-          remake: remake
+          expedited: expedited
         )
       end
 
-      Scheduler::Flow.new(
+      DeficitScheduler::Flow.new(
         id: format("order-%02d", i + 1),
         arrived_at: T0 + arrived,
         queue: queue,
-        made_count: 0,
         total_items: size,
-        promised_at: promised ? T0 + arrived + 3600 : nil,
+        deadline: has_deadline ? T0 + arrived + 3600 : nil,
         deficit: 0
       )
     end
@@ -123,7 +122,7 @@ module GoldenSupport
   #
   # @return [String] the sequence, one dispatch per line
   def golden_run(flows, stations: 3, limit: 400, **config)
-    config = Scheduler::Config.new(**config)
+    config = DeficitScheduler::Config.new(**config)
     free_at = Array.new(stations, 0)
     pointer = 0
     lines = []
@@ -133,10 +132,10 @@ module GoldenSupport
       now = T0 + free_at[station]
 
       present = flows.select { |flow| flow.arrived_at <= now && !flow.empty? }
-      state = Scheduler::State.new(flows: present, config: config)
+      state = DeficitScheduler::State.new(flows: present, config: config)
       state.pointer = pointer
 
-      picked = present.empty? ? nil : Scheduler.pick_next(state, now)
+      picked = present.empty? ? nil : DeficitScheduler.pick_next(state, now)
       pointer = state.pointer
 
       # Nothing dispatchable *now* does not mean nothing ever: an order-ahead
@@ -153,8 +152,8 @@ module GoldenSupport
       item = picked[:item]
       lines << format("t=%05d station=%d %s item=%-5d prep=%3d%s",
                       free_at[station], station, picked[:flow].id, item.id,
-                      item.prep_seconds, item.remake? ? " remake" : "")
-      free_at[station] += item.prep_seconds
+                      item.cost, item.expedited? ? " remake" : "")
+      free_at[station] += item.cost
     end
 
     "#{lines.join("\n")}\n"
@@ -182,5 +181,5 @@ module GoldenSupport
 end
 
 RSpec.configure do |config|
-  config.include GoldenSupport, file_path: %r{/spec/scheduler/golden}
+  config.include GoldenSupport, file_path: %r{/spec/golden_spec\.rb}
 end

@@ -19,7 +19,7 @@ module Api
 
         def create
           policy = params.dig(:scheduler_config, :policy)
-          if policy.present? && !::Scheduler::Config::POLICIES.include?(policy.to_sym)
+          if policy.present? && !::DeficitScheduler::Config::POLICIES.include?(policy.to_sym)
             return render json: { errors: [ "unknown policy #{policy}" ] }, status: :unprocessable_entity
           end
 

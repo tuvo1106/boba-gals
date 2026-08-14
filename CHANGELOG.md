@@ -245,6 +245,14 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Changed
+- **The scheduler is now a self-contained package rather than a folder in this app**
+  (§6, ADR-0033, issue #62). Nothing about how the shop runs changes — same dispatch
+  decisions, same settings, same names on the dashboard and in the API. What changes is that
+  the scheduler can no longer accidentally depend on the rest of the app: it declares no
+  dependencies at all, and it is written in neutral terms (work, cost, deadlines) rather than
+  drinks and remakes, so it could be used by something other than a boba shop. The 12 golden
+  dispatch fixtures came through byte-identical, which is the evidence that none of it changed
+  behaviour.
 - **The cohesion boost's trigger was rebuilt and re-measured, and still ships off by
   default** (§6.2, §6.4, ADR-0014, ADR-0032, issue #31). The original trigger fired once an
   order was half made regardless of whether anything was actually sitting; it now fires on

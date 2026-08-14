@@ -28,7 +28,7 @@ RSpec.describe Simulator::Ablation do
   it "runs every arm on a policy the scheduler actually has a branch for" do
     policies = described_class::ARMS.map { |a| a[:config][:policy] }
 
-    expect(policies).to all(be_in(Scheduler::Config::POLICIES))
+    expect(policies).to all(be_in(DeficitScheduler::Config::POLICIES))
   end
 
   it "reports each arm's metrics" do

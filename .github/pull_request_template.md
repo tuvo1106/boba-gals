@@ -18,7 +18,7 @@
 
 -
 
-**Coverage:** overall ___% (gate 90%) · `app/scheduler/**` ___% (gate 100%)
+**Coverage:** overall ___% (gate 90%) · `gems/deficit_scheduler` ___% (gate 100/100, its own suite)
 
 **Golden tests:** unchanged / regenerated — <!-- if regenerated: what behavior changed, and why that's correct -->
 

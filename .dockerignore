@@ -37,7 +37,11 @@
 
 # Test and docs artifacts have no place in a runtime image.
 /spec/
+# The gem's own suite, for the same reason — its lib/ and gemspec still ship,
+# because bundler needs them to resolve the path gem (ADR-0033).
+gems/*/spec/
 /coverage/
+gems/*/coverage/
 /docs/
 /DESIGN.md
 /CLAUDE.md

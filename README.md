@@ -109,8 +109,9 @@ npm --prefix frontend run lint
 npm --prefix frontend run typecheck
 ```
 
-Coverage gates (ADR-0002): **90% overall**, and **100% line and branch on
-`app/scheduler/**`**. Both fail `rspec` directly rather than in a separate CI step.
+Coverage gates (ADR-0002): **90% overall** for the app, and **100% line and branch** for the
+scheduler gem, enforced by its own suite (`cd gems/deficit_scheduler && bundle exec rspec`).
+Both fail `rspec` directly rather than in a separate CI step.
 
 Check the frontend with `run typecheck` (`tsc -b`), never a bare `npx tsc --noEmit` —
 build mode walks the project references and so typechecks the test project, and the bare
@@ -120,9 +121,8 @@ form does not. A `pre-push` hook runs it either way.
 
 | Path | |
 |---|---|
-| `app/scheduler/` | The DRR scheduler (§6). Pure Ruby — must not require Rails. |
+| `gems/deficit_scheduler/` | The DRR scheduler (§6), as a domain-neutral path gem with zero runtime dependencies (ADR-0033). Its own specs and golden fixtures live with it. |
 | `frontend/` | One React build serving kiosk, web, KDS, board, and dashboard (§9.3). |
-| `spec/scheduler/` | Pure-function specs. No DB, no Rails, milliseconds. |
 | `k8s/base/` | Hand-written manifests (§14.2), folded into Kustomize. |
 | `k8s/overlays/` | `dev` for kind, `prod` for the deploy CI targets. |
 | `docs/adr/` | Decisions made during implementation. |

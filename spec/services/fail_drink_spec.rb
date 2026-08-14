@@ -155,6 +155,10 @@ RSpec.describe FailDrink do
   # §6.4's priority floor is carried by the remake existing — the scheduler
   # sorts a flow with a pending remake into the top tier regardless of age.
   # Nothing here says so, and this is what proves the wiring.
+  #
+  # The scheduler calls this "expedited" rather than "remake" (ADR-0033): it has
+  # no idea what a remake is, only that this flow belongs in the priority tier.
+  # This assertion is the seam where the shop's word becomes the scheduler's.
   it "gives the order the priority floor without asking for it" do
     item = making
 
@@ -162,6 +166,6 @@ RSpec.describe FailDrink do
 
     flows = SchedulerStateStore.new(store).load.flows
 
-    expect(flows.find { |f| f.id == order.id }).to be_pending_remake
+    expect(flows.find { |f| f.id == order.id }).to be_pending_expedited
   end
 end
