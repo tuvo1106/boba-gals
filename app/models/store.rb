@@ -6,6 +6,7 @@ class Store < ApplicationRecord
   has_many :stations, dependent: :destroy
   has_many :baristas, dependent: :destroy
   has_many :scheduler_events, dependent: :destroy
+  has_many :quality_spread_stats, dependent: :destroy
 
   validates :name, presence: true
   validates :timezone, presence: true

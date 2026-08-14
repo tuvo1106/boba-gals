@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_14_050000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -85,7 +85,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
     t.index ["menu_item_id"], name: "index_order_items_on_menu_item_id"
     t.index ["order_id"], name: "index_order_items_on_order_id"
     t.index ["remake_of_id"], name: "index_order_items_on_remake_of_id"
-    t.index ["station_id", "status"], name: "idx_items_active", where: "((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('in_progress'::character varying)::text]))"
+    t.index ["station_id", "status"], name: "idx_items_active", where: "((status)::text = ANY ((ARRAY['queued'::character varying, 'in_progress'::character varying])::text[]))"
     t.index ["station_id"], name: "index_order_items_on_station_id"
     t.index ["status", "queued_at"], name: "idx_items_dispatchable", where: "((status)::text = 'queued'::text)"
   end
@@ -108,7 +108,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
     t.integer "total_cents"
     t.datetime "updated_at", null: false
     t.index "store_id, pickup_code, ((placed_at)::date)", name: "idx_pickup_code_daily", unique: true
-    t.index ["store_id", "status"], name: "idx_orders_open", where: "((status)::text <> ALL (ARRAY[('picked_up'::character varying)::text, ('cancelled'::character varying)::text]))"
+    t.index ["store_id", "status"], name: "idx_orders_open", where: "((status)::text <> ALL ((ARRAY['picked_up'::character varying, 'cancelled'::character varying])::text[]))"
     t.index ["store_id"], name: "index_orders_on_store_id"
   end
 
@@ -121,6 +121,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
     t.datetime "updated_at", null: false
     t.index ["menu_item_id"], name: "idx_prep_stats_menu_item", unique: true
     t.index ["menu_item_id"], name: "index_prep_time_stats_on_menu_item_id"
+  end
+
+  create_table "quality_spread_stats", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.float "ewma_seconds"
+    t.float "ewma_variance"
+    t.integer "sample_count", default: 0, null: false
+    t.string "size_class", null: false
+    t.bigint "store_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["store_id", "size_class"], name: "idx_quality_spread_store_size", unique: true
+    t.index ["store_id"], name: "index_quality_spread_stats_on_store_id"
   end
 
   create_table "scheduler_events", force: :cascade do |t|
@@ -166,6 +178,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_172733) do
   add_foreign_key "order_items", "stations"
   add_foreign_key "orders", "stores"
   add_foreign_key "prep_time_stats", "menu_items"
+  add_foreign_key "quality_spread_stats", "stores"
   add_foreign_key "scheduler_events", "order_items"
   add_foreign_key "scheduler_events", "stores"
   add_foreign_key "stations", "stores"
