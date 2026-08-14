@@ -65,13 +65,26 @@ module Simulator
     #   every open order at once; a customer at the counter wants one number,
     #   and projecting the rest of a saturated queue to find it is work nobody
     #   reads. See `#finished?` for why stopping early cannot change the answer.
-    def initialize(orders:, stations:, now:, config:, safety_factor:, target: nil)
+    # @param deficits [Hash{Object => Numeric}] flow id => carried deficit, copied
+    #   by value from the live ring. `ProjectEta` gets these from Redis via
+    #   `SchedulerStateStore#load`; without them the quote is computed from a
+    #   scheduler state the shop is not actually in (ADR-0034).
+    # @param pointer [Integer] where the live ring stands. Safe to copy as an
+    #   index rather than mapping by id the way `SchedulerStateStore` does,
+    #   because the projection's flow set is the live set with the arriving
+    #   order appended — every existing flow keeps its position.
+    # @param granted_to [Object, nil] the flow already granted this round
+    def initialize(orders:, stations:, now:, config:, safety_factor:, target: nil,
+                   deficits: {}, pointer: 0, granted_to: nil)
       @orders = orders
       @stations = stations
       @now = now
       @config = config
       @safety_factor = safety_factor
       @target = target
+      @deficits = deficits
+      @pointer = pointer
+      @granted_to = granted_to
     end
 
     # Whether the projection gave up at the horizon, making every quote it
@@ -212,6 +225,11 @@ module Simulator
 
     # Deficits are copied by value and the ring starts where it stands. Sharing
     # the live flows would let a quote consume the real queue's deficits.
+    #
+    # Every `Flow` and the `State` are built new here, and `@deficits` is a hash
+    # of numbers rather than a reference to anything live — so `pick_next` draws
+    # down *these* objects and the running shop is untouched. That is what the
+    # isolation specs below pin.
     def fresh_state
       flows = @orders.filter_map do |order|
         queued = order.items.reject(&:started_at)
@@ -224,11 +242,13 @@ module Simulator
                                        enqueued_at: order.arrived_at, expedited: drink.remake?)
           end,
           total_items: order.items.size,
-          first_output_at: order.first_ready_at
+          first_output_at: order.first_ready_at,
+          deficit: @deficits.fetch(order.id, 0)
         )
       end
 
-      DeficitScheduler::State.new(flows: flows, config: @config)
+      DeficitScheduler::State.new(flows: flows, config: @config,
+                                  pointer: @pointer, granted_to: @granted_to)
     end
   end
 end

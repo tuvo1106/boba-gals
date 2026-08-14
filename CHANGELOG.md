@@ -345,6 +345,16 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The simulator's wait estimates were computed against the wrong kitchen state, making them
+  far less accurate than the real shop's** (§7.1, §10.4, ADR-0034). It quoted as if the
+  kitchen had just opened — no work part-served, no position in the rotation — while the real
+  shop quotes from where the kitchen actually is. Correcting it cuts the typical estimate's
+  error by 44% at busy times and 72% at very busy times. Two knock-on effects worth knowing:
+  simulated walk-outs drop 20–28%, so the simulator had been overstating lost customers; and
+  it reveals that the estimate runs *systematically optimistic* under load — customers wait
+  longer than quoted — which was previously hidden behind errors large enough in both
+  directions to cancel out. **Figures recorded before this, including those in ADR-0013 and
+  ADR-0014, are not comparable to figures after it.**
 - **A rate-limiting test could fail for no reason depending on the time of day** (§13.2).
   Rack::Attack counts requests in fixed windows aligned to the clock, so a test making eleven
   requests could have them split across two windows and see the limit never reached. Nothing

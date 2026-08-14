@@ -229,7 +229,15 @@ module Simulator
       projection = Projection.new(
         orders: @pending + [ order ], stations: @stations, now: @clock,
         config: @scenario.config, safety_factor: @scenario.eta_safety_factor,
-        target: order.id
+        target: order.id,
+        # The live ring's carried deficits and position, copied by value
+        # (ADR-0034). `ProjectEta` quotes from exactly this state, loaded from
+        # Redis — without it the simulator quotes from an empty ring the shop is
+        # not in, and §10.4's ETA error measures that gap rather than the
+        # estimator.
+        deficits: @state.flows.to_h { |flow| [ flow.id, flow.deficit ] },
+        pointer: @state.pointer,
+        granted_to: @state.granted_to
       )
       quote = projection.call.fetch(order.id, 0.0)
       order.quote_capped = projection.capped?
