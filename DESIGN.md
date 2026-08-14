@@ -617,7 +617,7 @@ One React codebase, one build. Kiosk mode is a runtime flag, not a fork.
 | Payment | pay at counter (terminal integration deferred) | pay at counter (Stripe deferred) |
 | Order-ahead | no | yes, `promised_at` |
 
-**Payment, v1 (locked for solo scope):** record `total_cents`, settle at the register. Terminal and Stripe integrations are integration work, not design work — they sit behind a `PaymentProvider` port (`authorize(order) -> Result`, with a `CounterPayment` implementation that always succeeds) and come after the scheduler is proven. Nothing in the scheduler depends on payment state, which also defers the payment-failure open question (§16).
+**Payment, v1 (locked for solo scope):** authorized when the order is placed, not at collection. `CreateOrder` calls `PaymentProvider#authorize` inside the same transaction that creates the order and queues its items (§2), so a declined payment rolls back both — no queued items, no board or KDS entry, nothing to void separately. Record `total_cents`, settle at the register. Terminal and Stripe integrations are integration work, not design work — they sit behind that port (`authorize(order) -> Result`, with a `CounterPayment` implementation that always succeeds) and come after the scheduler is proven. This resolves §16's former open questions on *when* payment happens and on payment failure after placement: `placed` and `queued` are the same atomic event, so there is nothing to void after the fact.
 
 **Offline behavior (locked):** the kiosk polls `/api/v1/health` every 10s. Two consecutive failures → full-screen state:
 
@@ -1041,7 +1041,6 @@ The simulator already defined what matters (§10.4). Production watches **the sa
 ## 16. Open questions
 
 - **Multi-station specialization.** Slushes need a blender; if there's one blender, stations aren't interchangeable. Model as station capabilities and item requirements, or keep stations uniform for v1? Recommend uniform for v1, with `MenuItem#required_capability` nullable in the schema so it can be added without a migration cascade.
-- **Payment failure after order placement.** Void and remove queued items, or let the drink finish and settle at the counter? Affects whether `placed` implies `queued`.
 - **Order modification after placement.** Currently unsupported. If added, only items still in `queued` can change.
 - **Multi-store.** Schema is store-scoped throughout, and §14.4 removes the one-process-per-store assumption for a single store's pods. True multi-store mostly reduces to what's already namespaced (`sched:{store_id}:*` Redis keys, store-scoped channels); the real gaps are request routing to a store and admin scoping. Revisit before store #2.
 - **A customer's estimate rises when someone orders behind them.** Fair queuing shares capacity with new arrivals, so an order already in the queue genuinely gets slower when the shop gets busier — unlike FIFO, where arrival order is final. §10.5 measures the effect (above) and §9.3 now leads with a monotone progress count rather than a countdown, but the underlying question is unanswered: should a customer ever be shown a number that can move against them, or is the promise made at order time (`quoted_wait_seconds`) the only figure they should see? Revisit with real customers rather than by argument.
