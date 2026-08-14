@@ -151,4 +151,54 @@ RSpec.describe Simulator::Projection do
       expect(projection.call).to eq(project(orders, count: 2).call)
     end
   end
+
+  # ADR-0034. `ProjectEta` quotes against the live ring — deficits and pointer
+  # loaded from Redis — and this is its stated mirror, so it has to do the same.
+  # It did not: it built every flow at deficit 0 and started the ring at 0, so
+  # the simulator quoted from a scheduler state the shop was never in, and
+  # §10.4's ETA error measured that gap rather than the estimator.
+  #
+  # Nothing failed when it was wrong, which is why these exist.
+  describe "quoting against the live ring (§7.1, ADR-0034)" do
+    # One station, two single-drink flows arriving together, each drink costing
+    # **more than one quantum** — which is the only regime where a carried
+    # deficit is observable at all. At 100s against a 60s quantum a flow needs
+    # two visits to afford its head, so a flow arriving with 60 already banked
+    # affords it on the first visit and is served a whole round earlier.
+    #
+    # Worth stating because the first version of this spec used a 60s drink and
+    # asserted the same thing: with cost == quantum one grant always suffices,
+    # the deficit never decides anything, and the example passed identically
+    # with the fix reverted.
+    let(:together) { [ order(1, [ drink("a", prep: 100) ]), order(2, [ drink("b", prep: 100) ]) ] }
+    let(:config) { DeficitScheduler::Config.new(aging_enabled: false, quantum: 60) }
+
+    def quote_with(deficits)
+      described_class.new(orders: together, stations: stations(1), now: 0.0,
+                          config: config, safety_factor: 1.0, deficits: deficits).call
+    end
+
+    it "serves a flow that arrives holding a deficit before one that does not" do
+      expect(quote_with(2 => 60)[2]).to be < quote_with({})[2]
+    end
+
+    it "carries the deficit by value, so quoting cannot spend the live ring's" do
+      flow_deficits = { 1 => 60 }
+
+      quote_with(flow_deficits)
+
+      expect(flow_deficits).to eq(1 => 60), "the projection drew down the caller's own hash"
+    end
+
+    # The ring pointer decides which flow is asked first among equals. Starting
+    # every quote at 0 quietly re-privileges whichever flow sits at index 0.
+    it "starts the ring where the live one stands rather than at zero" do
+      from_zero = described_class.new(orders: together, stations: stations(1), now: 0.0,
+                                      config: config, safety_factor: 1.0, pointer: 0).call
+      from_one = described_class.new(orders: together, stations: stations(1), now: 0.0,
+                                     config: config, safety_factor: 1.0, pointer: 1).call
+
+      expect(from_one).not_to eq(from_zero)
+    end
+  end
 end
