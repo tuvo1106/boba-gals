@@ -4,6 +4,8 @@ RSpec.describe OrderChannel, type: :channel do
   let(:store) { create(:store, :with_stations) }
   let(:menu_item) { create(:menu_item, store: store) }
 
+  before { stub_connection(remote_ip: "203.0.113.5") }
+
   def place(**attrs)
     order = create(:order, store: store, **attrs)
     create(:order_item, order: order, menu_item: menu_item, label: "Taro Slush")
@@ -96,5 +98,40 @@ RSpec.describe OrderChannel, type: :channel do
     subscribe(pickup_code: mine.pickup_code)
 
     expect(subscription).not_to have_stream_from(OrderBroadcast.stream_name(theirs))
+  end
+
+  # Rack::Attack's REST throttle can't see individual `subscribe` attempts on an
+  # already-open connection — this is the channel's own guard against the same
+  # pickup-code enumeration (§13.1, issue #39).
+  describe "rate limiting failed lookups" do
+    # A valid code proves the *throttle* rejected this, not the lookup — 61 prior
+    # failures is one past ThrottleOrderLookups::LIMIT, so the guard trips before
+    # find_order ever runs.
+    it "rejects even a valid code once the IP has failed 61 lookups within a minute" do
+      61.times { subscribe(pickup_code: "ZZZZ") }
+      order = place
+
+      subscribe(pickup_code: order.pickup_code)
+
+      expect(subscription).to be_rejected
+    end
+
+    it "does not count a successful lookup against the limit" do
+      order = place
+
+      61.times { subscribe(pickup_code: order.pickup_code) }
+
+      expect(subscription).to be_confirmed
+    end
+
+    it "gives a different IP its own budget" do
+      61.times { subscribe(pickup_code: "ZZZZ") }
+      stub_connection(remote_ip: "198.51.100.9")
+
+      order = place
+      subscribe(pickup_code: order.pickup_code)
+
+      expect(subscription).to be_confirmed
+    end
   end
 end

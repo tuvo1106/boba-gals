@@ -492,6 +492,14 @@ Categories, in this order:
   because tests use a different adapter. Caught by exercising the running container.
 
 ### Security
+- **`OrderChannel` subscriptions are now rate-limited by IP, closing the second door to
+  pickup-code enumeration** (§13.2, issue #39). Rack::Attack throttles the REST mirror of
+  this lookup (`GET /orders/:pickup_code`) at 60/min per IP, but sees a websocket upgrade as
+  a single HTTP request — it cannot see the `subscribe` attempts that follow on an
+  already-open connection, so a single connection could otherwise retry an unbounded number
+  of codes. The channel now enforces the same 60/min-per-IP budget itself, counted in Redis
+  for the same reason as every other cross-pod counter (`web` runs 2 pods, §14.2). Counts
+  failed lookups only, so a customer's own reconnects never spend the budget.
 - **The public API throttles by IP** (§13.2): 10 orders/minute, 60 pickup-code lookups/minute,
   10 KDS PIN attempts/minute. A four-digit barista PIN is the one place brute force was
   genuinely cheap; a busy Saturday from the store's own kiosk is exempted by a `KIOSK_IPS`

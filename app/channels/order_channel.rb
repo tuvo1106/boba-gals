@@ -4,14 +4,24 @@
 # (§13.1): the code is a low-value capability token, unique per store per day,
 # and the REST endpoint it mirrors is throttled at 60/min per IP (§13.2).
 #
+# Rack::Attack cannot see individual `subscribe` attempts on an already-open
+# connection (issue #39), so this channel enforces the same per-IP budget itself
+# via `ThrottleOrderLookups`.
+#
 # The important property is what a subscriber *cannot* reach. The stream is per
 # code, so a customer receives their own order and no one else's — unlike the
 # board, which is public precisely because it carries only what is already being
 # read aloud across the shop.
 class OrderChannel < ApplicationCable::Channel
   def subscribed
+    return reject if ThrottleOrderLookups.exceeded?(remote_ip)
+
     order = find_order
-    return reject if order.nil?
+
+    if order.nil?
+      ThrottleOrderLookups.record_failure(remote_ip)
+      return reject
+    end
 
     stream_from OrderBroadcast.stream_name(order)
 
@@ -22,6 +32,10 @@ class OrderChannel < ApplicationCable::Channel
   end
 
   private
+
+  def remote_ip
+    connection.remote_ip
+  end
 
   # v1 serves a single store and resolves it server-side, matching
   # `Api::V1::BaseController#current_store` — the same seam multi-store routing
