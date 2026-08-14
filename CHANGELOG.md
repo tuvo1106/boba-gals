@@ -245,6 +245,15 @@ Categories, in this order:
   (§14.2, ADR-0007).
 
 ### Changed
+- **The kitchen-display quality-breach marker now scales with order size instead of using
+  one flat 300-second limit for every order** (§9.6, ADR-0014, ADR-0031, issue #80). A
+  3+ drink order's first drink typically sits several times longer than 300s just from the
+  order having more drinks to finish — the marker was close to firing on every multi-drink
+  order rather than catching genuinely unusual ones. Each size class now gets its own
+  learned baseline (seeded from real measured spread data on day one, refining per store as
+  real orders complete), so the marker again means "this is unusually slow for an order this
+  size." The one existing admin config (`quality_limit_seconds`) still scales the result for
+  every size class rather than being ignored.
 - **Simulated customers now see the same wait estimate the real shop would show them**
   (§7.1, §10.3). They were deciding whether to stay or leave based on an older, cruder
   calculation that the shop itself stopped using — one that quoted by queue position and so

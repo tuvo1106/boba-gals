@@ -50,6 +50,13 @@ class FinishDrink
       # out of it and a re-finish re-enters it.
       SendReadySmsJob.perform_later(order.id)
 
+      # §9.6's learned spread baseline (#80). Deferred by the same undo window
+      # as RecordPrepTimeJob and for the same reason: the KDS undo can move
+      # this order back out of ready, and an EWMA can't be cleanly un-blended.
+      RecordQualitySpreadJob
+        .set(wait: UndoLastAction::WINDOW)
+        .perform_later(order.id, order.ready_at)
+
       record_wait_metrics(order)
     end
 

@@ -77,6 +77,38 @@ RSpec.describe "finishing and undoing drinks" do
       end
     end
 
+    # §9.6, #80 learns from `ready_at - first_ready_at`, and the order reaching
+    # `ready` is the only moment that observation exists. Same deferred-by-
+    # undo-window reasoning as the prep-time EWMA above (ADR-0019).
+    describe "feeding the quality-spread EWMA (§9.6, #80)" do
+      include ActiveJob::TestHelper
+
+      it "learns the order's spread once the undo window has closed" do
+        first = working_drink
+        second = working_drink
+
+        described_class.new.call(first)
+        described_class.new.call(second)
+
+        expect(QualitySpreadStat.count).to eq(0), "learning inside the undo window reopens #69's failure mode"
+
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(QualitySpreadStat.find_by(store: store, size_class: "1-2").sample_count).to eq(1)
+      end
+
+      it "schedules the sample for a full undo window later, only once the order is ready" do
+        first = working_drink
+        second = working_drink
+
+        expect { described_class.new.call(first) }.not_to have_enqueued_job(RecordQualitySpreadJob)
+
+        expect { described_class.new.call(second) }
+          .to have_enqueued_job(RecordQualitySpreadJob)
+          .at(a_value_within(2.seconds).of(UndoLastAction::WINDOW.from_now))
+      end
+    end
+
     describe "order rollup (§5.1)" do
       it "moves a part-finished order to partially_ready" do
         working_drink
@@ -237,6 +269,67 @@ RSpec.describe "finishing and undoing drinks" do
         travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
 
         expect(ewma_for(item)).to be_within(2).of(90)
+      end
+    end
+
+    # Same idiom as the prep-time discarding block above, for the order-level
+    # spread learned at ready instead of the item-level duration learned at
+    # finish (§9.6, #80).
+    describe "discarding the quality-spread sample (§5.2, §9.6, #80)" do
+      include ActiveJob::TestHelper
+
+      def spread_stat
+        QualitySpreadStat.find_by(store: store, size_class: "1-2")
+      end
+
+      it "learns nothing from a ready transition that was undone" do
+        first = working_drink
+        second = working_drink
+        FinishDrink.new.call(first)
+        FinishDrink.new.call(second)
+
+        described_class.new.call(second.reload)
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(spread_stat).to be_nil
+      end
+
+      it "leaves an existing average exactly where it was" do
+        create(:quality_spread_stat, :confident, store: store, size_class: "1-2", ewma_seconds: 900)
+        first = working_drink
+        second = working_drink
+        FinishDrink.new.call(first)
+        FinishDrink.new.call(second)
+
+        described_class.new.call(second.reload)
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(spread_stat.ewma_seconds).to eq(900)
+        expect(spread_stat.sample_count).to eq(QualitySpreadStat::MINIMUM_SAMPLES)
+      end
+
+      it "learns exactly one sample across an undo and a re-finish" do
+        first = working_drink
+        second = working_drink
+        FinishDrink.new.call(first)
+        FinishDrink.new.call(second)
+        described_class.new.call(second.reload)
+        travel_to(10.seconds.from_now) { FinishDrink.new.call(second.reload) }
+
+        travel_to(UndoLastAction::WINDOW.from_now + 30.seconds) { perform_enqueued_jobs }
+
+        expect(spread_stat.sample_count).to eq(1)
+      end
+
+      it "still learns from a ready transition that stands" do
+        first = working_drink
+        second = working_drink
+        FinishDrink.new.call(first)
+        FinishDrink.new.call(second)
+
+        travel_to(UndoLastAction::WINDOW.from_now + 1.second) { perform_enqueued_jobs }
+
+        expect(spread_stat.sample_count).to eq(1)
       end
     end
   end

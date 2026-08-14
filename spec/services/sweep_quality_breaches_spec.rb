@@ -16,8 +16,23 @@ RSpec.describe SweepQualityBreaches do
     finished
   end
 
-  it "logs a breach for a drink that has sat finished past the quality limit" do
-    item = finished_with_sibling_still_making(301)
+  # Same shape, for a size other than the 2-drink default above — one finished
+  # drink sitting, `size - 1` siblings still making, so the order lands in
+  # whichever size class `size` maps to (§9.6, #80).
+  def order_with_size(size, seconds_ago:, store: self.store)
+    order = create(:order, store: store, status: "partially_ready")
+    finished = create(:order_item, order: order, menu_item: menu_item, sequence: 1,
+                                   status: "finished", started_at: (seconds_ago + 90).seconds.ago,
+                                   finished_at: seconds_ago.seconds.ago)
+    (size - 1).times { |i| create(:order_item, order: order, menu_item: menu_item, sequence: i + 2, status: "in_progress") }
+    finished
+  end
+
+  # §9.6, #80: a 2-drink order is "1-2" class, seeded at 0.5x quality_limit_seconds
+  # (150s here) until a confident QualitySpreadStat exists — see the size-aware
+  # describe block below for 3-6 and 7+.
+  it "logs a breach for a drink that has sat finished past its size class's limit" do
+    item = finished_with_sibling_still_making(151)
 
     breached = described_class.call(store)
 
@@ -27,8 +42,8 @@ RSpec.describe SweepQualityBreaches do
     expect(event.payload["seconds_over"]).to be_within(2).of(1)
   end
 
-  it "does not flag a drink still within the limit" do
-    finished_with_sibling_still_making(299)
+  it "does not flag a drink still within its size class's limit" do
+    finished_with_sibling_still_making(149)
 
     expect(described_class.call(store)).to eq([])
   end
@@ -52,7 +67,7 @@ RSpec.describe SweepQualityBreaches do
   # §9.6: one breach per drink, not one per tick — a periodic sweep must not
   # re-log the same stale drink every 30 seconds forever.
   it "logs a drink only once across repeated runs" do
-    finished_with_sibling_still_making(301)
+    finished_with_sibling_still_making(151)
 
     described_class.call(store)
     second_run = described_class.call(store)
@@ -68,11 +83,68 @@ RSpec.describe SweepQualityBreaches do
     expect(described_class.call(store)).to eq([])
   end
 
-  it "uses the store's own quality_limit_seconds rather than the default" do
+  # The flat config key stays meaningful as a scaling knob (#80) rather than
+  # being read directly: a tighter store still gets a proportionally tighter
+  # seeded threshold for every size class, not just one flat number.
+  it "scales the seeded threshold from the store's own quality_limit_seconds" do
     tight_store = create(:store, :with_stations, scheduler_config: { "quality_limit_seconds" => 30 })
     order = create(:order, store: tight_store, status: "partially_ready")
-    item = finished_with_sibling_still_making(31, order: order)
+    item = finished_with_sibling_still_making(16, order: order)
 
     expect(described_class.call(tight_store)).to eq([ item ])
+  end
+
+  # #80: the flat 300s default treats a multi-drink order's ordinary spread as
+  # an outlier, since ADR-0014 measured it running several times that at p90.
+  describe "size-aware seeded defaults (#80, QualitySpreadStat::SEEDED_MULTIPLIERS)" do
+    it "does not flag a 6-drink order still well within its own, larger, seeded limit" do
+      # "3-6" seeds at 6.0x -> 1800s here. 1000s is past the flat 300s default
+      # but nowhere near this class's own limit.
+      order_with_size(6, seconds_ago: 1_000)
+
+      expect(described_class.call(store)).to eq([])
+    end
+
+    it "flags a 6-drink order past its own, larger, seeded limit" do
+      item = order_with_size(6, seconds_ago: 1_801)
+
+      expect(described_class.call(store)).to eq([ item ])
+    end
+
+    it "flags a 7+ order only past its own, much larger, seeded limit" do
+      # "7+" seeds at 20.0x -> 6000s here.
+      order_with_size(7, seconds_ago: 5_000)
+      expect(described_class.call(store)).to eq([])
+
+      item = order_with_size(7, seconds_ago: 6_001)
+      expect(described_class.call(store)).to eq([ item ])
+    end
+  end
+
+  describe "once a size class has a confident learned threshold (#80)" do
+    it "uses the learned threshold instead of the seeded multiplier" do
+      # threshold_seconds = 1200 + 1.28*sqrt(400) = 1225.6 — well below the
+      # "1-2" seeded default of 150s, so this only flags if the learned value
+      # is actually the one being read.
+      create(:quality_spread_stat, :confident, store: store, size_class: "1-2",
+             ewma_seconds: 1_200.0, ewma_variance: 400.0)
+
+      order_with_size(2, seconds_ago: 1_200)
+      expect(described_class.call(store)).to eq([])
+
+      item = order_with_size(2, seconds_ago: 1_226)
+      expect(described_class.call(store)).to eq([ item ])
+    end
+
+    it "ignores an unconfident stat and keeps using the seeded multiplier" do
+      create(:quality_spread_stat, store: store, size_class: "1-2",
+             ewma_seconds: 10_000.0, ewma_variance: 0.0, sample_count: 1)
+
+      # Still governed by the 150s seeded default, not the unconfident 10,000s
+      # EWMA — otherwise a single early sample could suppress every breach.
+      item = finished_with_sibling_still_making(151)
+
+      expect(described_class.call(store)).to eq([ item ])
+    end
   end
 end
