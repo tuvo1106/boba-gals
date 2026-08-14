@@ -345,6 +345,14 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The kitchen display would have started flagging almost every 2-drink order as too slow**
+  (§9.6, ADR-0031, ADR-0035). The size-aware quality marker shipped earlier today learns what a
+  normal wait looks like for each order size — but it was also learning from single-drink
+  orders, whose wait is always exactly zero because there is no second drink to wait for. Most
+  orders are single-drink, so after about ten of them the learned "normal" for small orders
+  collapsed to zero and every 2-drink order was flagged the moment its first drink was made.
+  Single-drink orders are no longer used for learning. Caught before any store ran it long
+  enough to matter.
 - **The simulator's wait estimates were computed against the wrong kitchen state, making them
   far less accurate than the real shop's** (§7.1, §10.4, ADR-0034). It quoted as if the
   kitchen had just opened — no work part-served, no position in the rotation — while the real

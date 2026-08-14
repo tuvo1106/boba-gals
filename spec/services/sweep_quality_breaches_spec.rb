@@ -147,4 +147,32 @@ RSpec.describe SweepQualityBreaches do
       expect(described_class.call(store)).to eq([ item ])
     end
   end
+
+  # The end-to-end version of ADR-0035, driven through the real recorder rather
+  # than a factory, because the bug was that the *learner* fed the sweep a
+  # threshold no assertion about the sweep alone could have caught.
+  #
+  # Before the fix this flagged the pair after five seconds: ten solo orders
+  # drove the "1-2" EWMA to ~0, `threshold_seconds` to microseconds, and
+  # `overdue?` was true the instant the pair's first drink finished.
+  describe "solo orders must not poison the 1-2 threshold (ADR-0035)" do
+    it "leaves a healthy pair alone after a morning of single-drink orders" do
+      QualitySpreadStat::MINIMUM_SAMPLES.times do
+        solo = create(:order, store: store, status: "ready",
+                              first_ready_at: Time.current, ready_at: Time.current)
+        create(:order_item, order: solo, menu_item: menu_item, status: "finished")
+        RecordQualitySpread.new.call(solo)
+      end
+
+      expect(described_class.call(store)).to eq([]),
+        "a 2-drink order was flagged five seconds after its first drink finished"
+    end
+
+    before do
+      order = create(:order, store: store, status: "partially_ready")
+      create(:order_item, order: order, menu_item: menu_item, sequence: 1,
+                          status: "finished", started_at: 65.seconds.ago, finished_at: 5.seconds.ago)
+      create(:order_item, order: order, menu_item: menu_item, sequence: 2, status: "in_progress")
+    end
+  end
 end
