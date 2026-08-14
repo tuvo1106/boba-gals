@@ -73,7 +73,9 @@ RUN bundle install && \
 
 COPY . .
 
-RUN bundle exec bootsnap precompile -j 1 app/ lib/
+# `gems/` included so the scheduler gem is precompiled too — it is a path gem,
+# so the --gemfile pass above ran before its sources were in the image (ADR-0033).
+RUN bundle exec bootsnap precompile -j 1 app/ lib/ gems/
 
 
 FROM base AS production

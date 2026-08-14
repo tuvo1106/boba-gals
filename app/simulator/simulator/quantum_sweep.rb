@@ -14,12 +14,12 @@ module Simulator
   # points is the quantum, not a luckier Tuesday.
   #
   # Runs DRR with the store's other defaults untouched — aging on, cohesion
-  # off (`Scheduler::Config::DEFAULTS`) — because the question is what the
+  # off (`DeficitScheduler::Config::DEFAULTS`) — because the question is what the
   # quantum alone does to a config a store would actually run, not an isolated
   # mechanism the way the ablation's ladder is built.
   class QuantumSweep
     # Ten points spanning §10.5's own range, denser near the 60s default
-    # (`Scheduler::Config::DEFAULTS[:quantum]`) where the crossover is
+    # (`DeficitScheduler::Config::DEFAULTS[:quantum]`) where the crossover is
     # expected to sit, sparser toward the far end where the answer is just
     # "yes, still favouring the large order".
     POINTS = [ 30, 45, 60, 90, 120, 150, 180, 240, 300, 400 ].freeze

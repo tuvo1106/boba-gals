@@ -232,7 +232,7 @@ Run:
 
 ```bash
 bin/rspec                    # Rails suite
-bin/rspec spec/scheduler     # scheduler only — should finish in milliseconds
+cd gems/deficit_scheduler && bundle exec rspec   # scheduler gem only — milliseconds, no Rails
 npm --prefix frontend test   # frontend
 ```
 

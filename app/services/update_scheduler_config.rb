@@ -19,7 +19,7 @@ class UpdateSchedulerConfig
     # §6.3: FIFO is the control arm the whole fairness claim is measured against,
     # so it stays selectable rather than being a code branch nobody can reach.
     #
-    # Deliberately narrower than `Scheduler::Config::POLICIES`. The `rr` and
+    # Deliberately narrower than `DeficitScheduler::Config::POLICIES`. The `rr` and
     # `sjf` comparison arms run in the simulator only — SJF minimises mean wait
     # by starving large orders, which is the failure §1 exists to prevent, and it
     # must not be reachable from a dropdown that dispatches real drinks.

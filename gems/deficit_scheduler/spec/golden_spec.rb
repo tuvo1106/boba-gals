@@ -90,10 +90,10 @@ RSpec.describe "DeficitScheduler golden dispatch sequences" do
   # Ships disabled (ADR-0014) and is still selectable, so it still needs a
   # fixture — a re-triggered version (issue #31) has to land somewhere.
   #
-  # Hand-built rather than generated: every flow `golden_flows` makes starts at
-  # `made_count: 0`, so cohesion can never fire and the generated fixture came
-  # out byte-identical to `mixed_day`. A fixture that cannot differ from another
-  # fixture is not pinning anything.
+  # Hand-built rather than generated: every flow `golden_flows` makes leaves
+  # `first_output_at` nil, so the staleness boost can never fire and the
+  # generated fixture came out byte-identical to `mixed_day`. A fixture that
+  # cannot differ from another fixture is not pinning anything.
   it "matches with cohesion enabled" do
     half_made = DeficitScheduler::Flow.new(
       id: "half-made", arrived_at: at(0), total_items: 4,
