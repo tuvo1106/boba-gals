@@ -163,6 +163,18 @@ RSpec.describe Scheduler do
 
       expect(described_class.quantum_for(waited, at(600), config)).to eq(config.quantum)
     end
+
+    # Not reachable via §6.5's flow-building (a drink cannot be queued before
+    # its order exists), but clock skew between the two `web` pods (§14.2,
+    # §14.4) could make `now` a few hundred ms earlier than `arrived_at`
+    # (issue #49). Unclamped, this went negative and shrank the deficit on
+    # every visit instead of growing it, eventually tripping LIVELOCK_GUARD.
+    it "clamps waiting time at zero for a flow that has not arrived yet" do
+      not_arrived = flow(id: :not_arrived, arrived_at: at(100))
+      config = Scheduler::Config.new(cohesion_enabled: false)
+
+      expect(described_class.quantum_for(not_arrived, at(0), config)).to eq(config.quantum)
+    end
   end
 
   describe "order-ahead eligibility (§6.2)" do
@@ -231,6 +243,21 @@ RSpec.describe Scheduler do
 
       expect { described_class.pick_next(s, at(0)) }
         .to raise_error(Scheduler::LivelockError, /livelock/)
+    end
+
+    # The negative-quantum failure mode issue #49 describes: without the
+    # aging clamp, a flow that has not "arrived" yet by the clock reading
+    # passed in earns a negative quantum every visit, its deficit only ever
+    # shrinks, and it can never afford its head drink — tripping this same
+    # guard instead of dispatching normally. Clock skew between the two `web`
+    # pods (§14.2, §14.4) is the one way `now` could precede `arrived_at` in
+    # production.
+    it "does not livelock a flow whose arrival is a second ahead of now" do
+      skewed = flow(id: :skewed, drinks: 1, arrived_at: at(1))
+      head = skewed.queue.first
+      s = state([ skewed ])
+
+      expect(described_class.pick_next(s, at(0))).to eq(flow: skewed, item: head)
     end
   end
 

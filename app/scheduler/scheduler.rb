@@ -166,7 +166,15 @@ module Scheduler
 
     # Aging: nothing starves, even under a continuous stream of small orders.
     if config.aging_enabled
-      waited_minutes = (now - flow.arrived_at) / 60.0
+      # Clamped at zero. `now` earlier than `flow.arrived_at` shouldn't happen
+      # in production — §6.5 builds the flow set from already-queued items, so
+      # arrival precedes dispatch by construction — but clock skew between the
+      # two `web` pods (§14.2, §14.4) could produce a few hundred milliseconds
+      # of it. Left unclamped, a negative multiplier shrinks the deficit on
+      # every visit instead of growing it, which trips LIVELOCK_GUARD (issue
+      # #49). Clamping makes a clock-skewed dispatch behave exactly like a
+      # just-arrived order, which is correct either way.
+      waited_minutes = [ (now - flow.arrived_at) / 60.0, 0 ].max
       multiplier += config.aging_rate * waited_minutes
     end
 

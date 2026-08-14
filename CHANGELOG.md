@@ -311,6 +311,16 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The scheduler no longer livelocks a drink whose arrival clock reading is ahead of the
+  dispatching clock** (§6.2, issue #49). `quantum_for`'s aging multiplier could go negative
+  if `now` preceded a flow's `arrived_at` — not reachable in production today (§6.5 only
+  ever hands the scheduler already-queued, already-arrived items), but clock skew between
+  the two `web` pods (§14.2, §14.4) could produce it by a few hundred milliseconds. A
+  negative multiplier shrinks the deficit on every visit instead of growing it, so the flow
+  can never afford its head drink and trips `LIVELOCK_GUARD` — a barista tapping "start next
+  drink" would get a 500 with a message about livelock that points nowhere near the real
+  cause. Waiting time is now clamped at zero, so a clock-skewed dispatch behaves exactly
+  like a just-arrived order.
 - **The board and a customer's order screen now update within about a second or two of a
   drink finishing, instead of sometimes sitting on a stale frame for as long as 7 seconds**
   (§9.2, issue #40). The trailing edge of the once-per-second broadcast throttle is a
