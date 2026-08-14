@@ -96,9 +96,14 @@ jobs:
       # is what keeps that true — a schema changed without regenerating (or a
       # regeneration nobody committed) fails here instead of drifting silently
       # the way the pre-rswag comments in CLAUDE.md and types.ts describe.
+      # COVERAGE=0: rswag:specs:swaggerize runs only the *_swagger_spec.rb
+      # files, which trips SimpleCov's app/scheduler/** gate on this partial
+      # run and exits non-zero before `git diff` below ever gets to run — a
+      # false failure with nothing to do with drift. The "Specs" step above
+      # already proved the real gate holds against the full suite.
       - name: OpenAPI doc matches the request specs
         run: |
-          bundle exec rails rswag:specs:swaggerize
+          COVERAGE=0 bundle exec rails rswag:specs:swaggerize
           git diff --exit-code docs/api/openapi.yaml
 
       - name: Upload coverage
