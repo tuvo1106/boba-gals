@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiGet } from '../api/client'
+import { ApiError, apiGet } from '../api/client'
 import { subscribe } from '../api/cable'
 import type { DrinkStatus, OrderStatus, OrderUpdate, PlacedOrder } from '../api/types'
 
@@ -15,6 +15,15 @@ interface Watched {
   progress: OrderProgress | null
   error: string | null
 }
+
+/**
+ * How long to wait before re-reading an order after a failure that isn't a 404.
+ *
+ * Matches the board's retry (§9.4) for the same reason: this is a screen a
+ * customer stares at while waiting, so coming back promptly matters more than
+ * sparing a load-balanced `web` one cheap request every three seconds.
+ */
+export const RETRY_MS = 3_000
 
 /**
  * Watches one order for the customer who placed it (§9.2).
@@ -39,19 +48,41 @@ export function useOrderStatus(pickupCode: string, seed: PlacedOrder | null = nu
 
   useEffect(() => {
     let cancelled = false
+    let retry: ReturnType<typeof setTimeout> | undefined
 
-    apiGet<PlacedOrder>(`/orders/${pickupCode}`)
-      .then((fetched) => {
-        if (cancelled) return
+    // A 404 is an answer: this code is not a live order at this store today,
+    // and re-asking will not change that. Anything else — a 500, a dropped
+    // connection, a captive portal in the queue — is the read failing, not the
+    // order being absent, and the only honest response is to ask again.
+    //
+    // Treating the two the same is what made this a bug rather than a blemish:
+    // `OrderStatusScreen` replaces the *entire* screen with the error, so one
+    // blip on shop wifi took the pickup code away from a customer standing at
+    // the counter holding nothing else. The seeded order right there in state
+    // was discarded to display "We could not find that order."
+    const read = () => {
+      apiGet<PlacedOrder>(`/orders/${pickupCode}`)
+        .then((fetched) => {
+          if (cancelled) return
 
-        setOrder(fetched)
-        // Only seeds the live view; a broadcast that already arrived is
-        // fresher than this read and must not be rolled back by it.
-        setProgress((current) => current ?? fromOrder(fetched))
-      })
-      .catch(() => {
-        if (!cancelled) setError('We could not find that order.')
-      })
+          setOrder(fetched)
+          setError(null)
+          // Only seeds the live view; a broadcast that already arrived is
+          // fresher than this read and must not be rolled back by it.
+          setProgress((current) => current ?? fromOrder(fetched))
+        })
+        .catch((cause: unknown) => {
+          if (cancelled) return
+
+          if (cause instanceof ApiError && cause.status === 404) {
+            setError('We could not find that order.')
+            return
+          }
+
+          retry = setTimeout(read, RETRY_MS)
+        })
+    }
+    read()
 
     const unsubscribe = subscribe<OrderUpdate>({
       channel: 'OrderChannel',
@@ -73,6 +104,7 @@ export function useOrderStatus(pickupCode: string, seed: PlacedOrder | null = nu
 
     return () => {
       cancelled = true
+      if (retry !== undefined) clearTimeout(retry)
       unsubscribe()
     }
   }, [pickupCode])

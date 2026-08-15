@@ -42,7 +42,18 @@ export function DrinkCustomizer({
     setChosen((current) => {
       const selected = current[group.id] ?? []
 
-      if (group.max_select === 1) return { ...current, [group.id]: [ optionId ] }
+      // A single-select group replaces its selection rather than accumulating.
+      // Tapping the option that is *already* chosen used to re-select it, which
+      // is right for a required group — `min_select >= 1` means some option has
+      // to be chosen, so there is nothing to fall back to — and wrong for an
+      // optional one, where it made the choice permanent. "Add a shot of
+      // espresso?" could be answered once and never taken back, short of
+      // cancelling out of the sheet and starting the drink again.
+      if (group.max_select === 1) {
+        const clearable = group.min_select === 0 && selected.includes(optionId)
+
+        return { ...current, [group.id]: clearable ? [] : [ optionId ] }
+      }
       if (selected.includes(optionId)) {
         return { ...current, [group.id]: selected.filter((id) => id !== optionId) }
       }
@@ -95,11 +106,20 @@ export function DrinkCustomizer({
                           : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
                       }`}
                     >
+                      {/* `onClick`, not `onChange`. A radio fires no change
+                          event when the already-checked one is activated
+                          again, so an optional pick-one group could not be
+                          cleared no matter what `toggle` decided — the handler
+                          was never reached. `click` fires on every activation,
+                          keyboard included, so this keeps the group operable
+                          without a pointer. `readOnly` is what lets a
+                          `checked` input carry no `onChange`. */}
                       <input
                         type={group.max_select === 1 ? 'radio' : 'checkbox'}
                         name={`group-${group.id}`}
                         checked={selected}
-                        onChange={() => toggle(group, option.id)}
+                        readOnly
+                        onClick={() => toggle(group, option.id)}
                         className="sr-only"
                       />
                       <span>{option.name}</span>
