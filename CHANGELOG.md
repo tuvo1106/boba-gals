@@ -345,6 +345,17 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **A bar taken out of service kept making drinks** (§13.3). Switching a station off
+  re-planned every wait estimate around the smaller kitchen, but the tablet at that bar held a
+  valid login for up to twelve hours and carried on claiming drinks — so the board quoted from
+  a kitchen size that did not match who was working, and the only way to actually close a bar
+  was to unplug it. That tablet is now signed out.
+- **The readiness check could hang instead of failing** (§14.3). It is meant to be bounded so a
+  struggling database cannot tie up the web pods answering health checks, but the bound was
+  written down and never applied. It is now real, for both the database and Redis.
+- **A mistyped setting on the simulation dashboard returned a server error** (§10.5). Asking
+  for an ablation at a quantum of zero — or a typo that reads as zero — made the scheduler
+  spin until it gave up. Out-of-range values are now clamped to the range a real store allows.
 - **A customer could be shown someone else's order** (§13.1, ADR-0036). Pickup codes are
   reused each day, and the shop's "day" was being worked out in UTC rather than in the shop's
   own timezone — so for a California store the day rolled over at 5pm, mid-service. An order

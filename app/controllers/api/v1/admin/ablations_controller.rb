@@ -54,8 +54,21 @@ module Api
 
         # Optional: lets the ablation be read at whatever quantum the sweep
         # settled on, rather than only at the default.
+        #
+        # Clamped to the same range the store-facing path enforces
+        # (`UpdateSchedulerConfig::SCHEMA`), and for a sharper reason than
+        # tidiness: `params[:quantum].to_i` turns `0`, `-5` and the typo
+        # `sixty` all into a quantum of zero, and a zero quantum means the
+        # deficit never reaches any item's cost. The ring then spins until
+        # `LIVELOCK_GUARD` trips at 10,000 rounds and raises — a 500, after
+        # 10,000 `priority_ring` sorts per arm across six arms. Clamping keeps
+        # a mistyped sweep a readable result rather than a stack trace, the
+        # same way `seeds` above is clamped rather than trusted.
+        QUANTUM_RANGE = (UpdateSchedulerConfig::SCHEMA.dig("quantum", :min)..
+                         UpdateSchedulerConfig::SCHEMA.dig("quantum", :max)).freeze
+
         def quantum
-          params[:quantum].presence&.to_i
+          params[:quantum].presence&.to_i&.clamp(QUANTUM_RANGE)
         end
       end
     end

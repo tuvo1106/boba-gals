@@ -106,4 +106,41 @@ RSpec.describe "POST /api/v1/admin/ablations (§10.5, §10.6)" do
       end
     end
   end
+
+  # `params[:quantum].to_i` turns 0, -5 and the typo "sixty" all into zero, and
+  # a zero quantum means the deficit never reaches any item's cost — the ring
+  # spins until LIVELOCK_GUARD trips at 10,000 rounds and raises, so a mistyped
+  # sweep came back a 500 rather than a result.
+  describe "a quantum the scheduler cannot run (§6.6)" do
+    before do
+      sign_in
+      stub_const("Simulator::Ablation::ARMS", Simulator::Ablation::ARMS.first(1))
+    end
+
+    it "clamps zero up into the runnable range rather than raising" do
+      expect { ablate(seed: 7, quantum: 0) }.not_to raise_error
+
+      expect(response).to have_http_status(:ok)
+      expect(body["quantum"]).to eq(UpdateSchedulerConfig::SCHEMA.dig("quantum", :min))
+    end
+
+    it "clamps a non-numeric quantum the same way, rather than running at zero" do
+      ablate(seed: 7, quantum: "sixty")
+
+      expect(response).to have_http_status(:ok)
+      expect(body["quantum"]).to eq(UpdateSchedulerConfig::SCHEMA.dig("quantum", :min))
+    end
+
+    it "clamps an absurdly large quantum down to the range the store allows" do
+      ablate(seed: 7, quantum: 99_999)
+
+      expect(body["quantum"]).to eq(UpdateSchedulerConfig::SCHEMA.dig("quantum", :max))
+    end
+
+    it "leaves a sane quantum untouched" do
+      ablate(seed: 7, quantum: 90)
+
+      expect(body["quantum"]).to eq(90)
+    end
+  end
 end

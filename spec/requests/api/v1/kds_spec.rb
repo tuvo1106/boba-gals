@@ -210,4 +210,40 @@ RSpec.describe "Api::V1::Kds", type: :request do
       expect(item.reload.status).to eq("in_progress")
     end
   end
+
+  # A token is only as good as the station it names. `SessionsController#create`
+  # issues only against `Station.active`, but nothing re-checked afterwards — so
+  # with a 12-hour TTL, closing a bar mid-shift did not close it: the tablet kept
+  # claiming drinks while every ETA was re-projected against the smaller
+  # `active_stations`.
+  describe "a station taken out of service mid-shift (§13.3)" do
+    it "stops accepting the token it already issued" do
+      get "/api/v1/kds/queue", headers: auth
+      expect(response).to have_http_status(:ok), "precondition: the token works while open"
+
+      station.update!(active: false)
+
+      get "/api/v1/kds/queue", headers: auth
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body["error"]).to match(/no longer in service/)
+    end
+
+    it "stops it claiming drinks, not just reading the queue" do
+      queue_drink
+      station.update!(active: false)
+
+      post "/api/v1/kds/items/start", headers: auth
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "refuses a token whose station row has been deleted outright" do
+      station.destroy
+
+      get "/api/v1/kds/queue", headers: auth
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
 end

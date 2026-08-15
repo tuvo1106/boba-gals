@@ -57,4 +57,46 @@ RSpec.describe "kubelet probes (§14.3)" do
       expect(response).to have_http_status(:ok)
     end
   end
+
+  # `TIMEOUT_SECONDS` was declared and referenced nowhere, so the file
+  # documented a bound it did not have: a wedged Postgres (accepting TCP,
+  # answering nothing) held a Puma thread per probe. This asserts the bound is
+  # actually applied to the connection, which is the part that was missing.
+  describe "the probe bounds itself (§14.3)" do
+    it "runs its database check under a statement timeout" do
+      statements = []
+      allow(ActiveRecord::Base.connection).to receive(:execute).and_wrap_original do |orig, sql, *rest|
+        statements << sql
+        orig.call(sql, *rest)
+      end
+
+      get "/readyz"
+
+      expect(statements).to include(a_string_matching(/SET statement_timeout = 2000/))
+    end
+
+    # The first version of this fix used `SET LOCAL` in a transaction and
+    # leaked: Rails does not materialise a BEGIN for a read-only block, so on
+    # the *healthy* path the 2s cap survived onto the pooled connection and
+    # would have applied to every real query after it. It reverted only when a
+    # statement was cancelled — so the leak was invisible exactly when the probe
+    # was working. Asserting the restore, not just the set.
+    it "leaves the connection's statement_timeout exactly as it found it" do
+      before = ActiveRecord::Base.connection.select_value("SHOW statement_timeout")
+
+      get "/readyz"
+
+      expect(response).to have_http_status(:ok)
+      expect(ActiveRecord::Base.connection.select_value("SHOW statement_timeout")).to eq(before)
+    end
+
+    it "reports not_ready rather than hanging when the database check fails" do
+      allow(ActiveRecord::Base.connection).to receive(:select_value).and_raise(ActiveRecord::StatementInvalid)
+
+      get "/readyz"
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(response.parsed_body["checks"]["database"]).to be(false)
+    end
+  end
 end
