@@ -976,7 +976,7 @@ Local cluster: **kind**. Write the manifests by hand first — that is the learn
 | `worker` | Deployment | 1 | Sidekiq: ETA recomputes, sweeps, SMS, EWMA updates. |
 | `migrate` | Job | — | `bin/rails db:prepare`, applied before each web rollout (CI applies the Job and waits for completion, then updates image tags). Never run migrations on container boot. `db:prepare` rather than `db:migrate` because the first deploy has no database to migrate, and the app 404s without a seeded store (`Store.first!`) or an admin user (§13.4) — the seed *is* the bootstrap. On every later run it migrates and nothing else. Needs an init container that waits for Postgres: the `postgres` Service is headless, so its DNS does not resolve until a pod is ready, and the Job otherwise spends its retry budget on `could not translate host name`. |
 | `postgres` | StatefulSet + PVC | 1 | In-cluster is fine — and instructive — for a learning project. A real production store would use a managed database; say so in the README and move on. |
-| `redis` | StatefulSet | 1 | No persistence needed: every key (deficits, pointer, locks, pub/sub) is reconstructible or ephemeral by design (§6.5). `emptyDir` is acceptable. |
+| `redis` | StatefulSet + PVC | 1 | Persistent, because Sidekiq shares this instance. The scheduler's own keys — deficits, pointer, locks, pub/sub — genuinely are reconstructible or ephemeral (§6.5), and this row once said that was the whole list. It is not: the queue, retry set, and scheduled set live here too, and a job is not reconstructible from Postgres. Losing them silently drops the §9.7 ready text and the deferred EWMA samples (§5.2, §9.6), which no later event re-triggers. AOF with `appendfsync everysec` bounds that at ~1s of jobs. Set `maxmemory` below the container limit with `noeviction`: an eviction policy would discard job payloads to stay under it, and no `maxmemory` at all means the kernel OOM-kills the pod, which loses the lot. |
 | ingress | ingress-nginx | — | `/api` and `/cable` → `web`; everything else → `frontend`. `/cable` needs websocket-friendly annotations: `proxy-read-timeout: 3600`, `proxy-send-timeout: 3600`. |
 
 **Rollback is bounded by the schema, not by the registry.** The `migrate` Job runs *before* each rollout, and migrations do not revert with the image. Setting `web` back to an earlier SHA leaves the database wherever the failed release left it — so "how far back can I go" is a question about schema compatibility, and CI retaining N image versions has nothing to do with the answer.
@@ -1186,3 +1186,13 @@ load.
 `KitchenChannel` are one stream per store, so a transition is one publish; `OrderChannel` is
 one stream per order and every transition changes every order's `eta_seconds`, so its fanout
 is the number of open orders (ADR-0016).
+
+**AOF (append-only file)** — Redis' durable log: every write is appended, and the log is
+replayed to rebuild state on restart. `appendfsync everysec` flushes it once a second, which
+is the usual trade — at most a second of writes lost, against fsync-per-write throughput.
+The alternative, RDB snapshots, would lose everything since the last snapshot (§14.2).
+
+**Eviction policy** — what Redis does when it reaches `maxmemory`. `noeviction` refuses new
+writes; the `allkeys-*` policies delete existing keys to make room. Anything holding a work
+queue wants `noeviction`, because the keys an LRU policy would quietly discard are jobs
+nobody has run yet (§14.2).
