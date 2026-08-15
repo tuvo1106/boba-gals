@@ -126,10 +126,11 @@ Rails**, which is both faster and a check that the §6.2 purity rule still holds
 `COVERAGE=0` matters — SimpleCov's at-exit gate would otherwise run inside every one of the
 hundreds of forked mutant processes.
 
-Score: **89.40%** — 937 of 1048 killed, 111 alive, 8 timeouts. Measured 2026-08-15 on the
+Score: **89.69%** — 940 of 1048 killed, 108 alive, 8 timeouts. Measured 2026-08-15 on the
 host (not in the container), **22.4 seconds** wall clock at 10 jobs.
 
-It went *down* from the 93.14% recorded on 2026-08-07 (#14), and the reason is worth knowing:
+The first run of the day scored 89.40%; #114 closed three survivors in `quantum_for`. It is
+still *down* from the 93.14% recorded on 2026-08-07 (#14), and the reason is worth knowing:
 that score was against **788** mutations. The gem has grown to **1048**, so ~260 mutations
 had never been evaluated, and the newer code — `Config#validate!`, `Config.from_h`, and the
 `Flow`/`Item`/`State` constructors — carries most of the survivors. SimpleCov reports the gem
