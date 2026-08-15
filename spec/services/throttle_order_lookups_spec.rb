@@ -7,16 +7,36 @@ RSpec.describe ThrottleOrderLookups do
     expect(described_class.exceeded?(ip)).to be false
   end
 
-  it "is not exceeded at exactly the limit" do
-    described_class::LIMIT.times { described_class.record_failure(ip) }
+  # These assert the **budget**, not the predicate in isolation, and the
+  # distinction is what let an off-by-one through. `OrderChannel#subscribed`
+  # checks `exceeded?` *before* recording, so with a strict `>` the check at
+  # count == LIMIT passed, that lookup was allowed and recorded, and the budget
+  # was LIMIT + 1. The old examples ("not exceeded at exactly the limit") were
+  # true of the predicate and wrong about the thing the class documents: parity
+  # with Rack::Attack's `status/ip`, which blocks the 61st.
+  it "allows exactly LIMIT failed lookups, matching the REST throttle" do
+    allowed = 0
 
-    expect(described_class.exceeded?(ip)).to be false
+    (described_class::LIMIT * 2).times do
+      break if described_class.exceeded?(ip)
+
+      described_class.record_failure(ip)
+      allowed += 1
+    end
+
+    expect(allowed).to eq(described_class::LIMIT)
   end
 
-  it "is exceeded one past the limit" do
-    (described_class::LIMIT + 1).times { described_class.record_failure(ip) }
+  it "blocks once the limit has been reached" do
+    described_class::LIMIT.times { described_class.record_failure(ip) }
 
     expect(described_class.exceeded?(ip)).to be true
+  end
+
+  it "still allows the last lookup inside the budget" do
+    (described_class::LIMIT - 1).times { described_class.record_failure(ip) }
+
+    expect(described_class.exceeded?(ip)).to be false
   end
 
   it "tracks each IP independently" do

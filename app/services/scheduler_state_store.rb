@@ -80,7 +80,13 @@ class SchedulerStateStore
         queue: queued.map { |item| build_item(item) },
         # Counted from the order, not from the queue: finished drinks have left
         # the queue, and the staleness boost needs the order's true size (§6.4).
-        total_items: order.order_items.count { |i| i.status != "cancelled" },
+        # `COUNTED_STATUSES`, not "anything but cancelled": a failed drink
+        # already has a replacement row that is counted too, so excluding only
+        # cancelled reported a remade 2-drink order as 3 (#58's rule, the same
+        # one `Order#countable_items` and `size_class` follow). Feeds the
+        # scheduler's `total_items > 1` staleness guard, where the inflated
+        # value could hand the boost to a single-drink order that had a remake.
+        total_items: order.order_items.count { |i| RollUpOrderStatus::COUNTED_STATUSES.include?(i.status) },
         deadline: order.promised_at,
         first_output_at: order.first_ready_at
       )

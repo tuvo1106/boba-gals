@@ -35,7 +35,18 @@ class RollUpOrderStatus
 
     # first_ready_at anchors the quality timer and the cohesion spread metric
     # (§9.6, §10.4): how long the earliest drink sat while the rest were made.
-    attrs[:first_ready_at] = Time.current if finished_count.positive? && order.first_ready_at.nil?
+    # Cleared when nothing is finished any more, symmetrically with `ready_at`
+    # below and for the same reason: an undo can take the only finished drink
+    # back, and a `first_ready_at` left behind is an anchor for output that is
+    # no longer sitting. It feeds the scheduler's staleness boost via
+    # `SchedulerStateStore` and the learned spread via `RecordQualitySpread`,
+    # so a stale one both boosts a flow with nothing waiting and inflates the
+    # eventual observation by the whole undo-and-remake gap.
+    if finished_count.positive?
+      attrs[:first_ready_at] = Time.current if order.first_ready_at.nil?
+    else
+      attrs[:first_ready_at] = nil
+    end
 
     if status == "ready"
       attrs[:ready_at] = Time.current if order.ready_at.nil?

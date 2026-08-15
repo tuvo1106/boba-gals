@@ -66,7 +66,7 @@ class BoardView
       {
         first_name: order.customer_first_name,
         pickup_code: order.pickup_code,
-        items: order.order_items.sort_by(&:sequence).map(&:label),
+        items: order.countable_items.map(&:label),
         eta_seconds: estimates.fetch(order.id, 0)
       }
     end

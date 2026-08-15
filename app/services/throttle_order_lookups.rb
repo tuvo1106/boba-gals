@@ -22,7 +22,7 @@ class ThrottleOrderLookups
     # @param remote_ip [String]
     # @return [Boolean] true once this IP has failed LIMIT lookups within PERIOD
     def exceeded?(remote_ip)
-      count(remote_ip) > LIMIT
+      count(remote_ip) >= LIMIT
     end
 
     # Records a failed lookup against the limit `exceeded?` checks.

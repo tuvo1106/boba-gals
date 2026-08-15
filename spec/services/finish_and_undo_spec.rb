@@ -428,4 +428,38 @@ RSpec.describe "finishing and undoing drinks" do
       expect(sender).to have_received(:deliver).once
     end
   end
+
+  # `ready_at` was already cleared when an order leaves `ready` — "the quality
+  # timer keeps counting from a moment that is no longer true" — but
+  # `first_ready_at`, which anchors the same timer and the staleness boost, was
+  # only ever set. An undo of the only finished drink left it pointing at output
+  # that is no longer sitting.
+  describe "undoing the only finished drink (§5.2)" do
+    include ActiveJob::TestHelper
+
+    it "clears first_ready_at, not just ready_at" do
+      first = working_drink
+      working_drink
+      FinishDrink.new.call(first)
+
+      expect(order.reload.first_ready_at).to be_present, "precondition: the finish set it"
+
+      UndoLastAction.new.call(first.reload)
+
+      expect(order.reload).to have_attributes(status: "in_progress", first_ready_at: nil)
+    end
+
+    it "keeps first_ready_at while another drink is still finished" do
+      first = working_drink
+      second = working_drink
+      FinishDrink.new.call(first)
+      FinishDrink.new.call(second)
+      anchored = order.reload.first_ready_at
+
+      UndoLastAction.new.call(second.reload)
+
+      expect(order.reload.first_ready_at).to eq(anchored),
+        "the earlier drink is still sitting, so the anchor still means something"
+    end
+  end
 end

@@ -345,6 +345,19 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The board above the counter could list a drink that had been thrown away** (§9.5). A
+  2-drink order with one spill showed three lines on the board while the kitchen display and
+  the customer's own screen both showed two. The board now follows the same rule as every
+  other screen: a failed drink is replaced by its remake, not shown beside it.
+- **Placing an order could fail outright at a store with no stations recorded** (§7.1). The
+  wait estimate crashed rather than falling back, which took down order placement entirely for
+  that store. It now quotes as though one station were about to open, which is what the code
+  already did for a store whose stations were merely switched off.
+- **The websocket order-lookup limit allowed 61 attempts a minute instead of 60** (§13.2),
+  disagreeing by one with the equivalent limit on the web endpoint it is meant to mirror.
+- **An undone drink left the quality timer anchored to a drink that was no longer waiting**
+  (§5.2, §9.6). Undoing the only finished drink in an order now clears that anchor, the same
+  way the order's ready time is already cleared.
 - **The kitchen display would have started flagging almost every 2-drink order as too slow**
   (§9.6, ADR-0031, ADR-0035). The size-aware quality marker shipped earlier today learns what a
   normal wait looks like for each order size — but it was also learning from single-drink
