@@ -96,6 +96,52 @@ RSpec.describe DeficitScheduler do
   # long the earliest finished drink has actually sat, shaped like aging below
   # (#31, ADR-0032) — kept and still asserted so the knob keeps working for
   # whichever finding the re-trigger produces.
+  # §6.4 is explicit that the remake floor is *two* mechanisms doing different
+  # jobs, and only one of them was covered. `priority_ring` decides that an
+  # expedited flow goes first; `expedited_multiplier` decides how much it gets
+  # done once it is there — "what lets a remade order *clear* faster once its
+  # turn arrives, rather than merely starting sooner".
+  #
+  # Mutation testing is what surfaced this (#113): the whole
+  # `multiplier += config.expedited_multiplier if flow.pending_expedited?`
+  # branch could be deleted with the suite still green, because every existing
+  # example was satisfied by the tier alone. Coverage was 100% line and branch
+  # throughout.
+  describe "the expedited quantum boost (§6.4, ADR-0009)" do
+    it "widens the quantum of a flow with expedited work" do
+      remade = flow(id: :remade, expedited: true)
+      config = DeficitScheduler::Config.new(aging_enabled: false, expedited_multiplier: 4.0)
+
+      # 1.0 base + 4.0 expedited = 5 quanta
+      expect(described_class.quantum_for(remade, at(0), config)).to eq(config.quantum * 5.0)
+    end
+
+    it "leaves an ordinary flow at one quantum" do
+      ordinary = flow(id: :ordinary)
+      config = DeficitScheduler::Config.new(aging_enabled: false, expedited_multiplier: 4.0)
+
+      expect(described_class.quantum_for(ordinary, at(0), config)).to eq(config.quantum)
+    end
+
+    # The behavioural half: the boost has to buy *throughput*, not just rank.
+    # With one turn each, the expedited flow should clear several drinks where
+    # an ordinary flow of the same shape clears one — which is the difference
+    # between "starts sooner" and "clears faster", and the reason §6.4 keeps
+    # both mechanisms.
+    it "clears more drinks per turn than the tier alone would explain" do
+      remade = flow(id: :remade, items: 4, cost: 60, expedited: true)
+      ordinary = flow(id: :ordinary, items: 4, cost: 60)
+      s = state([ remade, ordinary ], aging_enabled: false, quantum: 60, expedited_multiplier: 3.0)
+
+      sequence = dispatch_all(s, limit: 8)
+
+      # The expedited flow is served first (the tier) and takes 4 quanta of work
+      # in that first turn (the multiplier), so it empties before the ordinary
+      # flow is reached at all.
+      expect(sequence.first(4)).to eq([ :remade ] * 4)
+    end
+  end
+
   describe "cohesion (§6.4, §9.6), enabled explicitly" do
     # §6.4's motivating case: a multi-drink order whose first drink is already
     # sitting grows its quantum the longer that drink waits.

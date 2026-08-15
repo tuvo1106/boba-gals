@@ -344,6 +344,14 @@ Categories, in this order:
 
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
+### Fixed
+- **A remade drink was not guaranteed to be re-made any faster than a normal one** (§6.4,
+  ADR-0009). When a barista fails a drink, the replacement is supposed to both jump the queue
+  *and* get more of the kitchen's attention once it is at the front. Only the first half was
+  ever verified, so nothing would have caught the second half being lost — the customer whose
+  drink was dropped would have gone back to waiting a normal turn. The behaviour was correct;
+  the guard around it was not, and now is.
+
 ### Changed
 - **Queued background work now survives a Redis restart** (§14.2, ADR-0038). Redis holds
   Sidekiq's queue as well as the scheduler's short-lived state, and it was configured to keep
