@@ -33,31 +33,48 @@ dependency on purpose (ADR-0033).
 ## How it fits together
 
 ```mermaid
-flowchart LR
-  subgraph Browsers
-    K["Kiosk / web<br/>ordering"]
-    D["KDS tablet"]
-    B["Pickup board"]
-    A["Admin dashboard"]
+flowchart TB
+  subgraph clients["Browser surfaces — one React build"]
+    direction LR
+    K["Kiosk"]
+    O["Web ordering"]
+    D["KDS"]
+    B["Board"]
+    A["Dashboard"]
   end
 
-  IN["ingress-nginx<br/>TLS"]
-  W["web ×2<br/>Rails API + ActionCable"]
-  WK["worker<br/>Sidekiq"]
+  IN["ingress-nginx — TLS"]
+  FE["frontend ×2"]
+
+  subgraph pod["web ×2 — puma + ActionCable"]
+    direction TB
+    API["Rails API"]
+    GEM["deficit_scheduler<br/>path gem, no Rails"]
+    API -- "pick_next" --> GEM
+  end
+
+  WK["worker — Sidekiq"]
   PG[("PostgreSQL")]
   RD[("Redis")]
 
-  K & D & B & A -->|"HTTPS + WebSocket"| IN
-  IN --> W
-  W <--> PG
-  W <--> RD
-  WK <--> PG
-  WK <--> RD
-  RD -.->|"pub/sub fan-out<br/>across pods"| W
-
-  DS["deficit_scheduler<br/>pure function"]
-  W -.->|"in-process"| DS
+  clients --> IN
+  IN --> FE
+  IN --> API
+  API --> PG
+  API --> RD
+  WK --> PG
+  WK --> RD
+  RD -. "pub/sub across pods" .-> API
 ```
+
+**The scheduler is a gem, and that is the point.** `deficit_scheduler` is a path gem
+in this repo with **zero runtime dependencies**, and it does not load Rails. `pick_next`
+takes a state snapshot and an injected clock, reads no database and performs no I/O —
+which is what lets the simulator (§10) run the *production* scheduler unmodified against
+a simulated clock. The gemspec is the enforcement: reaching for `Time.current` or an
+ActiveRecord model would mean adding a dependency on purpose (ADR-0033). It speaks
+`cost`/`expedited`/`deadline`, not `prep_seconds`/`remake`/`promised_at` — the two
+vocabularies meet in exactly one place, `BuildSchedulerConfig`.
 
 Redis carries four unrelated jobs — scheduler state, the ETA debounce lock,
 ActionCable pub/sub, and Sidekiq's queues. Only the last is durable; the rest are
