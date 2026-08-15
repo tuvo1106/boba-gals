@@ -16,7 +16,7 @@ These are decided. Do not relitigate them in code, comments, or PR discussion:
 
 - **Schedule drinks, not orders.** `OrderItem` is the unit of work (§2).
 - **No Rails 8 "Solid" defaults, no Kamal.** Redis is load-bearing; Sidekiq for jobs (§ Rails 8 note, §14.1).
-- **`Scheduler.pick_next` is a pure function** — no ActiveRecord, no `Time.now`, no I/O.
+- **`DeficitScheduler.pick_next` is a pure function** — no ActiveRecord, no `Time.now`, no I/O.
   The simulator runs the production scheduler unmodified (§6.2, §10.1).
 - **The locked decisions table (§3)** — kiosk refuses orders offline, remakes get a priority
   floor, board shows first name + code only, quality timer ships, simulation is in-app.
@@ -109,18 +109,15 @@ Full conventions: `docs/testing.md`. The short version:
 - **RSpec** for Rails, **FactoryBot** for fixtures. No `fixtures/`, no `let!` chains that
   build the world — build only what the example needs.
 - **Vitest + React Testing Library** for the frontend.
-- Coverage gates (SimpleCov, enforced in-process so `rspec` itself fails — see ADR-0002):
-  - Overall line coverage **≥ 90%**
-  - `gems/deficit_scheduler` — **100% line and branch**, enforced by the gem's own suite
-    (`cd gems/deficit_scheduler && bundle exec rspec`), not by the root run. This is the
-    load-bearing code and it is pure, so there is no excuse (ADR-0033).
-- The §11 scheduler test list is a **required checklist**, not a suggestion. Ship it as
-  pending specs (`skip "not yet implemented"`) so RSpec reports the gaps on every run, and
-  every case must be a real named example before DRR merges.
-- **Mutation testing** (`mutant`) covers `gems/deficit_scheduler` only. 100% coverage on a pure
-  function proves nothing on its own — a surviving mutant is the real signal. ADR-0002
-  deferred this until the repo went public *or* the scheduler landed; both are now true, so
-  it ships with build step 5. Nothing left to defer it behind.
+- Coverage gates are enforced in-process, so `rspec` itself fails: **90%** overall, and
+  **100% line and branch** for `gems/deficit_scheduler` under its own suite, not the root run
+  (ADR-0002, ADR-0033). The gem is pure and load-bearing, so there is no excuse.
+- The §11 scheduler test list is a **required checklist**, not a suggestion. Every case is a
+  real named example in the gem's suite; adding a case means adding the example, never a
+  pending one. §11's *acceptance* criteria are a separate, still-unbuilt list —
+  `docs/testing.md` says what they need.
+- **Mutation testing** (`mutant`) covers `gems/deficit_scheduler` only. 100% coverage on a
+  pure function proves nothing on its own — a surviving mutant is the real signal.
 - **Golden tests** (fixed seed → byte-identical dispatch sequence) live in
   `gems/deficit_scheduler/spec/golden/`. Regenerate them deliberately, never casually — a changed
   golden file must be explained in the PR body.
