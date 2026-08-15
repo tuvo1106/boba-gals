@@ -345,6 +345,13 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **A customer could be shown someone else's order** (§13.1, ADR-0036). Pickup codes are
+  reused each day, and the shop's "day" was being worked out in UTC rather than in the shop's
+  own timezone — so for a California store the day rolled over at 5pm, mid-service. An order
+  placed at 4:58pm stopped being findable by its own code minutes later while its drinks were
+  still being made, and worse, that code was treated as free and given to the next customer:
+  the first customer's status page then showed the second customer's name and drinks. The day
+  is now the store's own, everywhere.
 - **The board above the counter could list a drink that had been thrown away** (§9.5). A
   2-drink order with one spill showed three lines on the board while the kitchen display and
   the customer's own screen both showed two. The board now follows the same rule as every

@@ -32,7 +32,7 @@ class PickupCode
   # @param on [Date] the business day the code must be unique within
   # @return [String] a code not currently in use for that store and day
   # @raise [ExhaustedError] if no free code is found in MAX_ATTEMPTS
-  def self.generate_unique(store:, on: Date.current)
+  def self.generate_unique(store:, on:)
     MAX_ATTEMPTS.times do
       code = generate
       return code unless taken?(store:, code:, on:)
@@ -42,10 +42,7 @@ class PickupCode
   end
 
   # @return [Boolean]
-  def self.taken?(store:, code:, on: Date.current)
-    store.orders
-         .where(pickup_code: code)
-         .where("placed_at::date = ?", on)
-         .exists?
+  def self.taken?(store:, code:, on:)
+    store.orders.where(pickup_code: code, business_date: on).exists?
   end
 end

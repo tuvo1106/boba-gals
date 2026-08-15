@@ -68,6 +68,7 @@ class Order < ApplicationRecord
   # Runs before validation so the format above sees digits, and so what is
   # stored is what would be dialled.
   before_validation :squeeze_phone
+  before_validation :stamp_business_date
 
   scope :open, -> { where.not(status: TERMINAL_STATUSES) }
 
@@ -91,8 +92,17 @@ class Order < ApplicationRecord
   # Both doors go through here: `GET /orders/:pickup_code` (§9.1) and
   # `OrderChannel` (§9.2). A channel that scoped this differently from the REST
   # endpoint would be a second, weaker lock on the same room.
-  scope :for_pickup_code, ->(code, on: Date.current) {
-    where(pickup_code: code.to_s.upcase).where("placed_at::date = ?", on)
+  #
+  # **`on:` is required, and is the store's day rather than UTC's** (ADR-0036).
+  # It used to default to `Date.current` and filter `placed_at::date`, both UTC
+  # — so for a shop in America/Los_Angeles the day rolled at 17:00 local and an
+  # order placed at 16:58 stopped being findable by its own code seven minutes
+  # later, while its drinks were still on the bar. Worse, `PickupCode.taken?`
+  # shared that window, so the code was reissued and the first customer's page
+  # rendered the second customer's order. No default, because a caller that
+  # forgets which day it means is exactly how that happened.
+  scope :for_pickup_code, ->(code, on:) {
+    where(pickup_code: code.to_s.upcase).where(business_date: on)
   }
 
   # @return [Boolean] whether this order is order-ahead rather than ASAP (§6.2)
@@ -148,5 +158,15 @@ class Order < ApplicationRecord
     return if customer_phone.blank?
 
     self.customer_phone = customer_phone.strip.gsub(PHONE_PUNCTUATION, "")
+  end
+
+  # Derived here rather than in `CreateOrder`, so it holds for every path that
+  # makes an order — factories, the console, any future importer — and cannot
+  # drift from `placed_at`. Recomputed on each validation because a changed
+  # `placed_at` should carry its day with it (ADR-0036).
+  def stamp_business_date
+    return if placed_at.nil? || store.nil?
+
+    self.business_date = store.business_date(placed_at)
   end
 end

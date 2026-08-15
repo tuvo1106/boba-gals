@@ -122,4 +122,54 @@ RSpec.describe Order do
       expect(build(:order, :promised)).to be_promised
     end
   end
+
+  # ADR-0036. The bug this pins was reachable every day at 17:00 local for a
+  # store in America/Los_Angeles, which is peak service: the UTC day rolled
+  # over, `PickupCode.taken?` considered a live order's code free, it was
+  # reissued, and the first customer's status page rendered the second
+  # customer's order. The pickup code is the capability token (§13.1), so that
+  # is a cross-customer read.
+  describe "the business day is the shop's, not UTC's (§13.1, ADR-0036)" do
+    let(:store) { create(:store, timezone: "America/Los_Angeles") }
+
+    # 16:58 PDT == 23:58 UTC; 17:05 PDT == 00:05 the next UTC day.
+    let(:before_utc_rollover) { Time.utc(2026, 8, 14, 23, 58) }
+    let(:after_utc_rollover) { Time.utc(2026, 8, 15, 0, 5) }
+
+    it "keeps an order findable by its code across the UTC midnight mid-service" do
+      order = create(:order, store: store, pickup_code: "K7QF", placed_at: before_utc_rollover)
+
+      travel_to(after_utc_rollover) do
+        found = store.orders.for_pickup_code("K7QF", on: store.business_date)
+
+        expect(found).to contain_exactly(order)
+      end
+    end
+
+    it "still considers that code taken, so it cannot be reissued to someone else" do
+      create(:order, store: store, pickup_code: "K7QF", placed_at: before_utc_rollover)
+
+      travel_to(after_utc_rollover) do
+        expect(PickupCode.taken?(store: store, code: "K7QF", on: store.business_date)).to be(true)
+      end
+    end
+
+    # The other half: a code genuinely from yesterday *is* free again, which is
+    # what makes a 4-character alphabet workable at all (§13.1).
+    it "frees a code once the shop's own day has actually turned over" do
+      create(:order, store: store, pickup_code: "K7QF", placed_at: before_utc_rollover)
+
+      # 09:00 PDT the following morning — a new shop day by any reading.
+      travel_to(Time.utc(2026, 8, 15, 16, 0)) do
+        expect(PickupCode.taken?(store: store, code: "K7QF", on: store.business_date)).to be(false)
+      end
+    end
+
+    it "stamps business_date from the store's zone, not the server's" do
+      order = create(:order, store: store, placed_at: before_utc_rollover)
+
+      expect(order.business_date).to eq(Date.new(2026, 8, 14)),
+        "23:58 UTC is still the 14th in Los Angeles"
+    end
+  end
 end

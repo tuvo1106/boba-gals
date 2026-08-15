@@ -78,7 +78,7 @@ class CreateOrder
       status: "placed",
       placed_at: placed_at,
       promised_at: promised_at,
-      pickup_code: PickupCode.generate_unique(store: @store, on: placed_at.to_date),
+      pickup_code: PickupCode.generate_unique(store: @store, on: @store.business_date(placed_at)),
       customer_first_name: customer_first_name.presence,
       customer_phone: (customer_phone.presence if source == "web"),
       total_cents: built.sum { |b| b[:price_cents] }
