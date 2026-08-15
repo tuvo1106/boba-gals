@@ -483,6 +483,26 @@ describe('KdsScreen', () => {
       await waitFor(() => expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument())
     })
 
+    // §9.4 forbids confirmation dialogs, so this button is the *whole* of the
+    // protection against a mistap. Clearing it on a failed request took that
+    // away and left the barista with an error message and no second try —
+    // while the server, which never processed the undo, still considered the
+    // drink undoable for the rest of the 60-second window (§5.2).
+    it('keeps the affordance when the undo does not go through', async () => {
+      const user = await open(queueUpdate({ in_progress: [ drink({ id: 42, status: 'in_progress' }) ] }))
+      await user.click(screen.getByRole('button', { name: 'Done' }))
+
+      server.use(
+        http.post('/api/v1/kds/items/:id/undo', () =>
+          HttpResponse.json({ errors: [ 'that undo window has closed' ] }, { status: 422 })),
+      )
+
+      await user.click(await screen.findByRole('button', { name: /undo/i }))
+
+      expect(await screen.findByText(/undo window has closed/i)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument()
+    })
+
     it('shows nothing to undo before anything has been done', async () => {
       await open(queueUpdate({ in_progress: [ drink({ status: 'in_progress' }) ] }))
 

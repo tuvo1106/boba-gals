@@ -28,7 +28,10 @@ export function OrderStatusScreen({
 }) {
   const { order, progress, error } = useOrderStatus(pickupCode, seed)
 
-  if (error) {
+  // `!progress` as well as `error`: the hook only reports a 404 now, but even
+  // an authoritative "no such order" must not paint over a pickup code the
+  // customer is holding. Whatever we already have beats an error message.
+  if (error && !progress) {
     return (
       <main className="grid min-h-screen place-items-center bg-neutral-950 px-6 text-neutral-100">
         <p role="alert" className="text-center text-xl text-neutral-400">

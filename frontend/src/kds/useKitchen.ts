@@ -142,16 +142,22 @@ export function useKitchen(session: KdsSession | null, onExpired?: () => void): 
     setNow(Date.now())
   }, [])
 
+  // Returns whether the request actually succeeded. Only `undo` reads it, and
+  // it has to: the failure is swallowed into `error` here rather than thrown,
+  // so a caller that assumes completion is indistinguishable from one that
+  // checked.
   const act = useCallback(
-    async (run: () => Promise<KdsItem>, kind: LastAction['kind'] | null) => {
-      if (session === null) return
+    async (run: () => Promise<KdsItem>, kind: LastAction['kind'] | null): Promise<boolean> => {
+      if (session === null) return false
 
       setError(null)
       try {
         const item = await run()
         if (kind) remember(item, kind)
+        return true
       } catch (e) {
         setError(e instanceof Error ? e.message : 'That did not work')
+        return false
       }
     },
     [session, remember],
@@ -160,35 +166,41 @@ export function useKitchen(session: KdsSession | null, onExpired?: () => void): 
   // `start` takes no id — the server picks the next drink, which is what lets
   // the scheduler decide rather than the barista, and what let DRR replace FIFO
   // at build step 5 without touching this client at all.
-  const start = useCallback(
-    () => act(() => apiPost<KdsItem>('/kds/items/start', {}, { token: session?.token }), 'started'),
-    [act, session],
-  )
+  const start = useCallback(async () => {
+    await act(() => apiPost<KdsItem>('/kds/items/start', {}, { token: session?.token }), 'started')
+  }, [act, session])
 
-  const finish = useCallback(
-    (item: KdsItem) =>
-      act(() => apiPost<KdsItem>(`/kds/items/${item.id}/finish`, {}, { token: session?.token }), 'finished'),
-    [act, session],
-  )
+  const finish = useCallback(async (item: KdsItem) => {
+    await act(() => apiPost<KdsItem>(`/kds/items/${item.id}/finish`, {}, { token: session?.token }), 'finished')
+  }, [act, session])
 
   // Deliberately not remembered as a `lastAction`. Undo rewinds a mistap; a
   // remake records that a real drink was really made wrong (§5.2), and undoing
   // it would delete the evidence and leave the customer without a drink. A
   // barista who taps this by accident fails the remake in turn.
-  const fail = useCallback(
-    (item: KdsItem, reason: FailReason) =>
-      act(() => apiPost<KdsItem>(`/kds/items/${item.id}/fail`, { reason }, { token: session?.token }), null),
-    [ act, session ],
-  )
+  const fail = useCallback(async (item: KdsItem, reason: FailReason) => {
+    await act(() => apiPost<KdsItem>(`/kds/items/${item.id}/fail`, { reason }, { token: session?.token }), null)
+  }, [ act, session ])
 
   // Depends on `acted`, the stable state, rather than on the derived
   // `lastAction`, which is a fresh object every render and would rebuild this
   // callback on every tick of the countdown.
+  //
+  // The affordance is cleared only when the undo actually landed. It used to be
+  // cleared unconditionally, so a failed undo — an expired window, a dropped
+  // request, a station signed out mid-tap — took the Undo button away and left
+  // the barista holding an error message and no way to try again. §9.4 forbids
+  // confirmation dialogs, which makes this button the *only* protection against
+  // a mistap; removing it while the server still considers the drink undoable
+  // is removing the one guard the design leaves in place.
   const undo = useCallback(async () => {
     if (acted === null) return
 
-    await act(() => apiPost<KdsItem>(`/kds/items/${acted.item.id}/undo`, {}, { token: session?.token }), null)
-    setActed(null)
+    const undone = await act(
+      () => apiPost<KdsItem>(`/kds/items/${acted.item.id}/undo`, {}, { token: session?.token }),
+      null,
+    )
+    if (undone) setActed(null)
   }, [act, acted, session])
 
   return { queue, connection, error, oldestWaitingSeconds, lastAction, start, finish, fail, undo }

@@ -56,8 +56,17 @@ export function CheckoutForm({
   const [phone, setPhone] = useState('')
   const [phoneError, setPhoneError] = useState<string | null>(null)
 
+  const empty = lines.length === 0
+
   function submit(event: React.FormEvent) {
     event.preventDefault()
+
+    // The stepper on this screen goes to zero (that is deliberate — this is the
+    // last chance to take something off the order), so the cart can empty while
+    // the customer is standing on it. Nothing sent them back, so "Place order"
+    // stayed live over an empty list and posted an order with no items. The
+    // server refuses it, but the customer's own screen already knew.
+    if (empty) return
 
     // Checked here as well as on the server, because the server's answer costs
     // a round trip and arrives as a generic failure — and the number is the one
@@ -116,6 +125,11 @@ export function CheckoutForm({
               </span>
             </li>
           ))}
+          {empty && (
+            <li className="py-3 text-neutral-500">
+              Your cart is empty — go back and add a drink.
+            </li>
+          )}
           <li className="flex items-baseline gap-4 py-3 font-semibold">
             <span>Total</span>
             <span className="ml-auto font-mono tabular-nums">{formatPrice(totalCents)}</span>
@@ -195,7 +209,7 @@ export function CheckoutForm({
             </button>
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || empty}
               className={`ml-auto flex-1 rounded-lg bg-amber-600 px-8 text-lg font-semibold text-neutral-950 disabled:opacity-40 hover:bg-amber-500 ${tapTarget(mode)}`}
             >
               {busy ? 'Placing…' : 'Place order'}

@@ -26,6 +26,15 @@ const MENU: Menu = {
             { id: 3, name: '50%', price_cents: 0, prep_seconds_delta: 0 },
           ],
         },
+        // Optional *and* pick-one. Nothing in the fixture had this shape,
+        // which is why "you can never un-choose it" went unnoticed: every
+        // pick-one group here was required, where re-selecting is correct.
+        {
+          id: 5, name: 'Espresso shot', min_select: 0, max_select: 1,
+          options: [
+            { id: 30, name: 'Add a shot', price_cents: 150, prep_seconds_delta: 20 },
+          ],
+        },
         {
           id: 3, name: 'Toppings', min_select: 0, max_select: 2,
           options: [
@@ -234,6 +243,47 @@ describe('OrderingApp (§9.3)', () => {
       expect(screen.getByRole('radio', { name: /100%/ })).not.toBeChecked()
     })
 
+    // §9.3 puts this on a kiosk with no back button inside the sheet: if a
+    // choice cannot be undone, the only way out is to cancel the drink and
+    // build it again. Required pick-one groups are exempt — there, one option
+    // must be chosen, so re-selecting the current one is the right no-op.
+    it('lets an optional pick-one choice be taken back', async () => {
+      const user = await openMenu()
+      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+
+      await user.click(screen.getByText('Add a shot'))
+      expect(screen.getByRole('radio', { name: /Add a shot/ })).toBeChecked()
+
+      await user.click(screen.getByText('Add a shot'))
+      expect(screen.getByRole('radio', { name: /Add a shot/ })).not.toBeChecked()
+    })
+
+    // The clearing above works through `onClick` rather than `onChange`, which
+    // is only correct if a keyboard still activates the control. The inputs are
+    // `sr-only`, so this is the path a screen-reader user takes.
+    it('toggles an optional pick-one choice from the keyboard', async () => {
+      const user = await openMenu()
+      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+
+      const shot = screen.getByRole('radio', { name: /Add a shot/ })
+      shot.focus()
+      await user.keyboard(' ')
+      expect(shot).toBeChecked()
+
+      await user.keyboard(' ')
+      expect(shot).not.toBeChecked()
+    })
+
+    it('keeps a required pick-one choice when it is tapped again', async () => {
+      const user = await openMenu()
+      await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
+
+      await user.click(screen.getByText('100%'))
+      await user.click(screen.getByText('100%'))
+
+      expect(screen.getByRole('radio', { name: /100%/ })).toBeChecked()
+    })
+
     it('refuses more toppings than the group allows', async () => {
       const user = await openMenu()
       await user.click(screen.getByRole('button', { name: /Classic Milk Tea/ }))
@@ -347,6 +397,25 @@ describe('OrderingApp (§9.3)', () => {
       await user.click(screen.getByRole('button', { name: /one fewer quantity of Classic Milk Tea/i }))
 
       expect(screen.queryByText('Classic Milk Tea')).not.toBeInTheDocument()
+    })
+
+    // Stepping the last line off the order is allowed — this is the last screen
+    // before it is placed, so it has to be. Nothing then sent the customer back
+    // to the menu, so "Place order" sat there live above an empty list, and
+    // pressing it posted an order with no drinks in it.
+    it('will not place an order once the last line has been removed', async () => {
+      const user = await openMenu()
+      await addAMilkTea(user)
+      await user.click(screen.getByRole('button', { name: /review/i }))
+      await user.type(screen.getByLabelText('first name'), 'Tu')
+
+      await user.click(screen.getByRole('button', { name: /one fewer quantity of Classic Milk Tea/i }))
+
+      expect(screen.getByRole('button', { name: /place order/i })).toBeDisabled()
+      expect(screen.getByText(/cart is empty/i)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /place order/i }))
+      expect(posted).toHaveLength(0)
     })
   })
 

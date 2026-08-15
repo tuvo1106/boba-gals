@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LaneRibbon } from './LaneRibbon'
 import { DayScrubber } from './DayScrubber'
 import { AdminSignIn } from './AdminSignIn'
@@ -67,6 +67,21 @@ function Dashboard({
   // §10.6: "the previous run ghosted behind the current one for comparison". A
   // number with nothing to compare against is not a verdict.
   const [previous, setPrevious] = useState<{ run: SimulationRun; policy: string } | null>(null)
+  // What is on screen right now, and the policy that actually produced it —
+  // read when a new run lands, to decide what becomes the ghost.
+  //
+  // A ref, not the `run` state, because `go` is async: the value its closure
+  // captured can be two runs stale by the time a response arrives. And the
+  // policy is recorded from the request body rather than from the `policy`
+  // state, which is set in the same handler that starts the run and therefore
+  // says what is *selected*, not what was *simulated*.
+  const shown = useRef<{ run: SimulationRun; policy: Policy } | null>(null)
+  // Monotonic ticket. Every control on this panel starts a run, and a run is a
+  // whole simulated day on the server — so overlapping ones are normal and
+  // their completion order is not. Without this the slower of two runs wins
+  // simply by finishing last, and the chart ends up labelled with the policy
+  // from the request the operator made *second*.
+  const latest = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [seed, setSeed] = useState(7)
   const [policy, setPolicy] = useState<Policy>('drr')
@@ -280,6 +295,8 @@ function Dashboard({
     nextSeed = seed, nextPolicy = policy, nextSpan = span, nextFrom = from,
     nextStations = stations, nextDemand = demand,
   ) {
+    const ticket = ++latest.current
+
     setBusy(true)
     setError(null)
     try {
@@ -306,14 +323,25 @@ function Dashboard({
       }
       if (!response.ok) throw new Error(`Run failed (${response.status})`)
       const next = (await response.json()) as SimulationRun
-      setRun((current) => {
-        if (current) setPrevious({ run: current, policy })
-        return next
-      })
+
+      // Superseded while in flight: a newer run is the one the operator is
+      // waiting for, and both the chart and the ghost belong to it.
+      if (ticket !== latest.current) return
+
+      // Sequenced here rather than inside a `setRun` updater. An updater must
+      // be pure — React calls it twice under StrictMode — and this one called
+      // `setPrevious`, so in development the ghost advanced two runs per run.
+      if (shown.current) setPrevious(shown.current)
+      shown.current = { run: next, policy: nextPolicy }
+      setRun(next)
     } catch (e) {
+      if (ticket !== latest.current) return
+
       setError(e instanceof Error ? e.message : 'Run failed')
     } finally {
-      setBusy(false)
+      // Only the newest run owns the spinner. Clearing it from a superseded one
+      // would light the panel up as idle with a request still outstanding.
+      if (ticket === latest.current) setBusy(false)
     }
   }
 
@@ -423,7 +451,8 @@ function Dashboard({
           <div className="flex items-end gap-2">
             <DayScrubber
               from={from} span={span}
-              onChange={(v) => { setFrom(v); go(seed, policy, span, v) }}
+              onChange={setFrom}
+              onCommit={(v) => { setFrom(v); go(seed, policy, span, v) }}
             />
             <span className="font-mono text-xs tabular-nums text-neutral-400">
               {shopClock(from)}–{shopClock(from + span)}

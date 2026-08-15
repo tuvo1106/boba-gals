@@ -345,6 +345,33 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **A blip while waiting could take the pickup code off the customer's screen** (§9.2). The
+  order screen treated every failed read as "no such order" and replaced itself — code,
+  drinks and all — with "We could not find that order.", so a moment of bad shop wifi left
+  someone at the counter with nothing to show. Only a genuine "no such order" says that now;
+  anything else keeps what is on screen and quietly tries again.
+- **A failed undo took the Undo button away with it** (§5.2, §9.4). The kitchen display
+  offers no confirmation dialogs by design, so undo is the only protection against a mistap
+  — and if the undo itself failed, the button vanished anyway, leaving an error message and
+  no second try while the 60-second window was still open. The button now stays until the
+  undo actually goes through.
+- **An optional single-choice question could be answered but never un-answered** (§9.3).
+  Anything shaped like "add a shot?" — one choice, not required — stuck the moment it was
+  tapped, and the only way out was to cancel the drink and build it again. Tapping the
+  chosen option now clears it. Required questions are unchanged: one option must be picked,
+  so tapping it again still does nothing.
+- **"Place order" stayed live over an empty cart** (§9.3). Stepping the last drink off the
+  order at checkout is allowed — it is the last chance to change your mind — but nothing
+  stopped the order being placed afterwards, and the shop received an order with no drinks
+  in it.
+- **Dragging the simulator's day scrubber launched a full simulation per step** (§10.6).
+  Crossing the day was several hundred simulated days of work on the server, for one drag.
+  Dragging now just moves the window; the run starts when the slider is released, matching
+  how the demand slider has always behaved.
+- **The dashboard could chart the run you had already moved on from** (§10.6). Runs take
+  different amounts of time, so a second run often finished before the first — and whichever
+  landed last won, labelled with whichever policy was selected. Results now belong to the
+  run that was actually asked for.
 - **The customer saw `POST /orders failed with 422` instead of the reason the order was
   refused** (§9.1). The server has always sent a plain-English explanation — "store is not
   accepting orders", or whichever item went unavailable while the cart sat open — but the

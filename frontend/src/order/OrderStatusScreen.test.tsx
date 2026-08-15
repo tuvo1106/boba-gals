@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrderStatusScreen } from './OrderStatusScreen'
@@ -193,6 +193,9 @@ describe('OrderStatusScreen (§9.2, §9.3)', () => {
     expect(screen.queryByText('Taro Slush')).not.toBeInTheDocument()
   })
 
+  // A 404 is an answer — this code is not a live order here today, and asking
+  // again will not change it. That is why it is the *only* failure that
+  // surfaces; everything else is retried. See the two tests below.
   it('says so when the code matches no order', async () => {
     server.use(
       http.get('/api/v1/orders/:code', () => HttpResponse.json({ error: 'not found' }, { status: 404 })),
@@ -200,6 +203,39 @@ describe('OrderStatusScreen (§9.2, §9.3)', () => {
     render(<OrderStatusScreen pickupCode="ZZZZ" mode="web" />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not find that order/i)
+  })
+
+  // The customer just placed this order and is holding the pickup code. A blip
+  // on shop wifi used to replace the whole screen — code and all — with "We
+  // could not find that order.", because every failure was read as "no such
+  // order". The code is the only thing they have to show at the counter (§13.1).
+  it('keeps the order on screen when the read fails', async () => {
+    server.use(http.get('/api/v1/orders/:code', () => HttpResponse.error()))
+    render(<OrderStatusScreen pickupCode="R55Z" seed={order()} mode="web" />)
+
+    // Long enough for the rejection to land and a re-render to follow it.
+    await waitFor(() => expect(screen.getByText('R55Z')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('Classic Milk Tea, 50%')).toBeInTheDocument()
+  })
+
+  // Transient failures are retried rather than surfaced, so the screen comes
+  // back on its own once the API does — the same reasoning as the board (§9.4).
+  it('retries a failed read and recovers', async () => {
+    let attempts = 0
+    server.use(
+      http.get('/api/v1/orders/:code', () => {
+        attempts += 1
+        if (attempts === 1) return HttpResponse.error()
+
+        return HttpResponse.json(order())
+      }),
+    )
+    render(<OrderStatusScreen pickupCode="R55Z" mode="web" />)
+
+    expect(await screen.findByText('Classic Milk Tea, 50%', undefined, { timeout: 5_000 }))
+      .toBeInTheDocument()
+    expect(attempts).toBeGreaterThan(1)
   })
 
   // Reached by placing the order, the screen already has it — a round trip and

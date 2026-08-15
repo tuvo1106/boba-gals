@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
+import { StrictMode } from 'react'
 import { DashboardScreen } from './DashboardScreen'
 import { server } from '../test/server'
 import type { SchedulerConfig, SimulationRun } from '../api/types'
@@ -52,7 +53,57 @@ function serveSchedulerConfig(overrides: Partial<SchedulerConfig> = {}) {
   )
 }
 
-function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides = {}) {
+/**
+ * The run a request would produce. Split out of `serveRun` so a test that needs
+ * its own handler — to control *when* a response lands, say — can still return
+ * a realistic run rather than reinventing thirty fields of metrics.
+ */
+function runBody(
+  body: Record<string, unknown>,
+  { metrics: metricOverrides = {}, ...overrides }: RunOverrides = {},
+): SimulationRun {
+  const from = Number(body.window_from ?? 0)
+  const span = Number(body.window_seconds ?? 1200)
+
+  return {
+    seed: Number(body.seed ?? 7),
+    stations: 2,
+    window: { from, to: from + span },
+    timeline: [],
+    order_spans: [
+      // Order 1 arrives at open. Order 3 is an order-ahead (§10.3) and is
+      // made hours later, which is why id order is not ribbon order.
+      [ 1, 60, 120, 1 ],
+      [ 11, 900, 980, 2 ],
+      [ 3, 20000, 20400, 8 ],
+    ],
+    metrics: {
+      orders: 385, drinks: 757,
+      wait_seconds: { p50: 60, p90: 120, p99: 300 },
+      by_size_class: {
+        '1-2': { orders: 300, p90_meaningful: true, p50: 60, p90: 129.1, p99: 200 },
+        '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
+        '7+': { orders: 25, p90_meaningful: true, p50: 300, p90: 494.8, p99: 900 },
+      },
+      wait_by_drink_cost: {
+        cheap: { orders: 200, p90: 100 }, dear: { orders: 40, p90: 127 }, ratio: 1.27,
+        comparable: true,
+      },
+      station_utilisation: 0.364,
+      cohesion_spread_p90: 40,
+      max_queue_depth: 12,
+      eta_accuracy: { orders: 385, capped: 0, measurable: true, p50_abs: 14.5, p90_abs: 44.2, bias: 2.4 },
+      quality_breach_rate: 0.132,
+      quality_breach_rate_multi: 0.263,
+      reneged: 0,
+      remakes: 19,
+      ...metricOverrides,
+    },
+    ...overrides,
+  } as SimulationRun
+}
+
+function serveRun(overrides: RunOverrides = {}) {
   requests = []
   serveSignedIn()
   server.use(
@@ -60,45 +111,7 @@ function serveRun({ metrics: metricOverrides = {}, ...overrides }: RunOverrides 
       const body = (await request.json()) as Record<string, unknown>
       requests.push(body)
 
-      const from = Number(body.window_from ?? 0)
-      const span = Number(body.window_seconds ?? 1200)
-
-      return HttpResponse.json({
-        seed: Number(body.seed ?? 7),
-        stations: 2,
-        window: { from, to: from + span },
-        timeline: [],
-        order_spans: [
-          // Order 1 arrives at open. Order 3 is an order-ahead (§10.3) and is
-          // made hours later, which is why id order is not ribbon order.
-          [ 1, 60, 120, 1 ],
-          [ 11, 900, 980, 2 ],
-          [ 3, 20000, 20400, 8 ],
-        ],
-        metrics: {
-          orders: 385, drinks: 757,
-          wait_seconds: { p50: 60, p90: 120, p99: 300 },
-          by_size_class: {
-            '1-2': { orders: 300, p90_meaningful: true, p50: 60, p90: 129.1, p99: 200 },
-            '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
-            '7+': { orders: 25, p90_meaningful: true, p50: 300, p90: 494.8, p99: 900 },
-          },
-          wait_by_drink_cost: {
-            cheap: { orders: 200, p90: 100 }, dear: { orders: 40, p90: 127 }, ratio: 1.27,
-            comparable: true,
-          },
-          station_utilisation: 0.364,
-          cohesion_spread_p90: 40,
-          max_queue_depth: 12,
-          eta_accuracy: { orders: 385, capped: 0, measurable: true, p50_abs: 14.5, p90_abs: 44.2, bias: 2.4 },
-          quality_breach_rate: 0.132,
-          quality_breach_rate_multi: 0.263,
-          reneged: 0,
-          remakes: 19,
-          ...metricOverrides,
-        },
-        ...overrides,
-      } as SimulationRun)
+      return HttpResponse.json(runBody(body, overrides))
     }),
   )
 }
@@ -140,6 +153,120 @@ describe('DashboardScreen', () => {
 
   // Every figure has to say which direction is good, or an operator reading
   // "0.364" has no way to know whether to add a station.
+  // Every control here starts a run, and a run is a whole simulated day the
+  // server computes from scratch — §10.5 puts the endpoint behind the admin
+  // session for exactly that reason.
+  describe('what starts a run', () => {
+    it('does not re-run while the window is being dragged', async () => {
+      await renderRun()
+      const before = requests.length
+
+      const slider = screen.getByLabelText('window start')
+      // A drag is a stream of change events, one per `step`. Six is a nudge;
+      // crossing the day is some six hundred.
+      for (const value of [ 7260, 7320, 7380, 7440, 7500, 7560 ]) {
+        fireEvent.change(slider, { target: { value: String(value) } })
+      }
+
+      expect(requests).toHaveLength(before)
+      // The window still tracks the drag — this is a preview, not a freeze.
+      expect(screen.getByText('12:06–12:26')).toBeInTheDocument()
+
+      fireEvent.mouseUp(slider)
+
+      await waitFor(() => expect(requests).toHaveLength(before + 1))
+      expect(requests[requests.length - 1].window_from).toBe(7560)
+    })
+
+    // Runs take wildly different times — a policy that dispatches badly queues
+    // more work — so the operator's *second* click routinely resolves first.
+    // Without sequencing the chart ends up showing the run they abandoned, and
+    // labelled with the policy they switched to, which is the worst of both:
+    // a wrong answer wearing the right label. §10.6 exists to make these
+    // comparisons trustworthy.
+    it('ignores a run that was superseded before it landed', async () => {
+      const user = userEvent.setup()
+      serveSignedIn()
+      requests = []
+
+      let seen = 0
+      server.use(
+        http.post('/api/v1/admin/simulations', async ({ request }) => {
+          const body = (await request.json()) as Record<string, unknown>
+          requests.push(body)
+          seen += 1
+          const mine = seen
+
+          // Run 1 is the mount. Run 2 is the abandoned one and is made slow, so
+          // run 3 — the one the operator is actually waiting for — answers
+          // first and run 2 arrives afterwards trying to claim the panel.
+          if (mine === 2) await new Promise((resolve) => setTimeout(resolve, 80))
+
+          return HttpResponse.json(runBody(body, {
+            metrics: {
+              by_size_class: {
+                '1-2': { orders: 300, p90_meaningful: true, p50: 60, p90: mine === 2 ? 999 : 111, p99: 200 },
+                '3-6': { orders: 60, p90_meaningful: true, p50: 100, p90: 200, p99: 400 },
+                '7+': { orders: 25, p90_meaningful: true, p50: 300, p90: 494.8, p99: 900 },
+              },
+            },
+          }))
+        }),
+      )
+
+      render(<DashboardScreen />)
+      await screen.findByText(/small-order p90/i)
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+      await user.click(screen.getByRole('button', { name: 'sjf' }))
+
+      await waitFor(() => expect(requests).toHaveLength(3))
+      // `getAllBy`: the headline figure also appears in the ghost of the
+      // previous run (§10.6) and in the size-class table.
+      await waitFor(() => expect(screen.getAllByText('111s').length).toBeGreaterThan(0))
+
+      // Long enough for the abandoned run to land and try to win.
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      expect(screen.getAllByText('111s').length).toBeGreaterThan(0)
+      expect(screen.queryAllByText('999s')).toHaveLength(0)
+    })
+
+    // The app mounts inside `StrictMode` (`main.tsx`), which double-invokes
+    // every state updater to shake out impure ones. `setPrevious` used to be
+    // called from *inside* a `setRun` updater — the exact hazard `useCart`
+    // already documents and avoids — so the ghost §10.6 asks for was being
+    // computed from a re-entrant call rather than from a known value.
+    it('ghosts exactly one run back, including under StrictMode', async () => {
+      const user = userEvent.setup()
+      serveRun()
+      render(<StrictMode><DashboardScreen /></StrictMode>)
+      await screen.findByText(/small-order p90/i)
+
+      await user.click(screen.getByRole('button', { name: 'fifo' }))
+
+      // Not a request count: StrictMode double-invokes the mount effect too, so
+      // the run that lands here is the third request, not the second.
+      //
+      // The ghost is drawn only against a *different* policy at the same seed,
+      // so its presence is the assertion that `previous` advanced once — to
+      // the drr run — rather than skipping to the run just made.
+      await waitFor(() => expect(screen.getByText(/than DRR on the same day/i)).toBeInTheDocument())
+      expect(screen.queryByText(/than FIFO on the same day/i)).not.toBeInTheDocument()
+    })
+
+    it('runs once per hour button, which is one deliberate choice', async () => {
+      const user = userEvent.setup()
+      await renderRun()
+      const before = requests.length
+
+      await user.click(screen.getByRole('button', { name: /^13:00/ }))
+
+      await waitFor(() => expect(requests).toHaveLength(before + 1))
+      expect(requests[requests.length - 1].window_from).toBe(10800)
+    })
+  })
+
   describe('metric glosses', () => {
     it('explains what each figure measures once asked', async () => {
       const user = userEvent.setup()
