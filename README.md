@@ -109,13 +109,13 @@ npm --prefix frontend run lint
 npm --prefix frontend run typecheck
 ```
 
-Coverage gates (ADR-0002): **90% overall** for the app, and **100% line and branch** for the
-scheduler gem, enforced by its own suite (`cd gems/deficit_scheduler && bundle exec rspec`).
-Both fail `rspec` directly rather than in a separate CI step.
+The scheduler gem carries its own suite and its own gate:
+`cd gems/deficit_scheduler && bundle exec rspec`. Gates, conventions and the §11 checklist
+are in [`docs/testing.md`](docs/testing.md).
 
-Check the frontend with `run typecheck` (`tsc -b`), never a bare `npx tsc --noEmit` —
-build mode walks the project references and so typechecks the test project, and the bare
-form does not. A `pre-push` hook runs it either way.
+Check the frontend with `run typecheck` (`tsc -b`), never a bare `npx tsc --noEmit` — build
+mode walks the project references and so typechecks the test project; the bare form silently
+does not.
 
 ## Layout
 
@@ -135,11 +135,15 @@ Follow §12. Steps 1–3 give a shop that functions, step 4 puts it in a cluster
 every later feature ships through Kubernetes, and steps 5–6 are where the design's
 central claim actually gets tested.
 
-**Current position: steps 0–8 complete, step 9 in progress.** The shop takes orders,
-schedules them with DRR, runs a kitchen display and a board, deploys to a kind cluster over
-TLS, projects ETAs forward through the real scheduler, and handles remakes, offline kiosks
-and the ready SMS. Step 9's dashboard has the lane ribbon, the §10.4 metric grid and the
-§10.5 ablation; the quantum sweep, staffing curve and apply-to-store are still open.
+**Current position: steps 0–10 complete.** The shop takes orders, schedules them with DRR,
+runs a kitchen display and a board, deploys to a kind cluster over TLS, projects ETAs forward
+through the real scheduler, and handles remakes, offline kiosks and quality timers. The
+dashboard has the lane ribbon, metric grid, ablation, quantum sweep, staffing curve and
+apply-to-store; rate limiting, Prometheus/Grafana and the `web` HPA are in.
+
+One gap: `NotificationSender.current` always returns `LogSender`, so the §9.7 ready message is
+logged, not sent. `TwilioSender` is integration work behind the same port as
+`PaymentProvider`, and lands when credentials do.
 
 Postgres runs in-cluster as a StatefulSet (§14.2), which is instructive for a
 learning project and wrong for a real store; that would use a managed database.

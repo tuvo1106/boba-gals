@@ -8,6 +8,6 @@ Rails.application.config.filter_parameters += [
 
   # DESIGN.md §13.5: customer_phone is collected for the one SMS on ready (§9.7)
   # and must never appear in logs, API responses, or any broadcast payload. This
-  # covers logs; spec/config/data_hygiene_spec.rb holds the line on the rest.
+  # covers logs; spec/config/invariants_spec.rb holds the line on the rest.
   :customer_phone
 ]

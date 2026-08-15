@@ -8,15 +8,17 @@ claim about behavior under load. It is only true if it is tested. This document 
 ```
 spec/
   factories/                  FactoryBot definitions, one file per model
-  scheduler/                  Pure-function specs. No DB, no Rails. Milliseconds.
-    golden/                   Fixed-seed dispatch sequences (committed fixtures)
   models/                     Validations, scopes, state machine transitions
   services/                   Service objects (ClaimNextDrink, RecomputeEta, …)
-  requests/                   API endpoints — the real contract
+  requests/                   API endpoints — the real contract, and rswag's source
+  serializers/                Response shapes
   channels/                   ActionCable subscription auth + payload shape
   jobs/                       Sidekiq workers
-  system/                     End-to-end, sparingly (see below)
+  simulator/                  §10 experiments — read the cost rules below first
+  config/                     Design invariants that no unit test would catch
   support/                    Shared helpers, matchers, config
+gems/deficit_scheduler/spec/  Pure-function specs. No DB, no Rails. Milliseconds.
+  golden/                     Fixed-seed dispatch sequences (committed fixtures)
 frontend/src/
   **/*.test.tsx               Vitest + React Testing Library, colocated
 ```
@@ -43,16 +45,15 @@ Both fail `rspec` in-process rather than in a separate CI step, and the overall 
 skipped on a partial run (`bin/rspec spec/models`) because a subset cannot meet a
 whole-project floor.
 
-The scheduler gate runs in the gem's **own** suite, not the root one (ADR-0033) — two
-SimpleCov roots cannot both be measured in one process. The hand-rolled `at_exit` hook that
-used to enforce it at the root was deleted rather than repointed: it matched files by the
-substring `"/app/scheduler/"` and skipped itself when that matched nothing, so after the
-extraction it would have gone green while enforcing nothing.
+The scheduler gate runs in the gem's **own** suite, not the root one (ADR-0033): two
+SimpleCov roots cannot both be measured in one process.
 
-There is deliberately **no separate gate on `app/services/**`.** An earlier version of this
-table listed one at 95% that nothing enforced, which is the same failure as a guard that
-always passes: it looked armed. Services are covered by the overall floor; if they ever need
-their own bar, add the check first and the row second.
+Two gates in this table's history looked armed and were not, which is why the rule is now
+*add the check first and the row second*. The root `at_exit` hook selected files by the
+substring `"/app/scheduler/"` and skipped itself when nothing matched, so the gem extraction
+would have left it green while enforcing nothing — it was deleted, not repointed. And an
+earlier row claimed 95% on `app/services/**` that nothing enforced at all. Services are
+covered by the overall floor.
 
 Coverage is a floor, not a goal. 100% coverage of the scheduler with no starvation test
 is worthless. The §11 checklist below is what actually matters.
@@ -115,7 +116,7 @@ expiry — see `spec/services/board_broadcast_spec.rb`.
 
 ```bash
 COVERAGE=0 bundle exec mutant run          # the whole scheduler
-COVERAGE=0 bundle exec mutant run -- 'Scheduler.quantum_for'   # one subject
+COVERAGE=0 bundle exec mutant run -- 'DeficitScheduler.quantum_for'  # one subject
 ```
 
 Config is `config/mutant.yml`; `config/mutant_boot.rb` loads the scheduler **without
@@ -124,7 +125,10 @@ Rails**, which is both faster and a check that the §6.2 purity rule still holds
 `COVERAGE=0` matters — SimpleCov's at-exit gate would otherwise run inside every one of the
 hundreds of forked mutant processes.
 
-Current score: **93.14%** (734 of 788 killed). Do not chase 100%. The survivors are
+Last recorded score: **93.14%** (734 of 788 killed), measured 2026-08-07 in #14 and not
+re-run since — the gem extraction (#93) renamed the subjects without changing them.
+Read it as a baseline, not as today's number; CLAUDE.md forbids starting `mutant` from
+a session, so re-measuring is a deliberate act. Do not chase 100%. The survivors are
 equivalent mutants — `guard = 0` → `1` against a 10,000-iteration limit, `0` → `-1` in a
 sort tier where both sort below 1 — plus default-argument removals no caller exercises.
 Killing those means writing tests that assert nothing anyone cares about.
@@ -134,7 +138,8 @@ changed?" If yes, it is a missing test. If no, it is equivalent and should be le
 
 ## What a simulation spec is allowed to cost
 
-Every simulated arrival runs a forward projection through `Scheduler.pick_next` (§7.1), so a
+Every simulated arrival runs a forward projection through `DeficitScheduler.pick_next` (§7.1),
+so a
 simulated day is not free and a saturated one is expensive. Profile before optimising —
 `bin/rspec --profile` — because the cost is never spread evenly. It concentrated in twelve
 examples once, at 84% of the whole suite.
@@ -182,10 +187,9 @@ check (clamping, reproducing, falling back) doesn't depend on the realism of —
 only the *count* while leaving demand realistic was the gap that let `staffing_curve_spec.rb`
 back up to 108.98s despite already having a "narrowed" context.
 
-Net effect: 628 examples → 619 in the default tier (76.68s from 333s locally, coverage
-gates unchanged — 99.36%/94.23%, `app/scheduler/**` still 100%/100%), 626 across both tiers
-together (163.1s). §11's acceptance suite, when it exists, is the next candidate for the
-same tag rather than a bespoke `--tag acceptance` mechanism.
+That work cut the default tier from 333s to 77s locally without moving the coverage gates.
+§11's acceptance suite, when it exists, is the next candidate for `:slow` rather than a
+bespoke `--tag acceptance` mechanism.
 
 ## Golden tests
 

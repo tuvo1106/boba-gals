@@ -33,29 +33,17 @@ class ReadinessController < ActionController::API
   private
 
   # `SELECT 1` rather than `connected?`, which reports on the connection object
-  # rather than on the server — it stays true across a Postgres restart until
-  # something actually tries to use it.
+  # and stays true across a Postgres restart until something actually uses it.
   #
-  # Bounded by `statement_timeout`, which is what makes `TIMEOUT_SECONDS` real
-  # rather than aspirational. It was declared and referenced nowhere, so a
-  # wedged Postgres — accepting TCP, answering nothing — left each probe
-  # occupying a Puma thread for as long as the driver would wait. `web` runs
-  # `RAILS_MAX_THREADS` (5) threads and the kubelet re-probes every 5s
-  # (k8s/base/web.yaml), so abandoned probes stack up on a pod that is already
-  # struggling: exactly the pile-up the constant's comment says it prevents.
+  # `statement_timeout` is what makes `TIMEOUT_SECONDS` real rather than
+  # aspirational — without it a wedged Postgres holds a Puma thread for as long
+  # as the driver will wait, which is the pile-up the constant exists to prevent.
   #
-  # Saved and restored explicitly rather than with `SET LOCAL` in a transaction.
-  # That was the first attempt and it **leaked**: Rails does not materialise a
-  # BEGIN for a read-only block, so on the healthy path — commit, no exception —
-  # the setting survived and the connection went back to the pool carrying a
-  # two-second cap on every real query. Measured: `0` before, `2s` inside, `2s`
-  # still after commit. It reverted only when a statement was cancelled, which
-  # is the one path that does roll back, so the failure mode was invisible
-  # exactly when the probe was working.
-  #
-  # `ensure` rather than a transaction, so the restore does not depend on
-  # transaction semantics at all. If the connection is dead by then the restore
-  # fails too, but a dead connection is discarded rather than pooled.
+  # Saved and restored in `ensure`, not `SET LOCAL` in a transaction. That
+  # leaked: Rails does not materialise a BEGIN for a read-only block, so the
+  # setting survived commit and the connection returned to the pool carrying a
+  # 2s cap on every query (measured 0 → 2s → 2s). It rolled back only when a
+  # statement was cancelled — invisible exactly when the probe was working.
   def database_ready?
     connection = ActiveRecord::Base.connection
     previous = connection.select_value("SHOW statement_timeout")

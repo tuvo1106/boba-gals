@@ -1,29 +1,22 @@
 module Simulator
-  # The quote a customer is given, projected the way §7.1 specifies.
+  # `ProjectEta` with the ActiveRecord taken out (§7.1).
   #
-  # "Run the same scheduler forward as a simulation against the current queue.
-  # Assign queued items to the next-free station; the projection yields
-  # `projected_start_at` and `projected_ready_at` per item. **Order ETA = max
-  # over its items**, multiplied by `eta_safety_factor`."
+  # Same algorithm, same `DeficitScheduler.pick_next`, driven by the simulator's
+  # own structures. See `ProjectEta` for §7.1's rule and for why the naive
+  # estimate was replaced; this class exists separately only because `ProjectEta`
+  # reaches for `OrderItem`, `PrepTimeStat` and `SchedulerStateStore`, none of
+  # which a simulated shop has. What must not diverge is the loop below and
+  # §7.1's max-over-items rule.
   #
-  # This is `ProjectEta` with the ActiveRecord taken out — same algorithm, same
-  # `DeficitScheduler.pick_next`, driven by the simulator's own structures. It exists
-  # separately because `ProjectEta` reaches for `OrderItem`, `PrepTimeStat` and
-  # `SchedulerStateStore`, none of which a simulated shop has; the parts that
-  # must not diverge are the loop below and §7.1's max-over-items rule.
+  # Two things are specific to the simulator:
   #
-  # **Why not the naive estimate.** The simulator used to renege on
-  # `queued_seconds / stations` — ADR-0004's formula, which §7.1 replaced in
-  # production precisely because it "has no idea that fair queuing reorders
-  # work". Quoting one number and measuring another would make §10.4's ETA
-  # error a report on a formula the shop no longer uses.
+  # The simulator must quote what production quotes. It used to renege against
+  # ADR-0004's `queued_seconds / stations`, which would make §10.4's ETA error a
+  # report on a formula the shop no longer uses.
   #
-  # **It must never touch the live state.** `pick_next` mutates what it is given
-  # — drawing down deficits, advancing the ring pointer, shifting items off flow
-  # queues (§6.2). Every flow here is rebuilt fresh and the pointer is copied by
-  # value, so quoting a customer cannot reorder what the kitchen makes next.
-  # That is the same rule `ProjectEta` states for itself, and it is easier to
-  # break here because the state is in memory rather than behind Redis.
+  # `ProjectEta`'s never-mutate-live-state rule is easier to break here, because
+  # the state is in memory rather than behind Redis. Every flow is rebuilt fresh
+  # and the pointer copied by value.
   class Projection
     # The projection is bounded by the queue: each pass either dispatches a
     # drink or stops. Mirrors `ProjectEta::MAX_DISPATCHES` so a scheduler bug
