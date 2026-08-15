@@ -28,6 +28,19 @@ class Store < ApplicationRecord
   }.freeze
 
   # @return [Hash] the store's scheduler configuration with §6.6 defaults applied
+  # The shop's own calendar day for a given moment (§13.1, ADR-0036).
+  #
+  # `timezone` was validated and seeded from the first migration and read
+  # nowhere, so every "day" in the app was UTC's. That is not a cosmetic
+  # difference: pickup codes are unique per store per day, and for a shop in
+  # America/Los_Angeles the UTC day rolls at 17:00 local — mid-service.
+  #
+  # @param at [Time]
+  # @return [Date]
+  def business_date(at = Time.current)
+    at.in_time_zone(timezone).to_date
+  end
+
   def effective_scheduler_config
     SCHEDULER_DEFAULTS.merge(scheduler_config || {})
   end

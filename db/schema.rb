@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_14_050000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_14_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -91,6 +91,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_14_050000) do
   end
 
   create_table "orders", force: :cascade do |t|
+    t.date "business_date", null: false
     t.datetime "created_at", null: false
     t.string "customer_first_name"
     t.string "customer_phone"
@@ -107,7 +108,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_14_050000) do
     t.bigint "store_id", null: false
     t.integer "total_cents"
     t.datetime "updated_at", null: false
-    t.index "store_id, pickup_code, ((placed_at)::date)", name: "idx_pickup_code_daily", unique: true
+    t.index ["store_id", "pickup_code", "business_date"], name: "idx_pickup_code_daily", unique: true
     t.index ["store_id", "status"], name: "idx_orders_open", where: "((status)::text <> ALL ((ARRAY['picked_up'::character varying, 'cancelled'::character varying])::text[]))"
     t.index ["store_id"], name: "index_orders_on_store_id"
   end

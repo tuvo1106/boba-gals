@@ -31,7 +31,7 @@ RSpec.describe PickupCode do
       allow(described_class).to receive(:generate).and_return("AAAA", "AAAA", "BBBB")
       create(:order, store: store, pickup_code: "AAAA", placed_at: Time.current)
 
-      expect(described_class.generate_unique(store: store)).to eq("BBBB")
+      expect(described_class.generate_unique(store: store, on: store.business_date)).to eq("BBBB")
     end
 
     # Uniqueness is per store *per day* — the same code is free again tomorrow.
@@ -39,21 +39,21 @@ RSpec.describe PickupCode do
       allow(described_class).to receive(:generate).and_return("AAAA")
       create(:order, store: store, pickup_code: "AAAA", placed_at: 2.days.ago)
 
-      expect(described_class.generate_unique(store: store)).to eq("AAAA")
+      expect(described_class.generate_unique(store: store, on: store.business_date)).to eq("AAAA")
     end
 
     it "does not collide with another store's code" do
       allow(described_class).to receive(:generate).and_return("AAAA")
       create(:order, store: create(:store), pickup_code: "AAAA", placed_at: Time.current)
 
-      expect(described_class.generate_unique(store: store)).to eq("AAAA")
+      expect(described_class.generate_unique(store: store, on: store.business_date)).to eq("AAAA")
     end
 
     it "raises rather than looping forever when the space is exhausted" do
       allow(described_class).to receive(:generate).and_return("AAAA")
       create(:order, store: store, pickup_code: "AAAA", placed_at: Time.current)
 
-      expect { described_class.generate_unique(store: store) }
+      expect { described_class.generate_unique(store: store, on: store.business_date) }
         .to raise_error(described_class::ExhaustedError)
     end
   end

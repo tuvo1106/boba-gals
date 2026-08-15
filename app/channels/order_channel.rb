@@ -44,7 +44,7 @@ class OrderChannel < ApplicationCable::Channel
     store = Store.first
     return nil if store.nil?
 
-    store.orders.for_pickup_code(params[:pickup_code]).first
+    store.orders.for_pickup_code(params[:pickup_code], on: store.business_date).first
   end
 
   def eta_for(order)
