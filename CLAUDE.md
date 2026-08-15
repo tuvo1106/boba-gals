@@ -180,9 +180,15 @@ processes were inside the container.
 
 So:
 
-- **Never start `mutant` from a session.** It runs the whole suite once per mutant, forks a
-  worker per core, and takes tens of minutes. It is a CI-shaped job. If a mutation score is
-  needed, ask for it to be run deliberately, or read the last recorded figure.
+- **Run `mutant` on the host, never inside the container, and never in the background.**
+  Measured 2026-08-15: `COVERAGE=0 bundle exec mutant run` is **22 seconds** at 10 jobs. The
+  "tens of minutes, CI-shaped job" this rule used to claim was written when the scheduler
+  still booted Rails; `config/mutant_boot.rb` loads the gem without it, and mutant selects
+  ~2.8 tests per subject rather than the whole suite. The cost was never the problem — the
+  2026-08-09 incident was an interrupted `docker compose exec` leaving eleven workers alive
+  *inside a container*, where the host's process list could not see them. On the host they
+  are visible to `ps` and die with the shell. `COVERAGE=0` is required either way: SimpleCov's
+  gate otherwise fires inside every forked worker.
 - After interrupting *any* long container command, check before moving on:
 
   ```bash
