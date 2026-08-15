@@ -53,10 +53,33 @@ between restarts.
 ## Decision
 
 **Ordering moves into the manifests.** `web` gets a `wait-for-migrations` init container that
-blocks on `bin/rails db:abort_if_pending_migrations` until it succeeds. This *waits* for
-migrations and never runs them, so §14.2's prohibition and the
-`spec/config/invariants_spec.rb` guard on `bin/docker-entrypoint` both stand. Ordering now
-holds in any overlay, under a bare `kubectl apply -k`, with no deploy script involved.
+polls the database, in SQL, until `schema_migrations` contains the version recorded in the
+image's own `db/schema.rb`. This *waits* for migrations and never runs them, so §14.2's
+prohibition and the `spec/config/invariants_spec.rb` guard on `bin/docker-entrypoint` both
+stand. Ordering now holds in any overlay, under a bare `kubectl apply -k`, with no deploy
+script involved.
+
+**The check is read-only SQL, not `bin/rails db:abort_if_pending_migrations`.** That was the
+first implementation and it broke the cluster on its first CI run, in a way worth recording
+because the mechanism is not obvious.
+
+`POSTGRES_DB` makes initdb create `boba_gals_production`, so the database always exists by
+the time the Job runs. `db:prepare` therefore cannot use "does the database exist" to decide
+whether to seed, and uses "does `schema_migrations` exist" instead. The Rails pending-check
+**creates that table as a side effect** on a database that lacks it. So the init container,
+polling every two seconds, raced the Job and flipped `db:prepare` onto its already-initialised
+path: migrations ran, `load_seed` did not, and the cluster came up with no store, no menu and
+no admin user while the Job reported success. Confirmed directly rather than inferred:
+
+```
+$ psql -d empty -tAc "SELECT to_regclass('schema_migrations')"    # (nothing)
+$ bin/rails db:abort_if_pending_migrations                        # exit 1
+$ psql -d empty -tAc "SELECT to_regclass('schema_migrations')"    # schema_migrations
+```
+
+A `SELECT` cannot do that. It also boots no Ruby, so each poll costs a connection rather than
+a Rails process, and it reads the version from the image, which keeps it correct when an older
+image is rolled back onto a newer schema.
 
 **The stale Job is deleted rather than hashed.** `bin/k8s-up` runs
 `kubectl delete job/migrate --ignore-not-found` before applying. The false comment is
@@ -93,8 +116,9 @@ own evidence, not a thing to smuggle into a fix.
 
 ## Consequences
 
-`web` pods now take slightly longer to start, since each boots Rails once per attempt until
-migrations land. The loop is bounded by the migrate Job, which `bin/k8s-up` already waits on.
+`web` pods now wait for the schema before starting, which on a cold cluster adds however long
+the migrate Job takes. The poll itself is a single `SELECT` every two seconds against a
+Postgres in the same namespace, so the cost is the waiting, not the checking.
 
 Deploying no longer depends on the ten-minute TTL window having elapsed, and prod can be
 deployed twice in a row.
@@ -102,6 +126,9 @@ deployed twice in a row.
 The worker will now genuinely crash-loop if Sidekiq dies, which is the intended behaviour and
 was not previously observable — and `bin/k8s-up` will fail rather than report success.
 
-Verified in the production image against a live Postgres: `db:abort_if_pending_migrations`
-exits 0 when the schema is current, 1 with a migration pending, and 1 when the database is
-unreachable — so the init container waits rather than proceeding in both failure cases.
+Verified in the production image against a live Postgres, running the command exactly as
+`kubectl kustomize` renders it: it prints the expected version and exits 0 against a migrated
+database, blocks against an empty one, and leaves that empty database with no
+`schema_migrations` table — which is the specific regression above, now proven absent. Running
+the Job's `db:prepare` against a database the check had polled seeds normally: 1 store,
+9 menu items, 1 admin.
