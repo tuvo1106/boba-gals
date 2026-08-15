@@ -46,6 +46,55 @@ spec:
       labels:
         app: web
     spec:
+      # Ordering, made structural rather than procedural (§14.2).
+      #
+      # `kubectl apply -k` creates the migrate Job and this Deployment at the
+      # same time; nothing in the manifests sequenced them. `bin/k8s-up` waits
+      # on the Job before rolling `web`, but that is the dev script — the prod
+      # overlay is base + images and has no equivalent, so new pods would serve
+      # new code against the old schema until readiness caught up.
+      #
+      # This *waits* for migrations, it never runs them — running them on
+      # container boot is what §14.2 forbids, and what
+      # `spec/config/invariants_spec.rb` guards `bin/docker-entrypoint` against.
+      #
+      # psql, deliberately, not `bin/rails db:abort_if_pending_migrations`.
+      # That was the first attempt and it **broke seeding**: on an empty
+      # database the Rails check creates an empty `schema_migrations` table as
+      # a side effect. `db:prepare` decides whether to seed by asking whether
+      # that table exists — not whether the *database* does, which always does
+      # here because `POSTGRES_DB` makes initdb create it. So the init
+      # container racing the Job flipped `db:prepare` onto its "already
+      # initialised" path: migrations ran, `load_seed` never did, and the
+      # cluster came up with no store, no menu and no admin while every step
+      # reported success. CI caught it on the first run.
+      #
+      # A read-only SQL check cannot have that effect. It also boots no Ruby,
+      # so the poll costs a connection rather than a Rails process.
+      #
+      # The version comes from the image's own `db/schema.rb`, so this asks
+      # "has the schema this image expects been applied", which stays correct
+      # when an older image is rolled back onto a newer schema.
+      initContainers:
+        - name: wait-for-migrations
+          image: boba-api
+          command:
+            - sh
+            - -c
+            - |
+              version=$(sed -n 's/.*define(version: \([0-9_]*\)).*/\1/p' db/schema.rb | tr -d _)
+              echo "waiting for schema version $version"
+              until psql "$DATABASE_URL" -tAc \
+                "SELECT 1 FROM schema_migrations WHERE version = '$version'" 2>/dev/null \
+                | grep -q 1; do
+                sleep 2
+              done
+          envFrom:
+            - configMapRef: { name: boba-config }
+            - secretRef: { name: boba-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
       containers:
         - name: web
           image: boba-api

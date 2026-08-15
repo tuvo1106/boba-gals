@@ -345,6 +345,19 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The background worker was being killed and restarted every two minutes, permanently**
+  (§14.2, §14.3, ADR-0037). Its health check called a program that was never installed in the
+  image, so the check could only ever fail. Anything the shop relies on the worker for — the
+  pickup board's delayed refresh today, and the abandoned-order sweep, quality timers and
+  ready-texts as they arrive — was running on a process that never stayed up long. Nothing
+  caught it because no deploy ever waited for the worker to be healthy; it does now.
+- **Deploying twice in quick succession could skip the database migration entirely** (§14.2,
+  ADR-0037). The migration step left a completed record behind for ten minutes, and a second
+  deploy inside that window quietly reused it — reporting success while the new code went
+  live against the old database structure. In production the same flaw failed the deploy
+  outright instead. The old record is now cleared first, and the application refuses to start
+  against a database that has not been migrated, so the ordering no longer depends on the
+  deploy script.
 - **A blip while waiting could take the pickup code off the customer's screen** (§9.2). The
   order screen treated every failed read as "no such order" and replaced itself — code,
   drinks and all — with "We could not find that order.", so a moment of bad shop wifi left

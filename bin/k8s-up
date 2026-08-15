@@ -87,6 +87,12 @@ step "Loading images into the cluster"
 kind load docker-image "boba-api:$TAG" "boba-frontend:$TAG" --name "$CLUSTER"
 
 step "Applying manifests"
+# The Job is not name-hashed and its pod template is immutable, so a completed
+# one from a previous run inside `ttlSecondsAfterFinished` would either be
+# silently reused (dev) or reject the apply (prod). Delete it first; the apply
+# below recreates it. See k8s/base/migrate-job.yaml.
+kubectl -n "$NAMESPACE" delete job/migrate --ignore-not-found
+
 kubectl apply -k k8s/overlays/dev
 
 # The Ingress mounts the `boba-tls` Secret, and nginx serves its built-in
@@ -107,6 +113,11 @@ step "Restarting application pods"
 kubectl -n "$NAMESPACE" rollout restart deployment/web deployment/worker deployment/frontend
 kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=300s
 kubectl -n "$NAMESPACE" rollout status deployment/frontend --timeout=300s
+# `worker` too, and not as an afterthought. Its liveness probe called a binary
+# the image did not contain for months without anyone noticing, precisely
+# because nothing here ever waited on it — a crash-looping worker left the
+# deploy green. A rollout that does not converge now fails the script.
+kubectl -n "$NAMESPACE" rollout status deployment/worker --timeout=300s
 
 # §15. Skipped in CI: the full chart (Prometheus, Grafana, kube-state-metrics,
 # node-exporter) is real memory weight on top of everything else the cluster
