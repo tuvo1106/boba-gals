@@ -115,8 +115,9 @@ expiry — see `spec/services/board_broadcast_spec.rb`.
 ## Mutation testing
 
 ```bash
-COVERAGE=0 bundle exec mutant run          # the whole scheduler
+COVERAGE=0 bundle exec mutant run          # the whole scheduler — ~22s
 COVERAGE=0 bundle exec mutant run -- 'DeficitScheduler.quantum_for'  # one subject
+bundle exec mutant session subject 'DeficitScheduler#validate!'      # survivors, after a run
 ```
 
 Config is `config/mutant.yml`; `config/mutant_boot.rb` loads the scheduler **without
@@ -125,10 +126,16 @@ Rails**, which is both faster and a check that the §6.2 purity rule still holds
 `COVERAGE=0` matters — SimpleCov's at-exit gate would otherwise run inside every one of the
 hundreds of forked mutant processes.
 
-Last recorded score: **93.14%** (734 of 788 killed), measured 2026-08-07 in #14 and not
-re-run since — the gem extraction (#93) renamed the subjects without changing them.
-Read it as a baseline, not as today's number; CLAUDE.md forbids starting `mutant` from
-a session, so re-measuring is a deliberate act. Do not chase 100%. The survivors are
+Score: **89.40%** — 937 of 1048 killed, 111 alive, 8 timeouts. Measured 2026-08-15 on the
+host (not in the container), **22.4 seconds** wall clock at 10 jobs.
+
+It went *down* from the 93.14% recorded on 2026-08-07 (#14), and the reason is worth knowing:
+that score was against **788** mutations. The gem has grown to **1048**, so ~260 mutations
+had never been evaluated, and the newer code — `Config#validate!`, `Config.from_h`, and the
+`Flow`/`Item`/`State` constructors — carries most of the survivors. SimpleCov reports the gem
+at 100% line and branch the whole time, which is exactly the point of running this at all.
+
+Do not chase 100%. The survivors are
 equivalent mutants — `guard = 0` → `1` against a 10,000-iteration limit, `0` → `-1` in a
 sort tier where both sort below 1 — plus default-argument removals no caller exercises.
 Killing those means writing tests that assert nothing anyone cares about.
