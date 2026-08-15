@@ -17,9 +17,31 @@
 # there is no threshold that separates "erroneous" from "a genuinely slow
 # order" the way there is for a single drink's prep time.
 class RecordQualitySpread
+  # Single-drink orders are the minimum, and it is what stops the "1-2" class
+  # learning a threshold of zero (ADR-0035).
+  MINIMUM_DRINKS = 2
+
   # @param order [Order] an order that just reached `ready`
   # @return [QualitySpreadStat, nil] the updated stat, or nil when nothing was learned
   def call(order)
+    # **Learn from the same population the sweep judges.** `SweepQualityBreaches`
+    # only ever flags a drink whose order is still `partially_ready` — waiting on
+    # a sibling (ADR-0024) — which a single-drink order never is. But this used
+    # to sample them anyway, and their spread is *definitionally* zero:
+    # `RollUpOrderStatus` stamps `first_ready_at` and `ready_at` in the same call
+    # when the only drink finishes.
+    #
+    # §10.3's size mix is ~62% single-drink, so after ten of them the "1-2"
+    # class was `confident?` at an EWMA of ~0 with ~0 variance, `threshold_seconds`
+    # collapsed to microseconds, and every 2-drink order was flagged the instant
+    # its first drink finished — ADR-0031's own failure, reintroduced from the
+    # other side.
+    #
+    # A zero from a solo order is a true fact about that order and says nothing
+    # about how long a *pair's* first drink sits, which is the thing being
+    # predicted.
+    return nil if order.countable_items.size < MINIMUM_DRINKS
+
     observed = observed_seconds(order)
     return nil if observed.nil?
 

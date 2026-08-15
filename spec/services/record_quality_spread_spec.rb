@@ -25,8 +25,19 @@ RSpec.describe RecordQualitySpread do
       expect(stat.sample_count).to eq(1)
     end
 
-    it "accepts a legitimate zero-spread observation from a single-drink order" do
-      stat = record(0, size: 1)
+    # This example used to assert the opposite — that a solo order's zero was
+    # "a legitimate observation" and was recorded. It was legitimate as a fact
+    # and poison as a predictor, and asserting it is what made the bug in
+    # ADR-0035 look intended. A single-drink order cannot have a first drink
+    # sitting while a sibling is made, which is the only thing this stat
+    # predicts.
+    it "ignores a single-drink order, whose spread is definitionally zero" do
+      expect(record(0, size: 1)).to be_nil
+      expect(QualitySpreadStat.count).to be_zero
+    end
+
+    it "still records a genuine zero from a multi-drink order finished together" do
+      stat = record(0, size: 2)
 
       expect(stat.ewma_seconds).to eq(0.0)
       expect(stat.sample_count).to eq(1)
