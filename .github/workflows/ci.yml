@@ -282,7 +282,7 @@ jobs:
         run: |
           curl -fsS -i -X POST "$SHOP/api/v1/admin/session" \
             -H 'Content-Type: application/json' \
-            -d '{"email":"admin@bobagals.test","password":"dev-admin"}' \
+            -d '{"email":"admin@bobagals.test","password":"dev-only-not-a-real-admin-password"}' \
             | grep -i '^set-cookie' | grep -qi 'secure'
 
       # §14.3, ADR-0008. /up is liveness and must stay green without the

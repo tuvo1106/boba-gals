@@ -46,6 +46,32 @@ spec:
       labels:
         app: web
     spec:
+      # Ordering, made structural rather than procedural (§14.2).
+      #
+      # `kubectl apply -k` creates the migrate Job and this Deployment at the
+      # same time; nothing in the manifests sequenced them. `bin/k8s-up` waits
+      # on the Job before rolling `web`, but that is the dev script — the prod
+      # overlay is base + images and has no equivalent, so new pods would serve
+      # new code against the old schema until readiness caught up.
+      #
+      # This *waits* for migrations, it never runs them — running them on
+      # container boot is what §14.2 forbids, and what
+      # `spec/config/invariants_spec.rb` guards `bin/docker-entrypoint` against.
+      # On a cluster with no database yet it simply blocks until the Job has
+      # created and migrated one.
+      initContainers:
+        - name: wait-for-migrations
+          image: boba-api
+          command:
+            - sh
+            - -c
+            - until bin/rails db:abort_if_pending_migrations; do sleep 2; done
+          envFrom:
+            - configMapRef: { name: boba-config }
+            - secretRef: { name: boba-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
       containers:
         - name: web
           image: boba-api

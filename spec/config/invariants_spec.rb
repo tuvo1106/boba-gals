@@ -90,4 +90,68 @@ RSpec.describe "design invariants" do
       expect(entrypoint).not_to match(/db:(prepare|migrate|setup|schema)/)
     end
   end
+
+  describe "exec probes call binaries the image actually has (§14.3)" do
+    # `worker`'s liveness probe called `pgrep` for months against an image that
+    # never installed procps. Every check exited 127, so the kubelet restarted
+    # sidekiq roughly every two minutes — and nothing caught it, because a
+    # manifest is not compiled and `bin/k8s-up` never waited on `worker`.
+    #
+    # Reading the Dockerfile rather than the image keeps this a unit test: it
+    # runs in the same second as the rest of the suite, with no daemon and no
+    # cluster, and it fails for the right reason — the package list and the
+    # probe disagreeing.
+    APT_PROVIDED = {
+      "pgrep" => "procps",
+      "ps" => "procps",
+      "curl" => "curl",
+      "pg_isready" => "postgresql-client"
+    }.freeze
+
+    # `sh` is in the base image; anything else has to be installed explicitly.
+    ALWAYS_PRESENT = %w[sh sleep until true test cat echo bin/rails bundle].freeze
+
+    # Only containers running *our* image are the Dockerfile's responsibility.
+    # `postgres` and `redis` bring their own, and `redis-cli` being present in
+    # `redis:7` is not something this repository controls or should assert.
+    OUR_IMAGE = "boba-api".freeze
+
+    let(:dockerfile) { Rails.root.join("Dockerfile").read }
+
+    Dir[Rails.root.join("k8s/base/*.yaml")].sort.each do |path|
+      manifest = File.basename(path)
+
+      it "installs every binary #{manifest}'s exec probes invoke" do
+        YAML.load_stream(File.read(path)).compact.each do |doc|
+          probes(doc).each do |probe|
+            binary = probe.dig("exec", "command")&.first
+            next if binary.nil? || ALWAYS_PRESENT.include?(binary)
+
+            package = APT_PROVIDED.fetch(binary) do
+              raise "#{manifest} probes `#{binary}`, which this spec does not know how " \
+                    "to source — add it to APT_PROVIDED or ALWAYS_PRESENT."
+            end
+
+            expect(dockerfile).to(
+              match(/apt-get install[^\n]*#{Regexp.escape(package)}/),
+              "#{manifest} runs `#{binary}` in an exec probe, but the Dockerfile never " \
+              "installs #{package}. Every check will exit 127 and the kubelet will " \
+              "restart the container forever."
+            )
+          end
+        end
+      end
+    end
+
+    # Probes live at a fixed depth under a Deployment/Job pod template, but
+    # containers and initContainers both carry them.
+    def probes(doc)
+      pod = doc.dig("spec", "template", "spec") || {}
+
+      (pod["containers"].to_a + pod["initContainers"].to_a)
+        .select { |container| container["image"] == OUR_IMAGE }
+        .flat_map { |c| c.values_at("livenessProbe", "readinessProbe", "startupProbe") }
+        .compact
+    end
+  end
 end

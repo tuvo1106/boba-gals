@@ -31,7 +31,7 @@ secretGenerator:
       # dev cluster reads no encrypted credentials, so it needs nothing more.
       # Prod's Secret carries RAILS_MASTER_KEY instead (§14.6).
       - SECRET_KEY_BASE=dev0000000000000000000000000000000000000000000000000000000000000dev
-      - SEED_ADMIN_PASSWORD=dev-admin
+      - SEED_ADMIN_PASSWORD=dev-only-not-a-real-admin-password
 
 # Kustomize hashes generated Secrets and rewrites references, so changing a
 # value here rolls the pods that consume it. Disabled: the hash suffix would

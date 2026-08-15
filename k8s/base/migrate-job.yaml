@@ -5,9 +5,24 @@
 # crash-looping pod retrying it forever. `spec/config/invariants_spec.rb` fails
 # if `bin/docker-entrypoint` ever grows a db: command again.
 #
-# Kustomize appends a content hash to the name, so each apply creates a *new*
-# Job rather than failing on an immutable existing one — Jobs cannot be updated
-# in place.
+# A Job's pod template is immutable, and this one is **not** name-hashed —
+# kustomize only appends content hashes to `configMapGenerator`/`secretGenerator`
+# output, never to a resource listed under `resources:`. `kubectl kustomize`
+# emits it as plain `migrate`. An earlier comment here claimed the opposite,
+# which hid two failures for as long as it stood:
+#
+#   * dev — `ttlSecondsAfterFinished` keeps the completed Job around, the dev
+#     image tag never changes, so re-applying inside the TTL is a no-op that
+#     leaves the *old completed* Job in place. `kubectl wait --for=complete`
+#     then returns instantly against a Job that ran before the new migration
+#     existed, and `web` rolls onto an unmigrated schema reporting success.
+#   * prod — the image tag *does* change, so apply hits
+#     `spec.template: field is immutable` and the deploy dies.
+#
+# So the Job is deleted before each apply (`bin/k8s-up`) rather than relying on
+# a hash that was never there. `web` additionally refuses to start against a
+# schema with migrations pending, so ordering does not depend on the deploy
+# script getting this right — see `k8s/base/web.yaml`.
 apiVersion: batch/v1
 kind: Job
 metadata:

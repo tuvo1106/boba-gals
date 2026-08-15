@@ -18,7 +18,10 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 WORKDIR /rails
 
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 postgresql-client && \
+    # procps supplies pgrep, which `worker`'s liveness probe calls
+    # (k8s/base/worker.yaml). Without it every check exits 127 and the kubelet
+    # restarts sidekiq roughly every two minutes, forever.
+    apt-get install --no-install-recommends -y curl libjemalloc2 postgresql-client procps && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
