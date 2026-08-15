@@ -345,6 +345,16 @@ Categories, in this order:
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
 ### Fixed
+- **The customer saw `POST /orders failed with 422` instead of the reason the order was
+  refused** (§9.1). The server has always sent a plain-English explanation — "store is not
+  accepting orders", or whichever item went unavailable while the cart sat open — but the
+  web app read the wrong field and threw all of them away, leaving a raw status code on the
+  kiosk. Every refusal now shows the reason it was refused.
+- **A single failed load left the pickup board dead for the rest of the shift** (§9.4). The
+  board reads once over HTTP and then goes live over a websocket, and the live connection
+  cannot start until that first read succeeds — so one blip while the screen was starting up
+  left it stuck on "Reconnecting…" with empty columns, and nobody walks up to a wall display
+  to reload it. It now retries every 3 seconds until it gets through.
 - **A bar taken out of service kept making drinks** (§13.3). Switching a station off
   re-planned every wait estimate around the smaller kitchen, but the tablet at that bar held a
   valid login for up to twelve hours and carried on claiming drinks — so the board quoted from

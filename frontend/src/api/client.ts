@@ -30,6 +30,25 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
 }
 
 /**
+ * The two error shapes the API actually sends.
+ *
+ * `{ errors: [...] }` is what `Api::V1::BaseController#unprocessable` renders
+ * for **every** 422 — a declined order, an empty cart, a KDS finish/fail/undo
+ * that was refused. `{ error: "..." }` is the singular shape used for 401 and
+ * 404.
+ *
+ * Reading only the singular key meant every 422 message was thrown away and the
+ * customer saw `POST /orders failed with 422` where the server had said "store
+ * is not accepting orders". `DashboardScreen.applyToStore` already read
+ * `body.errors` directly, which is what the shape was supposed to be.
+ */
+function errorMessage(payload: { error?: string; errors?: string[] }): string | undefined {
+  if (payload.errors?.length) return payload.errors.join(', ')
+
+  return payload.error
+}
+
+/**
  * POST with an optional station token (§13.3). The KDS is the only surface that
  * carries a bearer token — the board is public and admin uses a cookie session
  * — so the header is threaded through here rather than living in a global.
@@ -53,7 +72,7 @@ export async function apiPost<T>(
   if (!response.ok) {
     const message = await response
       .json()
-      .then((payload: { error?: string }) => payload.error)
+      .then(errorMessage)
       .catch(() => undefined)
 
     throw new ApiError(response.status, message ?? `POST ${path} failed with ${response.status}`)

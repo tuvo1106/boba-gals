@@ -183,5 +183,40 @@ describe('BoardScreen', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…'),
       )
     })
+
+    // **The board has to come back on its own.** The subscription is gated on a
+    // store_id, and the only place that comes from is this response —
+    // BoardChannel rejects a subscription without one, so there is no
+    // blind-subscribe fallback. Before the retry, one failed read left the
+    // screen at "Reconnecting…" with empty columns for the rest of the shift.
+    // Nobody reloads a screen on a wall.
+    //
+    // The test above pinned the *symptom* as acceptable and stopped there;
+    // this one pins the recovery.
+    it('retries the first read until it lands, then goes live', async () => {
+      let attempts = 0
+      server.use(
+        http.get('/api/v1/board', () => {
+          attempts += 1
+          if (attempts === 1) return HttpResponse.error()
+
+          return HttpResponse.json(boardPayload({ making: [sarah] }))
+        }),
+      )
+
+      render(<BoardScreen />)
+
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('Reconnecting…'),
+      )
+
+      // The retry lands, the store id arrives, and only then can the
+      // subscription happen at all.
+      await waitFor(() => expect(subscribed).toBe(true), { timeout: 5_000 })
+      act(connect)
+
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+      expect(attempts).toBeGreaterThan(1)
+    })
   })
 })

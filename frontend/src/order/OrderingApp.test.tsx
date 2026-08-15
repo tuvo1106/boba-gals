@@ -496,7 +496,12 @@ describe('OrderingApp (§9.3)', () => {
 
       server.use(
         http.post('/api/v1/orders', () =>
-          HttpResponse.json({ error: 'store is not accepting orders' }, { status: 422 }),
+          // `{ errors: [...] }` — the shape Api::V1::BaseController#unprocessable
+          // actually renders for every 422. This fixture used the singular
+          // `{ error: ... }`, which the API never sends for a 422, so it passed
+          // against a payload production does not produce and hid the fact that
+          // apiPost read the wrong key and dropped every 422 message.
+          HttpResponse.json({ errors: ['store is not accepting orders'] }, { status: 422 }),
         ),
       )
       await user.click(screen.getByRole('button', { name: /place order/i }))

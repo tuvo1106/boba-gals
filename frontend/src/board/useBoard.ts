@@ -20,6 +20,14 @@ export const PICKED_UP_PERSISTENCE_SECONDS = 90
  */
 export const READY_BOARD_TTL_SECONDS = 300
 
+/**
+ * How long to wait before retrying the board's first read.
+ *
+ * The board is a wall display — there is nobody to notice a dead screen and
+ * reload it, so the first read has to recover on its own.
+ */
+export const RETRY_MS = 3_000
+
 export type ConnectionState = 'connecting' | 'live' | 'offline'
 
 interface Board {
@@ -71,17 +79,36 @@ export function useBoard(): Board {
 
   useEffect(() => {
     const controller = new AbortController()
+    let retry: ReturnType<typeof setTimeout> | undefined
 
-    apiGet<BoardUpdate>('/board', controller.signal)
-      .then(receive)
-      .catch(() => {
-        // A failed first read is not fatal: the websocket sends a whole
-        // snapshot on connect anyway (§9.2). Leaving the screen in
-        // `connecting` is the honest state.
-        if (!controller.signal.aborted) setConnection('offline')
-      })
+    // **The first read has to keep trying.** The subscribe effect below is
+    // gated on a `store_id`, and the only place that comes from is this
+    // response — `BoardChannel#subscribed` rejects a subscription without one,
+    // so there is no blind-subscribe fallback. A single failed read (the Rails
+    // pod not ready when the screen opens, one blip) therefore used to leave
+    // the board at "Reconnecting…" with empty columns until a human reloaded
+    // it. Nobody reloads a screen on a wall.
+    //
+    // Retried at a fixed RETRY_MS rather than backing off: this is a display
+    // that is supposed to be live all shift, and the request is one cheap read
+    // against the same cluster.
+    const read = () => {
+      apiGet<BoardUpdate>('/board', controller.signal)
+        .then(receive)
+        .catch(() => {
+          if (controller.signal.aborted) return
 
-    return () => controller.abort()
+          setConnection('offline')
+          retry = setTimeout(read, RETRY_MS)
+        })
+    }
+
+    read()
+
+    return () => {
+      controller.abort()
+      if (retry !== undefined) clearTimeout(retry)
+    }
   }, [receive])
 
   const storeId = snapshot?.store_id
