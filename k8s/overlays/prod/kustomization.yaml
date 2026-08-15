@@ -9,6 +9,19 @@ namespace: boba-gals
 resources:
   - ../../base
 
+# **No TLS here yet — see issue #106.** `../../base`'s Ingress deliberately
+# carries no `host` and no `spec.tls`; dev adds both (`ingress-tls.yaml`,
+# `tls.yaml`) and this overlay adds neither. `config.force_ssl` is on in
+# production, so a deploy as it stands would redirect to https against an
+# Ingress with no certificate, ingress-nginx would serve its built-in fake one,
+# and the `SameSite=Strict` + `Secure` admin cookie (ADR-0006) would break
+# sign-in — the symptom being "the dashboard won't let me log in", several
+# steps from the cause.
+#
+# Not filled in speculatively: it needs a real domain and an ACME ClusterIssuer,
+# and guessing either means rewriting this. It belongs with the change that
+# lands an actual prod deploy (ci.yml:490).
+
 # No secretGenerator, deliberately. `boba-secrets` is created out of band and
 # never lives in this repo:
 #
