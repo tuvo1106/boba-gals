@@ -153,7 +153,13 @@ function DrinkCard({
 }) {
   return (
     <li
-      className={`rounded-lg border-2 ${lead ? 'p-6' : 'p-4 opacity-90'} ${item.remake ? 'border-amber-500 bg-amber-950/30' : item.quality_breach ? 'border-rose-600 bg-rose-950/20' : 'border-neutral-700 bg-neutral-900'}`}
+      // Padding is uniform on purpose. The lead card is emphasised by type
+      // scale and button height (below), not by a wider inset — using padding
+      // for emphasis pushed its "Done" button 8px further in than every other
+      // card's, so the primary action column read as ragged down the queue.
+      // On a display glanced at mid-pour, a straight edge on the button column
+      // is worth more than the extra breathing room.
+      className={`rounded-lg border-2 p-5 ${lead ? '' : 'opacity-90'} ${item.remake ? 'border-amber-500 bg-amber-950/30' : item.quality_breach ? 'border-rose-600 bg-rose-950/20' : 'border-neutral-700 bg-neutral-900'}`}
     >
       <div className="flex items-start gap-4">
         <div className="min-w-0">
@@ -200,7 +206,10 @@ function DrinkCard({
         <button
           onClick={onProblem}
           aria-label={`Report a problem with ${item.label}`}
-          className={`shrink-0 rounded border border-neutral-600 px-5 text-neutral-400 hover:border-amber-500 hover:text-amber-500 ${lead ? 'py-5 text-xl' : 'py-3 text-base'}`}
+          // Fixed width, not padding-derived: "Problem" is larger on the lead
+          // card, and letting the text size set the width made the Done button
+          // beside it end at a different x on every card.
+          className={`w-32 shrink-0 rounded border border-neutral-600 text-neutral-400 hover:border-amber-500 hover:text-amber-500 ${lead ? 'py-5 text-xl' : 'py-3 text-base'}`}
         >
           Problem
         </button>
