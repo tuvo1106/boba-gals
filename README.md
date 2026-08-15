@@ -10,6 +10,24 @@ drink's time, not fifteen.
 The full specification is [`DESIGN.md`](DESIGN.md). It is section-numbered, and those
 numbers are what the `§6.2`-style references in the code and below point at.
 
+## What it looks like
+
+| | |
+|---|---|
+| ![Customizing a drink](docs/images/customize.jpg) Customize a drink — options and prep-time deltas from the menu | ![Checkout](docs/images/checkout.jpg) Checkout — pickup code is the only identifier shown back |
+| ![Kitchen display](docs/images/kds.jpg) Kitchen display — one drink at a time, largest and clearest for whoever's next | ![Customer board](docs/images/board.jpg) Customer board — first name and code only (§13.1) |
+
+![Scheduling dashboard](docs/images/dashboard.jpg)
+
+The admin dashboard runs the same production scheduler against a simulated day — DRR against
+FIFO, round robin and shortest-job-first, swept across demand and staffing (§10.5).
+
+![Grafana](docs/images/grafana.jpg)
+
+Production metrics mirror the simulator's own definitions (§10.4, §15): the same small-order
+p90 and large-order concurrency, so a claim proven in the simulator has a live number to check
+it against.
+
 ## What this demonstrates
 
 - **A scheduling algorithm, not a CRUD app.** Deficit round robin (Shreedhar & Varghese, 1995)
