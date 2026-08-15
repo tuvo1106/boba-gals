@@ -170,15 +170,30 @@ Note: `placed_at::date` buckets by UTC day, not store-local day — acceptable f
 ### 5.1 Order
 
 ```
-draft ──> placed ──> in_progress ──> partially_ready ──> ready ──> picked_up
+draft ──> placed ──> in_progress ──> partially_ready ──> ready ──> picked_up *
              │            │                 │              │
-             │            │                 │              ├──> abandoned
-             └────────────┴─────────────────┴──────────────┴──> cancelled
+             │            │                 │              ├──> abandoned *
+             └────────────┴─────────────────┴──────────────┴──> cancelled *
+
+* specified, but never reached by the implementation — see below (ADR-0017)
 ```
 
 - `partially_ready` — at least one drink done, not all. Drives the cohesion boost (§6.4) and the quality timer.
-- `ready` — all items `finished`.
+- `ready` — all items `finished`. **The lifecycle stops here in the implementation.**
 - `abandoned` — swept by a recurring background job (runs every 5 min) if not picked up 45 min after `ready_at`. Terminal, like `picked_up`; excluded from the "open orders" index and the board.
+
+**The three terminal states are specified but deliberately unreached (ADR-0017).**
+`RollUpOrderStatus` is the only writer of `status` and produces exactly `placed`,
+`in_progress`, `partially_ready`, `ready`. `picked_up` is unobserved on purpose — a
+counter-service shop has no natural handoff moment (ADR-0005); the `abandoned` sweep above
+was measured and judged not worth building; and there is no cancellation path in the
+application at all.
+
+The consequence to know: `Order.open`, defined as "not terminal", therefore means **"ever
+placed"** and grows by one row per order sold. That was measured rather than assumed — at
+2027 open orders a publish costs 15.5ms — and the hot reads bound themselves in the query
+instead, via `Order.live`. Use `live`, not `open`, for "still being worked on". Building the
+sweep is a decision to revisit against numbers, not a missing feature to backfill.
 
 ### 5.2 OrderItem
 
@@ -539,7 +554,7 @@ class ClaimNextDrink
         .limit(50)
         .lock("FOR UPDATE SKIP LOCKED")
 
-      pick = Scheduler.pick_next(Scheduler::State.from(candidates), Time.current)
+      pick = DeficitScheduler.pick_next(DeficitScheduler::State.from(candidates), Time.current)
       return nil if pick.nil?
 
       item = OrderItem.find(pick[:item].id)
