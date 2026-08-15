@@ -344,6 +344,15 @@ Categories, in this order:
 
 [Unreleased]: https://github.com/tuvo1106/boba-gals/compare/HEAD...HEAD
 
+### Changed
+- **Queued background work now survives a Redis restart** (§14.2, ADR-0038). Redis holds
+  Sidekiq's queue as well as the scheduler's short-lived state, and it was configured to keep
+  nothing on disk — so a restart silently dropped anything waiting to run. In practice that
+  meant the "your order is ready" message could be lost outright, and the prep-time and
+  quality-spread measurements the shop learns from would quietly go missing. It now keeps a
+  durable log, losing at most a second's worth, and enforces its own memory ceiling instead of
+  being killed by the system and taking the whole queue with it.
+
 ### Fixed
 - **The background worker was being killed and restarted every two minutes, permanently**
   (§14.2, §14.3, ADR-0037). Its health check called a program that was never installed in the

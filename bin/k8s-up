@@ -93,6 +93,29 @@ step "Applying manifests"
 # below recreates it. See k8s/base/migrate-job.yaml.
 kubectl -n "$NAMESPACE" delete job/migrate --ignore-not-found
 
+# Redis moved from `emptyDir` to a PVC (§14.2, ADR-0038). A StatefulSet's
+# `volumeClaimTemplates` is immutable, so applying the new definition over the
+# old one fails with "updates to statefulset spec for fields other than
+# 'replicas', 'ordinals', 'template', 'persistentVolumeClaimRetentionPolicy'
+# and 'minReadySeconds' are forbidden" — the same trap as the Job above,
+# arrived at from a different direction.
+#
+# The guard is narrow on purpose: it fires only against a StatefulSet that has
+# *no* volumeClaimTemplates, so it performs the migration once and never
+# touches a Redis that already carries a PVC. Deleting a StatefulSet does not
+# delete its PVCs — the retention policy defaults to Retain — and the volume
+# being replaced here held nothing durable by definition.
+#
+# CI cannot cover this: helm/kind-action builds a fresh cluster every run, so
+# the upgrade path only ever executes against a cluster that already existed.
+if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 &&
+   kubectl -n "$NAMESPACE" get statefulset redis >/dev/null 2>&1 &&
+   [ -z "$(kubectl -n "$NAMESPACE" get statefulset redis \
+             -o jsonpath='{.spec.volumeClaimTemplates}' 2>/dev/null)" ]; then
+  step "Migrating redis off emptyDir (one-time)"
+  kubectl -n "$NAMESPACE" delete statefulset redis
+fi
+
 kubectl apply -k k8s/overlays/dev
 
 # The Ingress mounts the `boba-tls` Secret, and nginx serves its built-in

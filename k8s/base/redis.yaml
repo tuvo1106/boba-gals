@@ -1,12 +1,17 @@
-# Redis in-cluster (§14.2). No persistence, deliberately.
+# Redis in-cluster (§14.2). Persistent, because Sidekiq shares this instance.
 #
-# Every key is reconstructible or ephemeral by design: scheduler deficits and
-# the ring pointer rebuild from Postgres (§6.5), the board throttle and ETA
-# debounce are short-lived locks (§9.2, §7.2), and pub/sub has no state at all.
-# A cold Redis costs one round of unfairness, which §6.5 says is safe.
+# The scheduler's own keys are reconstructible or ephemeral by design, and that
+# part of the old argument stands: deficits and the ring pointer rebuild from
+# Postgres (§6.5), the board throttle and ETA debounce are short-lived locks
+# (§9.2, §7.2), and pub/sub has no state at all. A cold Redis costs one round
+# of unfairness, which §6.5 says is safe.
 #
-# `emptyDir` rather than a PVC, per §14.2. Redis is still a StatefulSet so it
-# keeps a stable name and a single writer.
+# What that list left out is the queue, the retry set and the scheduled set.
+# `REDIS_URL` is the same for Sidekiq and ActionCable, and a job is not
+# reconstructible from Postgres. Losing them drops the §9.7 ready text and the
+# two deferred EWMA samples (§5.2, §9.6) — none of which any later event
+# re-triggers. DESIGN.md §14.2 now says so; this file used to repeat the
+# incomplete version.
 apiVersion: v1
 kind: Service
 metadata:
@@ -37,10 +42,32 @@ spec:
       containers:
         - name: redis
           image: redis:7
-          # --save "" and --appendonly no turn off both persistence mechanisms.
-          # Without them Redis periodically forks to write an RDB into an
-          # emptyDir that is discarded anyway — pure cost.
-          args: ["redis-server", "--save", "", "--appendonly", "no"]
+          # AOF rather than RDB snapshots: a snapshot loses everything written
+          # since the last one, and the jobs at risk here are enqueued and run
+          # within seconds. `everysec` bounds the loss at about a second
+          # without paying fsync on every write (§17).
+          #
+          # `--save ""` still disables RDB — AOF is the durability mechanism,
+          # and running both means forking to write a snapshot nothing reads.
+          #
+          # maxmemory sits below the container limit so Redis enforces the
+          # ceiling itself. Without it the kernel OOM-kills the pod, which
+          # discards the queue — the exact loss the AOF above exists to
+          # prevent. `noeviction` because every `allkeys-*` policy would delete
+          # job payloads to stay under the ceiling; failing writes loudly is
+          # the lesser evil (§17).
+          args:
+            - redis-server
+            - --save
+            - ""
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --maxmemory
+            - 200mb
+            - --maxmemory-policy
+            - noeviction
           ports:
             - name: redis
               containerPort: 6379
@@ -60,6 +87,15 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { memory: 256Mi }
-      volumes:
-        - name: data
-          emptyDir: {}
+  # A PVC per replica rather than a `volumes:` entry — this is a StatefulSet, so
+  # the claim follows the pod across reschedules, which is the whole point.
+  # 1Gi is far more than a boba shop's queue needs; the floor is what a cluster
+  # will actually provision.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
