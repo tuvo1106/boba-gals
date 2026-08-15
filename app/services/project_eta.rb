@@ -189,15 +189,29 @@ class ProjectEta
   #
   # A drink running past its estimate frees its station now rather than in the
   # past, which is the honest reading: it is nearly done.
+  # Never empty. `stations` already floors a store whose stations are all
+  # *deactivated* at one — "projected as though one station were about to open
+  # rather than as infinity" — but that fallback is `stations.order(:id).first(1)`,
+  # which is itself `[]` for a store with no station rows at all. An empty
+  # `free_at` then makes `each_index.min_by` return nil and `free_at[nil]` raise
+  # `TypeError` on the first pass, before `pick_next` is ever consulted — so even
+  # an empty queue crashed. That propagates into `CreateOrder`'s transaction
+  # (project_eta.rb quotes inside it), 500-ing every order placement for that
+  # store.
+  #
+  # Flooring here rather than in `stations` because the floor is about *capacity*
+  # to project against, and there is no Station row to invent.
   def station_free_times
     busy = in_progress_by_station
 
-    stations.map do |station|
+    times = stations.map do |station|
       item = busy[station.id]
       next @now if item.nil? || item.started_at.nil?
 
       [ item.started_at + prep_seconds_for(item.id, item.prep_seconds), @now ].max
     end
+
+    times.presence || [ @now ]
   end
 
   def in_progress_by_station

@@ -340,4 +340,26 @@ RSpec.describe ProjectEta do
       expect(described_class.for_open_orders(store)[quick_order.id]).to eq(60)
     end
   end
+
+  # A store with no station rows at all — not merely deactivated ones, which the
+  # `presence` fallback already covers. `stations.order(:id).first(1)` is `[]`
+  # there, so `free_at` was empty, `each_index.min_by` returned nil and
+  # `free_at[nil]` raised TypeError before `pick_next` was ever consulted. That
+  # runs inside `CreateOrder`'s transaction, so it 500-ed every order placement
+  # for such a store.
+  describe "a store with no stations at all" do
+    it "still answers, projecting as though one station were about to open" do
+      bare = create(:store)
+      item = create(:menu_item, store: bare, base_prep_seconds: 60)
+      order = create(:order, store: bare)
+      create(:order_item, order: order, menu_item: item, prep_seconds: 60)
+
+      expect { described_class.for_open_orders(bare) }.not_to raise_error
+      expect(described_class.for_open_orders(bare)[order.id]).to be_positive
+    end
+
+    it "does not crash on an empty queue either" do
+      expect { described_class.for_open_orders(create(:store)) }.not_to raise_error
+    end
+  end
 end

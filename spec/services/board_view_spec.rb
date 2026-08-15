@@ -184,4 +184,22 @@ RSpec.describe BoardView do
       expect(EtaCache.read(store)).to be_present
     end
   end
+
+  # #58 established that a failed drink already has a replacement row, so a
+  # 2-drink order with one spill is two lines and not three. `OrderView` and
+  # `KitchenQueue` were fixed then; the board was missed, so the screen above
+  # the counter listed a drink that had been thrown away while the customer's
+  # own screen and the KDS both said two.
+  it "lists only the drinks the customer is owed, not the ones that failed" do
+    order = create(:order, store: store, customer_first_name: "Rae")
+    create(:order_item, order: order, menu_item: menu_item, sequence: 1, label: "Thai Tea")
+    create(:order_item, order: order, menu_item: menu_item, sequence: 2, label: "Spilled One",
+                        status: "failed")
+    create(:order_item, order: order, menu_item: menu_item, sequence: 3, label: "The Remake",
+                        remake_of_id: order.order_items.last.id)
+
+    row = described_class.call(store)[:making].find { |r| r[:pickup_code] == order.pickup_code }
+
+    expect(row[:items]).to contain_exactly("Thai Tea", "The Remake")
+  end
 end

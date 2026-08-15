@@ -45,6 +45,23 @@ RSpec.describe SchedulerStateStore do
       expect(flow.total_items).to eq(2), "but the flow knows the order is a pair"
     end
 
+
+    # A failed drink already has a replacement row that is counted too, so
+    # "anything but cancelled" reported a remade 2-drink order as 3 — against
+    # #58's rule, which `Order#countable_items` and `size_class` both follow.
+    # Feeds the scheduler's `total_items > 1` staleness guard.
+    it "does not count a failed drink alongside the remake that replaced it" do
+      order = order_with(drinks: 1)
+      failed = create(:order_item, order: order, menu_item: menu_item, status: "failed")
+      create(:order_item, order: order, menu_item: menu_item, remake_of_id: failed.id)
+
+      flow = described_class.new(store).load.flows.first
+
+      expect(flow.total_items).to eq(2), "the customer is owed two drinks, not three"
+    end
+  end
+
+  describe "#load, continued" do
     it "excludes other stores and terminal orders" do
       order_with(drinks: 1, status: "cancelled")
       other = create(:store)
